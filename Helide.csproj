@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Helide</AssemblyName>
+    <RootNamespace>Helide</RootNamespace>
+    <Product>Helide</Product>
+    <Version>0.2.0</Version>
+    <ApplicationIcon>src\Assets\helide.ico</ApplicationIcon>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EasyWindowsTerminalControl" Version="1.0.38" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Page Remove="src\App\App.xaml" />
+    <ApplicationDefinition Include="src\App\App.xaml" />
+    <Resource Include="src\Assets\helide.png" />
+    <None Include="src\Assets\helide.svg" />
+  </ItemGroup>
+
+</Project>
