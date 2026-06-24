@@ -1,0 +1,44 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: restore
+        run: dotnet restore
+
+      - name: build
+        run: dotnet build -c Release --no-restore
+
+      - name: publish
+        run: dotnet publish -c Release -r win-x64 --self-contained -o publish
+
+      - name: package
+        run: Compress-Archive -Path publish/* -DestinationPath helide-win-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helide-win-x64
+          path: helide-win-x64.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: helide-win-x64.zip
+          body_path: .github/release-body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
