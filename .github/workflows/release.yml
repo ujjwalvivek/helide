@@ -26,10 +26,10 @@ jobs:
         run: dotnet build -c Release --no-restore
 
       - name: publish
-        run: dotnet publish -c Release -r win-x64 --self-contained -o publish
+        run: dotnet publish -c Release -r win-x64 --self-contained -p:DebugType=None -p:DebugSymbols=false -p:AllowedReferenceRelatedFileExtensions= -o publish
 
       - name: package
-        run: Compress-Archive -Path publish/* -DestinationPath helide-win-x64.zip
+        run: Compress-Archive -Path publish/Helide.exe -DestinationPath helide-win-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
