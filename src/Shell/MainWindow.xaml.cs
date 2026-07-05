@@ -112,7 +112,7 @@ public partial class MainWindow : Window
         WindowTitleText.Text = "Open Recent Project";
         RunCommandButton.Visibility = Visibility.Collapsed;
         OpenFolderTopButton.Content = "Open folder…";
-        Title = "Helide — Open Recent Project";
+        Title = "Open Recent Project";
         PopulateWelcome();
         OpenProjectButton.Focus();
     }
@@ -131,7 +131,7 @@ public partial class MainWindow : Window
         WindowTitleText.Text = projectName;
         RunCommandButton.Visibility = Visibility.Visible;
         OpenFolderTopButton.Content = "Open…";
-        Title = $"Helide — {projectName}";
+        Title = $"Helide | {projectName}";
     }
 
     private void PopulateWelcome()

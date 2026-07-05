@@ -1,14 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 256 256"
+    role="img"
+    aria-labelledby="title desc"
+>
   <title id="title">Helide</title>
-  <desc id="desc">A rounded dark tile containing a custom icon and terminal cursor.</desc>
+  <desc
+        id="desc"
+    >A rounded dark tile containing a custom icon and terminal cursor.</desc>
   <defs>
-    <linearGradient id="accent" x1="56" y1="56" x2="200" y2="200" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#89b4fa"/>
-      <stop offset="1" stop-color="#cba6f7"/>
+    <linearGradient
+            id="accent"
+            x1="56"
+            y1="56"
+            x2="200"
+            y2="200"
+            gradientUnits="userSpaceOnUse"
+        >
+      <stop offset="0" stop-color="#89b4fa" />
+      <stop offset="1" stop-color="#cba6f7" />
     </linearGradient>
   </defs>
-  <rect x="12" y="12" width="232" height="232" rx="54" fill="#181825"/>
-  <rect x="16" y="16" width="224" height="224" rx="50" fill="none" stroke="#45475a" stroke-width="8"/>
-  <path d="M196.67 40v24h16v120h-16v-24h-16v24h-16v-24h-16v24h-16v-24h-16v24h-16v-24h-16v24H43.33V64h24V40zm-16 64V80h-16v24h-24V80h-16v24z" fill="url(#accent)" />
-  <rect x="42" y="194" width="175" height="16" rx="0" fill="#f5c2e7"/>
+  <rect x="12" y="12" width="232" height="232" rx="54" fill="#181825" />
+  <rect
+        x="16"
+        y="16"
+        width="224"
+        height="224"
+        rx="50"
+        fill="none"
+        stroke="#45475a"
+        stroke-width="8"
+    />
+  <path
+        d="M196.67 40v24h16v120h-16v-24h-16v24h-16v-24h-16v24h-16v-24h-16v24h-16v-24h-16v24H43.33V64h24V40zm-16 64V80h-16v24h-24V80h-16v24z"
+        fill="url(#accent)"
+    />
+  <rect x="42" y="194" width="175" height="16" rx="0" fill="#f5c2e7" />
 </svg>
