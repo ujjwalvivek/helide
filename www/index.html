@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Helide | A terminal workspace for Windows</title>
+        <meta
+            name="description"
+            content="Helide is a WPF terminal workspace for Windows: git status, the Helix editor, a command runner, and opencode chat in one dark window."
+        />
+        <link rel="icon" type="image/svg+xml" href="helide.svg" />
+        <link rel="stylesheet" href="styles1.css" />
+    </head>
+    <body>
+        <main>
+            <section class="window">
+                <div class="titlebar">
+                    <span class="dot dot-pink"></span>
+                    <span class="dot dot-blue"></span>
+                    <span class="dot dot-green"></span>
+                    <span class="title">helide workspace</span>
+                </div>
+                <div class="hero">
+                    <img
+                        class="logo"
+                        src="helide.svg"
+                        width="96"
+                        height="96"
+                        alt="Helide"
+                    />
+                    <h1>Helide</h1>
+                    <p class="tagline">
+                        A terminal workspace for Windows. Git status, the Helix
+                        editor, a command runner, and opencode chat in one dark
+                        window.
+                    </p>
+                    <div class="prompt">
+                        <span class="chevron">&gt;</span
+                        ><span>helide --version</span>
+                    </div>
+                    <div class="prompt result">
+                        <span id="version" class="result-text">loading…</span
+                        ><span class="cursor"></span>
+                    </div>
+                    <a
+                        id="download"
+                        class="btn"
+                        href="https://github.com/ujjwalvivek/helide/releases/latest"
+                        target="_blank"
+                        rel="noopener"
+                    >
+                        <span id="btn-label">Download for Windows</span>
+                    </a>
+                    <a
+                        class="link"
+                        href="https://github.com/ujjwalvivek/helide"
+                        target="_blank"
+                        rel="noopener"
+                        >view source on github</a
+                    >
+                </div>
+            </section>
+            <section class="panes">
+                <div class="pane" style="--accent: #a6e3a1">
+                    <span class="pane-dot"></span>
+                    <h2>git</h2>
+                    <p>Branch, status, and diff at a glance.</p>
+                </div>
+                <div class="pane" style="--accent: #89b4fa">
+                    <span class="pane-dot"></span>
+                    <h2>helix</h2>
+                    <p>The modal editor, always open.</p>
+                </div>
+                <div class="pane" style="--accent: #cba6f7">
+                    <span class="pane-dot"></span>
+                    <h2>runner</h2>
+                    <p>Run commands without leaving.</p>
+                </div>
+                <div class="pane" style="--accent: #f5c2e7">
+                    <span class="pane-dot"></span>
+                    <h2>opencode</h2>
+                    <p>Chat with your codebase.</p>
+                </div>
+            </section>
+        </main>
+        <footer>
+            <span>MIT license · Ujjwal Vivek</span>
+            <a
+                href="https://github.com/ujjwalvivek/helide"
+                target="_blank"
+                rel="noopener"
+                >github.com/ujjwalvivek/helide</a
+            >
+        </footer>
+        <script src="app.js"></script>
+    </body>
+</html>
