@@ -26,7 +26,15 @@
     <Page Remove="src\App\App.xaml" />
     <ApplicationDefinition Include="src\App\App.xaml" />
     <Resource Include="src\Assets\helide.png" />
+    <Resource Include="src\Assets\icons\git.png" />
+    <Resource Include="src\Assets\icons\project.png" />
+    <Resource Include="src\Assets\icons\terminal.png" />
+    <Resource Include="src\Assets\icons\agent.png" />
     <None Include="src\Assets\helide.svg" />
+    <None Include="src\Assets\icons\git.svg" />
+    <None Include="src\Assets\icons\project.svg" />
+    <None Include="src\Assets\icons\terminal.svg" />
+    <None Include="src\Assets\icons\agent.svg" />
   </ItemGroup>
 
 </Project>

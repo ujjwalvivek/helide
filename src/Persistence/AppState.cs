@@ -32,7 +32,8 @@ internal sealed class WorkspaceLayoutState
     public double RightRatio { get; set; } = 0.21;
     public double EditorRatio { get; set; } = 0.80;
     public double RunnerRatio { get; set; } = 0.20;
-    public bool GitCollapsed { get; set; }
+    public bool LeftCollapsed { get; set; }
     public bool RunnerCollapsed { get; set; }
     public bool AgentCollapsed { get; set; }
+    public string LeftTool { get; set; } = "git";
 }

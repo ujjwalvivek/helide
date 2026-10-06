@@ -1,4 +1,4 @@
-﻿<Window
+<Window
     x:Class="Helide.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -220,15 +220,15 @@
         </Style>
 
         <Style x:Key="PanelToggleStyle" TargetType="ToggleButton">
-            <Setter Property="Width" Value="26" />
-            <Setter Property="Height" Value="20" />
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="22" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="#89b4fa" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
-            <Setter Property="FontSize" Value="11" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
@@ -238,13 +238,23 @@
                             CornerRadius="4"
                         >
                             <ContentPresenter
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                SnapsToDevicePixels="True"
                             />
                         </Border>
                         <ControlTemplate.Triggers>
+                            <!--
+                                The icons are pre-tinted PNGs so an unchecked toggle can
+                                dim without losing colour: accent when shown, muted when
+                                hidden, bright on hover.
+                            -->
                             <Trigger Property="IsChecked" Value="False">
-                                <Setter Property="Foreground" Value="#585b70" />
+                                <Setter
+                                    TargetName="ToggleSurface"
+                                    Property="Opacity"
+                                    Value="0.42"
+                                />
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter
@@ -252,12 +262,26 @@
                                     Property="Background"
                                     Value="#313244"
                                 />
-                                <Setter Property="Foreground" Value="#cdd6f4" />
+                                <Setter
+                                    TargetName="ToggleSurface"
+                                    Property="Opacity"
+                                    Value="1"
+                                />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style x:Key="PanelIconStyle" TargetType="Image">
+            <Setter Property="Width" Value="15" />
+            <Setter Property="Height" Value="15" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="RenderOptions.BitmapScalingMode" Value="HighQuality" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
     </Window.Resources>
 
@@ -585,7 +609,7 @@
                             <TextBlock
                                     x:Name="WelcomeStatus"
                                     Margin="8,20,8,0"
-                                    Text="Helix  ·  lazygit  ·  runner  ·  OpenCode"
+                                    Text="Helix  ·  git / project  ·  runner  ·  OpenCode"
                                     Foreground="#6c7086"
                                     FontFamily="Cascadia Mono"
                                     FontSize="10"
@@ -639,7 +663,7 @@
                     </Grid.ColumnDefinitions>
 
                     <Grid
-                        x:Name="GitPane"
+                        x:Name="LeftPane"
                         Grid.Column="0"
                     >
                         <Grid.RowDefinitions><RowDefinition
@@ -651,8 +675,14 @@
                                 Grid.Row="0"
                                 Style="{StaticResource PaneHeaderStyle}"
                             >
-                            <DockPanel Margin="9,0">
+                            <Grid Margin="9,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
                                 <TextBlock
+                                        Grid.Column="0"
+                                        x:Name="LeftPaneTitle"
                                         Text="GIT"
                                         VerticalAlignment="Center"
                                         FontFamily="Cascadia Mono"
@@ -660,6 +690,7 @@
                                         Foreground="#a9a8b6"
                                     />
                                 <TextBlock
+                                        Grid.Column="1"
                                         x:Name="GitPaneState"
                                         Text="starting"
                                         HorizontalAlignment="Right"
@@ -667,12 +698,22 @@
                                         Foreground="#666779"
                                         FontSize="10"
                                     />
-                            </DockPanel>
+                                <TextBlock
+                                        Grid.Column="1"
+                                        x:Name="ProjectPaneState"
+                                        Text="starting"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Foreground="#666779"
+                                        FontSize="10"
+                                        Visibility="Collapsed"
+                                    />
+                            </Grid>
                         </Border>
-                        <ContentControl
+                        <Grid
                                 Grid.Row="1"
-                                x:Name="GitSlot"
-                                Style="{StaticResource TerminalSlotStyle}"
+                                x:Name="LeftToolStack"
+                                Background="{StaticResource TerminalBrush}"
                             />
                     </Grid>
 
@@ -711,8 +752,9 @@
                                     Grid.Row="0"
                                     Style="{StaticResource PaneHeaderStyle}"
                                 >
-                                <DockPanel Margin="9,0">
+                                <DockPanel Margin="9,0" LastChildFill="False">
                                     <TextBlock
+                                            DockPanel.Dock="Left"
                                             Text="HELIX"
                                             VerticalAlignment="Center"
                                             FontFamily="Cascadia Mono"
@@ -720,9 +762,9 @@
                                             Foreground="#a9a8b6"
                                         />
                                     <TextBlock
+                                            DockPanel.Dock="Right"
                                             x:Name="EditorPaneState"
                                             Text="starting"
-                                            HorizontalAlignment="Right"
                                             VerticalAlignment="Center"
                                             Foreground="#666779"
                                             FontSize="10"
@@ -755,8 +797,9 @@
                                     Grid.Row="0"
                                     Style="{StaticResource PaneHeaderStyle}"
                                 >
-                                <DockPanel Margin="9,0">
+                                <DockPanel Margin="9,0" LastChildFill="False">
                                     <TextBlock
+                                            DockPanel.Dock="Left"
                                             Text="RUN"
                                             VerticalAlignment="Center"
                                             FontFamily="Cascadia Mono"
@@ -764,9 +807,9 @@
                                             Foreground="#a9a8b6"
                                         />
                                     <TextBlock
+                                            DockPanel.Dock="Right"
                                             x:Name="RunnerPaneState"
                                             Text="starting"
-                                            HorizontalAlignment="Right"
                                             VerticalAlignment="Center"
                                             Foreground="#666779"
                                             FontSize="10"
@@ -802,21 +845,22 @@
                                 Grid.Row="0"
                                 Style="{StaticResource PaneHeaderStyle}"
                             >
-                            <DockPanel Margin="9,0">
-                                <TextBlock
-                                        Text="OPENCODE"
-                                        VerticalAlignment="Center"
-                                        FontFamily="Cascadia Mono"
-                                        FontSize="9"
-                                        Foreground="#a9a8b6"
-                                    />
-                                <TextBlock
-                                        x:Name="AgentPaneState"
-                                        Text="starting"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Center"
-                                        Foreground="#666779"
-                                        FontSize="10"
+<DockPanel Margin="9,0" LastChildFill="False">
+                                    <TextBlock
+                                            DockPanel.Dock="Left"
+                                            Text="OPENCODE"
+                                            VerticalAlignment="Center"
+                                            FontFamily="Cascadia Mono"
+                                            FontSize="9"
+                                            Foreground="#a9a8b6"
+                                        />
+                                    <TextBlock
+                                            DockPanel.Dock="Right"
+                                            x:Name="AgentPaneState"
+                                            Text="starting"
+                                            VerticalAlignment="Center"
+                                            Foreground="#666779"
+                                            FontSize="10"
                                     />
                             </DockPanel>
                         </Border>
@@ -842,16 +886,38 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <ToggleButton
-                                x:Name="GitPanelToggle"
+                        <StackPanel
                                 Grid.Column="0"
                                 Margin="0,0,12,0"
-                                Click="GitPanelToggle_Click"
-                                Content="&#xE90C;"
-                                IsChecked="True"
-                                Style="{StaticResource PanelToggleStyle}"
-                                ToolTip="Toggle Git panel"
-                            />
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                            >
+                            <ToggleButton
+                                    x:Name="GitPanelToggle"
+                                    Click="GitPanelToggle_Click"
+                                    IsChecked="True"
+                                    Style="{StaticResource PanelToggleStyle}"
+                                    ToolTip="Show git panel"
+                                >
+                                    <Image
+                                            Source="/src/Assets/icons/git.png"
+                                            Style="{StaticResource PanelIconStyle}"
+                                        />
+                                </ToggleButton>
+                            <ToggleButton
+                                    x:Name="ProjectPanelToggle"
+                                    Margin="2,0,0,0"
+                                    Click="ProjectPanelToggle_Click"
+                                    IsChecked="False"
+                                    Style="{StaticResource PanelToggleStyle}"
+                                    ToolTip="Show project panel"
+                                >
+                                    <Image
+                                            Source="/src/Assets/icons/project.png"
+                                            Style="{StaticResource PanelIconStyle}"
+                                        />
+                                </ToggleButton>
+                        </StackPanel>
                         <TextBlock
                                 x:Name="ProjectStatus"
                                 Grid.Column="1"
@@ -873,7 +939,7 @@
                             />
                         <TextBlock
                                 Grid.Column="3"
-                                Text="Ctrl+1 Git   Ctrl+2 Helix   Ctrl+3 Run   Ctrl+4 OpenCode"
+                                Text="Ctrl+1 Left   Ctrl+2 Helix   Ctrl+3 Run   Ctrl+4 OpenCode   Ctrl+5 Project"
                                 Margin="0,0,12,0"
                                 VerticalAlignment="Center"
                                 Foreground="#6c7086"
@@ -887,22 +953,30 @@
                                 VerticalAlignment="Center"
                             >
                             <ToggleButton
-                                    x:Name="RunnerPanelToggle"
-                                    Click="RunnerPanelToggle_Click"
-                                    Content="&#xE90E;"
+                                    x:Name="TerminalPanelToggle"
+                                    Click="TerminalPanelToggle_Click"
                                     IsChecked="True"
                                     Style="{StaticResource PanelToggleStyle}"
-                                    ToolTip="Toggle Run panel"
-                                />
+                                    ToolTip="Show terminal panel"
+                                >
+                                    <Image
+                                            Source="/src/Assets/icons/terminal.png"
+                                            Style="{StaticResource PanelIconStyle}"
+                                        />
+                                </ToggleButton>
                             <ToggleButton
                                     x:Name="AgentPanelToggle"
                                     Margin="2,0,0,0"
                                     Click="AgentPanelToggle_Click"
-                                    Content="&#xE90D;"
                                     IsChecked="True"
                                     Style="{StaticResource PanelToggleStyle}"
-                                    ToolTip="Toggle OpenCode panel"
-                                />
+                                    ToolTip="Show agent panel"
+                                >
+                                    <Image
+                                            Source="/src/Assets/icons/agent.png"
+                                            Style="{StaticResource PanelIconStyle}"
+                                        />
+                                </ToggleButton>
                         </StackPanel>
                     </Grid>
                 </Border>

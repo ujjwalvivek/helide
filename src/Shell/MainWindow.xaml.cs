@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -22,16 +22,29 @@ public partial class MainWindow : Window
 {
     private enum ToolPanel
     {
-        Git,
+        Left,
         Runner,
         Agent,
     }
+
+    private enum LeftTool
+    {
+        Git,
+        Project,
+    }
+
+    private const int ExpectedToolCount = 5;
 
     private readonly AppStateStore _stateStore;
     private readonly AppState _state;
     private readonly string? _startupProject;
     private readonly List<NativeTerminalHost> _terminalHosts = [];
     private NativeTerminalHost? _runnerHost;
+    private NativeTerminalHost? _gitHost;
+    private NativeTerminalHost? _projectHost;
+    private Border? _gitToolError;
+    private Border? _projectToolError;
+    private LeftTool _activeLeftTool = LeftTool.Git;
     private string? _currentProject;
     private string _runCommand = "pwsh";
     private bool _loaded;
@@ -251,7 +264,19 @@ public partial class MainWindow : Window
             ShowWorkspace();
 
             var failures = 0;
-            if (CreateTerminal(GitSlot, GitPaneState, "lazygit", PowerShellCommand("lazygit"), project) is null)
+            _gitHost = CreateLeftTool(
+                LeftTool.Git,
+                "lazygit",
+                PowerShellCommand("lazygit"),
+                project);
+            if (_gitHost is null)
+                failures++;
+            _projectHost = CreateLeftTool(
+                LeftTool.Project,
+                "yazi",
+                PowerShellCommand("yazi"),
+                project);
+            if (_projectHost is null)
                 failures++;
             if (CreateTerminal(EditorSlot, EditorPaneState, "helix", PowerShellCommand("hx ."), project) is null)
                 failures++;
@@ -260,7 +285,8 @@ public partial class MainWindow : Window
                 RunnerPaneState,
                 "runner",
                 PowerShellCommand(
-                    $"Write-Host {PowerShellLiteral($"Ready to run: {_runCommand}")} -ForegroundColor DarkCyan"),
+                    $"Write-Host {PowerShellLiteral($" Try {_runCommand}")} -ForegroundColor DarkCyan"
+                ),
                 project);
             if (_runnerHost is null)
                 failures++;
@@ -268,6 +294,8 @@ public partial class MainWindow : Window
                 failures++;
 
             RunCommandButton.IsEnabled = _runnerHost is not null;
+
+            SetLeftTool(RestoreLeftTool(), persist: false);
 
             _stateStore.RecordProject(_state, project);
             if (failures > 0)
@@ -308,6 +336,42 @@ public partial class MainWindow : Window
         }
     }
 
+    private NativeTerminalHost? CreateLeftTool(
+        LeftTool tool,
+        string label,
+        string commandLine,
+        string workingDirectory)
+    {
+        var stateText = tool == LeftTool.Project ? ProjectPaneState : GitPaneState;
+        try
+        {
+            var host = new NativeTerminalHost(label, commandLine, workingDirectory);
+            host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
+            // Both left tools stay parented for the whole session; only Visibility
+            // flips. Removing the host from the tree would send HwndHost down the
+            // reparent-to-SystemResources.Hwnd path instead of a plain SW_HIDE.
+            LeftToolStack.Children.Add(host);
+            _terminalHosts.Add(host);
+            UpdateWorkspaceHealth();
+            return host;
+        }
+        catch (Exception exception)
+        {
+            var error = CreateErrorPanel(label, exception);
+            if (tool == LeftTool.Project)
+                _projectToolError = error;
+            else
+                _gitToolError = error;
+
+            error.Visibility = tool == _activeLeftTool ? Visibility.Visible : Visibility.Collapsed;
+            LeftToolStack.Children.Add(error);
+            stateText.Text = "failed";
+            stateText.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
+            UpdateWorkspaceHealth();
+            return null;
+        }
+    }
+
     private void UpdatePaneState(TextBlock stateText, TerminalHostState state)
     {
         if (_closingWorkspace)
@@ -335,21 +399,22 @@ public partial class MainWindow : Window
             return;
 
         var ready = _terminalHosts.Count(host => host.State == TerminalHostState.Ready);
-        WorkspaceHealthText.Text = _terminalHosts.Count == 4 && ready == 4
+        WorkspaceHealthText.Text = _terminalHosts.Count == ExpectedToolCount && ready == ExpectedToolCount
             ? "workspace ready"
-            : $"{ready}/{Math.Max(_terminalHosts.Count, 4)} tools ready";
+            : $"{ready}/{Math.Max(_terminalHosts.Count, ExpectedToolCount)} tools ready";
         WorkspaceHealthText.Foreground = new SolidColorBrush(
-            ready == 4 ? Color.FromRgb(166, 227, 161) : Color.FromRgb(119, 120, 136));
+            ready == ExpectedToolCount ? Color.FromRgb(166, 227, 161) : Color.FromRgb(119, 120, 136));
     }
 
     private void ResetPaneStates()
     {
-        foreach (var stateText in new[] { GitPaneState, EditorPaneState, RunnerPaneState, AgentPaneState })
+        foreach (var stateText in new[]
+                 { GitPaneState, ProjectPaneState, EditorPaneState, RunnerPaneState, AgentPaneState })
         {
             stateText.Text = "starting";
             stateText.Foreground = new SolidColorBrush(Color.FromRgb(102, 103, 121));
         }
-        WorkspaceHealthText.Text = "0/4 tools ready";
+        WorkspaceHealthText.Text = $"0/{ExpectedToolCount} tools ready";
     }
 
     private static Border CreateErrorPanel(string label, Exception exception) => new()
@@ -401,17 +466,25 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (WorkspaceRoot.Visibility != Visibility.Visible || number is < 1 or > 4)
+        if (WorkspaceRoot.Visibility != Visibility.Visible || number is < 1 or > 5)
             return;
 
-        var host = number <= _terminalHosts.Count
-            ? _terminalHosts[number - 1]
-            : null;
+        // Ctrl+5 always means the project browser; Ctrl+1 means whichever left tool is
+        // showing, so it can never focus a pane the user cannot see.
+        if (number == 5)
+            ToggleLeftTool(LeftTool.Project);
+
+        var host = number switch
+        {
+            1 => ActiveLeftHost(),
+            5 => _projectHost,
+            _ => number <= _terminalHosts.Count ? _terminalHosts[number - 1] : null,
+        };
         if (host is not null)
         {
             var panel = number switch
             {
-                1 => ToolPanel.Git,
+                1 or 5 => ToolPanel.Left,
                 3 => ToolPanel.Runner,
                 4 => ToolPanel.Agent,
                 _ => (ToolPanel?)null,
@@ -459,7 +532,7 @@ public partial class MainWindow : Window
         _frozenRightWeight = ClampRatio(layout.RightRatio, 0.21);
         _frozenRunnerWeight = ClampRatio(layout.RunnerRatio, 0.20);
 
-        SetPanelCollapsed(ToolPanel.Git, layout.GitCollapsed);
+        SetPanelCollapsed(ToolPanel.Left, layout.LeftCollapsed);
         SetPanelCollapsed(ToolPanel.Runner, layout.RunnerCollapsed);
         SetPanelCollapsed(ToolPanel.Agent, layout.AgentCollapsed);
     }
@@ -474,14 +547,67 @@ public partial class MainWindow : Window
         _runnerSplitterHeight = RunnerSplitterRow.Height;
     }
 
+    // Each left tool owns its own toggle: clicking git shows git, clicking project
+    // shows the project browser, and clicking whichever is already showing hides it.
     private void GitPanelToggle_Click(object sender, RoutedEventArgs e) =>
-        TogglePanel(ToolPanel.Git);
+        ToggleLeftTool(LeftTool.Git);
 
-    private void RunnerPanelToggle_Click(object sender, RoutedEventArgs e) =>
+    private void ProjectPanelToggle_Click(object sender, RoutedEventArgs e) =>
+        ToggleLeftTool(LeftTool.Project);
+
+    private void TerminalPanelToggle_Click(object sender, RoutedEventArgs e) =>
         TogglePanel(ToolPanel.Runner);
 
     private void AgentPanelToggle_Click(object sender, RoutedEventArgs e) =>
         TogglePanel(ToolPanel.Agent);
+
+    private void ToggleLeftTool(LeftTool tool)
+    {
+        // Clicking the tool that is already showing hides the panel, which is what
+        // makes these behave like the terminal and agent toggles.
+        if (!IsPanelCollapsed(ToolPanel.Left) && _activeLeftTool == tool)
+        {
+            TogglePanel(ToolPanel.Left);
+            return;
+        }
+
+        SetPanelCollapsed(ToolPanel.Left, false);
+        SetLeftTool(tool);
+        SaveWorkspaceLayout();
+        _stateStore.Save(_state);
+    }
+
+    private LeftTool RestoreLeftTool() =>
+        string.Equals(_state.Layout.LeftTool, "project", StringComparison.OrdinalIgnoreCase)
+            ? LeftTool.Project
+            : LeftTool.Git;
+
+    private void SetLeftTool(LeftTool tool, bool persist = true)
+    {
+        _activeLeftTool = tool;
+        var showingGit = tool == LeftTool.Git;
+        if (_gitHost is not null)
+            _gitHost.Visibility = showingGit ? Visibility.Visible : Visibility.Collapsed;
+        if (_projectHost is not null)
+            _projectHost.Visibility = showingGit ? Visibility.Collapsed : Visibility.Visible;
+        if (_gitToolError is not null)
+            _gitToolError.Visibility = showingGit ? Visibility.Visible : Visibility.Collapsed;
+        if (_projectToolError is not null)
+            _projectToolError.Visibility = showingGit ? Visibility.Collapsed : Visibility.Visible;
+
+        LeftPaneTitle.Text = showingGit ? "GIT" : "PROJECT";
+        GitPaneState.Visibility = showingGit ? Visibility.Visible : Visibility.Collapsed;
+        ProjectPaneState.Visibility = showingGit ? Visibility.Collapsed : Visibility.Visible;
+
+        GitPanelToggle.IsChecked = showingGit;
+        ProjectPanelToggle.IsChecked = !showingGit;
+
+        if (persist)
+        {
+            _state.Layout.LeftTool = tool == LeftTool.Project ? "project" : "git";
+            _stateStore.Save(_state);
+        }
+    }
 
     private void TogglePanel(ToolPanel panel)
     {
@@ -492,7 +618,7 @@ public partial class MainWindow : Window
 
     private bool IsPanelCollapsed(ToolPanel panel) => panel switch
     {
-        ToolPanel.Git => _state.Layout.GitCollapsed,
+        ToolPanel.Left => _state.Layout.LeftCollapsed,
         ToolPanel.Runner => _state.Layout.RunnerCollapsed,
         _ => _state.Layout.AgentCollapsed,
     };
@@ -511,14 +637,14 @@ public partial class MainWindow : Window
 
         switch (panel)
         {
-            case ToolPanel.Git:
+            case ToolPanel.Left:
                 LeftPaneColumn.Width = collapsed
                     ? new GridLength(0)
                     : new GridLength(ClampRatio(_state.Layout.LeftRatio, 0.21), GridUnitType.Star);
                 LeftPaneColumn.MinWidth = collapsed ? 0 : _leftPaneMinWidth;
                 LeftSplitterColumn.Width = collapsed ? new GridLength(0) : _leftSplitterWidth;
-                GitPane.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
-                _state.Layout.GitCollapsed = collapsed;
+                LeftPane.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+                _state.Layout.LeftCollapsed = collapsed;
                 break;
             case ToolPanel.Runner:
                 RunnerPaneRow.Height = collapsed
@@ -550,7 +676,7 @@ public partial class MainWindow : Window
     {
         switch (panel)
         {
-            case ToolPanel.Git:
+            case ToolPanel.Left:
                 _frozenLeftWeight = ClampRatio(LeftPaneColumn.Width.Value, 0.21);
                 break;
             case ToolPanel.Runner:
@@ -564,8 +690,8 @@ public partial class MainWindow : Window
 
     private ToggleButton PanelToggleFor(ToolPanel panel) => panel switch
     {
-        ToolPanel.Git => GitPanelToggle,
-        ToolPanel.Runner => RunnerPanelToggle,
+        ToolPanel.Left => GitPanelToggle,
+        ToolPanel.Runner => TerminalPanelToggle,
         _ => AgentPanelToggle,
     };
 
@@ -575,17 +701,16 @@ public partial class MainWindow : Window
     {
         var slot = panel switch
         {
-            ToolPanel.Git => GitSlot,
             ToolPanel.Runner => RunnerSlot,
             _ => AgentSlot,
         };
+        var host = panel == ToolPanel.Left ? ActiveLeftHost() : slot.Content as NativeTerminalHost;
 
-        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
-        {
-            if (slot.Content is NativeTerminalHost host)
-                host.Refresh();
-        }));
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() => host?.Refresh()));
     }
+
+    private NativeTerminalHost? ActiveLeftHost() =>
+        _activeLeftTool == LeftTool.Project ? _projectHost : _gitHost;
 
     private static double ClampRatio(double value, double fallback) =>
         double.IsFinite(value) && value > 0.02 ? value : fallback;
@@ -596,7 +721,7 @@ public partial class MainWindow : Window
         // whole they would have occupied. Reconstructing the total this way keeps
         // every ratio on one scale, so a frozen pane comes back at the width it
         // had rather than drifting on each collapse cycle.
-        var frozenWidth = (_state.Layout.GitCollapsed ? _frozenLeftWeight : 0)
+        var frozenWidth = (_state.Layout.LeftCollapsed ? _frozenLeftWeight : 0)
                         + (_state.Layout.AgentCollapsed ? _frozenRightWeight : 0);
         var visibleWidth = LeftPaneColumn.ActualWidth
                          + CenterPaneColumn.ActualWidth
@@ -605,7 +730,7 @@ public partial class MainWindow : Window
         if (visibleWidth > 0 && widthShare > 0.05)
         {
             var totalWidth = visibleWidth / widthShare;
-            if (!_state.Layout.GitCollapsed)
+            if (!_state.Layout.LeftCollapsed)
                 _state.Layout.LeftRatio = LeftPaneColumn.ActualWidth / totalWidth;
             _state.Layout.CenterRatio = CenterPaneColumn.ActualWidth / totalWidth;
             if (!_state.Layout.AgentCollapsed)
@@ -667,7 +792,11 @@ public partial class MainWindow : Window
 
             _terminalHosts.Clear();
             _runnerHost = null;
-            GitSlot.Content = null;
+            _gitHost = null;
+            _projectHost = null;
+            _gitToolError = null;
+            _projectToolError = null;
+            LeftToolStack.Children.Clear();
             EditorSlot.Content = null;
             RunnerSlot.Content = null;
             AgentSlot.Content = null;
