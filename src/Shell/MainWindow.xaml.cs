@@ -336,7 +336,7 @@ public partial class MainWindow : Window
 
     private static Border CreateErrorPanel(string label, Exception exception) => new()
     {
-        Background = new SolidColorBrush(Color.FromRgb(30, 30, 46)),
+        Background = new SolidColorBrush(Color.FromRgb(25, 23, 36)),
         Child = new TextBlock
         {
             Margin = new Thickness(18),

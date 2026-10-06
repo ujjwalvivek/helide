@@ -24,7 +24,7 @@ internal enum TerminalHostState
 internal sealed class NativeTerminalHost : Grid, IDisposable
 {
     private const int TerminalFontSize = 10;
-    private static readonly Color TerminalBackground = Color.FromRgb(30, 30, 46);
+    private static readonly Color TerminalBackground = Color.FromRgb(25, 23, 36);
     private static readonly SolidColorBrush TerminalBackgroundBrush =
         new(TerminalBackground);
     private static readonly FieldInfo? ScrollBarField = typeof(TerminalControl)
@@ -250,7 +250,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
 
     private static TerminalTheme BuildTheme() => new()
     {
-        DefaultBackground = TerminalColor(30, 30, 46),
+        DefaultBackground = TerminalColor(25, 23, 36),
         DefaultForeground = TerminalColor(205, 214, 244),
         DefaultSelectionBackground = TerminalColor(49, 50, 68),
         CursorStyle = CursorStyle.SteadyBar,

@@ -26,10 +26,10 @@
         />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
-        <SolidColorBrush x:Key="WindowBrush" Color="#D91E1E2E" />
+        <SolidColorBrush x:Key="WindowBrush" Color="#D9191724" />
         <SolidColorBrush x:Key="SurfaceBrush" Color="#E6181825" />
         <SolidColorBrush x:Key="RaisedBrush" Color="#E6313244" />
-        <SolidColorBrush x:Key="TerminalBrush" Color="#1e1e2e" />
+        <SolidColorBrush x:Key="TerminalBrush" Color="#191724" />
         <SolidColorBrush x:Key="BorderBrush" Color="#313244" />
         <SolidColorBrush x:Key="AccentBrush" Color="#89b4fa" />
         <SolidColorBrush x:Key="MutedBrush" Color="#7f849c" />
