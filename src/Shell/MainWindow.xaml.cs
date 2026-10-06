@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Helide.Interop;
 using Helide.Persistence;
 using Helide.Projects;
@@ -19,6 +20,13 @@ namespace Helide;
 
 public partial class MainWindow : Window
 {
+    private enum ToolPanel
+    {
+        Git,
+        Runner,
+        Agent,
+    }
+
     private readonly AppStateStore _stateStore;
     private readonly AppState _state;
     private readonly string? _startupProject;
@@ -28,6 +36,15 @@ public partial class MainWindow : Window
     private string _runCommand = "pwsh";
     private bool _loaded;
     private bool _closingWorkspace;
+    private double _leftPaneMinWidth;
+    private GridLength _leftSplitterWidth;
+    private double _rightPaneMinWidth;
+    private GridLength _rightSplitterWidth;
+    private double _runnerMinHeight;
+    private GridLength _runnerSplitterHeight;
+    private double _frozenLeftWeight;
+    private double _frozenRightWeight;
+    private double _frozenRunnerWeight;
 
     internal MainWindow(AppStateStore stateStore, AppState state, string? startupProject = null)
     {
@@ -36,6 +53,7 @@ public partial class MainWindow : Window
         _startupProject = startupProject;
 
         InitializeComponent();
+        CaptureTrackDefaults();
         RestoreWindowGeometry();
         RestoreWorkspaceLayout();
 
@@ -391,6 +409,16 @@ public partial class MainWindow : Window
             : null;
         if (host is not null)
         {
+            var panel = number switch
+            {
+                1 => ToolPanel.Git,
+                3 => ToolPanel.Runner,
+                4 => ToolPanel.Agent,
+                _ => (ToolPanel?)null,
+            };
+            if (panel is { } target && IsPanelCollapsed(target))
+                TogglePanel(target);
+
             host.FocusTerminal();
             e.Handled = true;
         }
@@ -423,6 +451,140 @@ public partial class MainWindow : Window
         RightPaneColumn.Width = new GridLength(ClampRatio(layout.RightRatio, 0.21), GridUnitType.Star);
         EditorPaneRow.Height = new GridLength(ClampRatio(layout.EditorRatio, 0.80), GridUnitType.Star);
         RunnerPaneRow.Height = new GridLength(ClampRatio(layout.RunnerRatio, 0.20), GridUnitType.Star);
+
+        // A collapsed pane keeps no pixel width to measure, so freeze its last star
+        // weight now; SaveWorkspaceLayout scales it back in as the visible panes grow
+        // or shrink. Without this, collapsing would overwrite the ratio with zero.
+        _frozenLeftWeight = ClampRatio(layout.LeftRatio, 0.21);
+        _frozenRightWeight = ClampRatio(layout.RightRatio, 0.21);
+        _frozenRunnerWeight = ClampRatio(layout.RunnerRatio, 0.20);
+
+        SetPanelCollapsed(ToolPanel.Git, layout.GitCollapsed);
+        SetPanelCollapsed(ToolPanel.Runner, layout.RunnerCollapsed);
+        SetPanelCollapsed(ToolPanel.Agent, layout.AgentCollapsed);
+    }
+
+    private void CaptureTrackDefaults()
+    {
+        _leftPaneMinWidth = LeftPaneColumn.MinWidth;
+        _leftSplitterWidth = LeftSplitterColumn.Width;
+        _rightPaneMinWidth = RightPaneColumn.MinWidth;
+        _rightSplitterWidth = RightSplitterColumn.Width;
+        _runnerMinHeight = RunnerPaneRow.MinHeight;
+        _runnerSplitterHeight = RunnerSplitterRow.Height;
+    }
+
+    private void GitPanelToggle_Click(object sender, RoutedEventArgs e) =>
+        TogglePanel(ToolPanel.Git);
+
+    private void RunnerPanelToggle_Click(object sender, RoutedEventArgs e) =>
+        TogglePanel(ToolPanel.Runner);
+
+    private void AgentPanelToggle_Click(object sender, RoutedEventArgs e) =>
+        TogglePanel(ToolPanel.Agent);
+
+    private void TogglePanel(ToolPanel panel)
+    {
+        SetPanelCollapsed(panel, !IsPanelCollapsed(panel));
+        SaveWorkspaceLayout();
+        _stateStore.Save(_state);
+    }
+
+    private bool IsPanelCollapsed(ToolPanel panel) => panel switch
+    {
+        ToolPanel.Git => _state.Layout.GitCollapsed,
+        ToolPanel.Runner => _state.Layout.RunnerCollapsed,
+        _ => _state.Layout.AgentCollapsed,
+    };
+
+    // The track has to be driven to zero explicitly: a collapsed child does not
+    // shrink a star-sized track, and MinWidth/MinHeight would win over a zero
+    // Width/Height. The companion splitter track goes too, or a 3px divider is
+    // left hanging beside nothing. Collapsing the container then hides the child
+    // HWND via SW_HIDE, which keeps the ConPTY session alive and never measures
+    // the terminal at 0x0.
+    private void SetPanelCollapsed(ToolPanel panel, bool collapsed)
+    {
+        // Snapshot before the track is zeroed, while its weight is still readable.
+        if (collapsed)
+            FreezeWeight(panel);
+
+        switch (panel)
+        {
+            case ToolPanel.Git:
+                LeftPaneColumn.Width = collapsed
+                    ? new GridLength(0)
+                    : new GridLength(ClampRatio(_state.Layout.LeftRatio, 0.21), GridUnitType.Star);
+                LeftPaneColumn.MinWidth = collapsed ? 0 : _leftPaneMinWidth;
+                LeftSplitterColumn.Width = collapsed ? new GridLength(0) : _leftSplitterWidth;
+                GitPane.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+                _state.Layout.GitCollapsed = collapsed;
+                break;
+            case ToolPanel.Runner:
+                RunnerPaneRow.Height = collapsed
+                    ? new GridLength(0)
+                    : new GridLength(ClampRatio(_state.Layout.RunnerRatio, 0.20), GridUnitType.Star);
+                RunnerPaneRow.MinHeight = collapsed ? 0 : _runnerMinHeight;
+                RunnerSplitterRow.Height = collapsed ? new GridLength(0) : _runnerSplitterHeight;
+                RunnerPane.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+                _state.Layout.RunnerCollapsed = collapsed;
+                break;
+            case ToolPanel.Agent:
+                RightPaneColumn.Width = collapsed
+                    ? new GridLength(0)
+                    : new GridLength(ClampRatio(_state.Layout.RightRatio, 0.21), GridUnitType.Star);
+                RightPaneColumn.MinWidth = collapsed ? 0 : _rightPaneMinWidth;
+                RightSplitterColumn.Width = collapsed ? new GridLength(0) : _rightSplitterWidth;
+                AgentPane.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+                _state.Layout.AgentCollapsed = collapsed;
+                break;
+        }
+
+        if (!collapsed)
+            RequestPaneRefresh(panel);
+
+        PanelToggleFor(panel).IsChecked = !collapsed;
+    }
+
+    private void FreezeWeight(ToolPanel panel)
+    {
+        switch (panel)
+        {
+            case ToolPanel.Git:
+                _frozenLeftWeight = ClampRatio(LeftPaneColumn.Width.Value, 0.21);
+                break;
+            case ToolPanel.Runner:
+                _frozenRunnerWeight = ClampRatio(RunnerPaneRow.Height.Value, 0.20);
+                break;
+            case ToolPanel.Agent:
+                _frozenRightWeight = ClampRatio(RightPaneColumn.Width.Value, 0.21);
+                break;
+        }
+    }
+
+    private ToggleButton PanelToggleFor(ToolPanel panel) => panel switch
+    {
+        ToolPanel.Git => GitPanelToggle,
+        ToolPanel.Runner => RunnerPanelToggle,
+        _ => AgentPanelToggle,
+    };
+
+    // The hosted renderer repaints itself once the pane is arranged at a real
+    // size, so this is only a nudge for the odd stale frame after SW_HIDE.
+    private void RequestPaneRefresh(ToolPanel panel)
+    {
+        var slot = panel switch
+        {
+            ToolPanel.Git => GitSlot,
+            ToolPanel.Runner => RunnerSlot,
+            _ => AgentSlot,
+        };
+
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+        {
+            if (slot.Content is NativeTerminalHost host)
+                host.Refresh();
+        }));
     }
 
     private static double ClampRatio(double value, double fallback) =>
@@ -430,19 +592,35 @@ public partial class MainWindow : Window
 
     private void SaveWorkspaceLayout()
     {
-        var totalWidth = LeftPaneColumn.ActualWidth + CenterPaneColumn.ActualWidth + RightPaneColumn.ActualWidth;
-        if (totalWidth > 0)
+        // Collapsed tracks report no width, so divide the visible tracks by the
+        // whole they would have occupied. Reconstructing the total this way keeps
+        // every ratio on one scale, so a frozen pane comes back at the width it
+        // had rather than drifting on each collapse cycle.
+        var frozenWidth = (_state.Layout.GitCollapsed ? _frozenLeftWeight : 0)
+                        + (_state.Layout.AgentCollapsed ? _frozenRightWeight : 0);
+        var visibleWidth = LeftPaneColumn.ActualWidth
+                         + CenterPaneColumn.ActualWidth
+                         + RightPaneColumn.ActualWidth;
+        var widthShare = 1 - frozenWidth;
+        if (visibleWidth > 0 && widthShare > 0.05)
         {
-            _state.Layout.LeftRatio = LeftPaneColumn.ActualWidth / totalWidth;
+            var totalWidth = visibleWidth / widthShare;
+            if (!_state.Layout.GitCollapsed)
+                _state.Layout.LeftRatio = LeftPaneColumn.ActualWidth / totalWidth;
             _state.Layout.CenterRatio = CenterPaneColumn.ActualWidth / totalWidth;
-            _state.Layout.RightRatio = RightPaneColumn.ActualWidth / totalWidth;
+            if (!_state.Layout.AgentCollapsed)
+                _state.Layout.RightRatio = RightPaneColumn.ActualWidth / totalWidth;
         }
 
-        var totalHeight = EditorPaneRow.ActualHeight + RunnerPaneRow.ActualHeight;
-        if (totalHeight > 0)
+        var frozenHeight = _state.Layout.RunnerCollapsed ? _frozenRunnerWeight : 0;
+        var visibleHeight = EditorPaneRow.ActualHeight + RunnerPaneRow.ActualHeight;
+        var heightShare = 1 - frozenHeight;
+        if (visibleHeight > 0 && heightShare > 0.05)
         {
+            var totalHeight = visibleHeight / heightShare;
             _state.Layout.EditorRatio = EditorPaneRow.ActualHeight / totalHeight;
-            _state.Layout.RunnerRatio = RunnerPaneRow.ActualHeight / totalHeight;
+            if (!_state.Layout.RunnerCollapsed)
+                _state.Layout.RunnerRatio = RunnerPaneRow.ActualHeight / totalHeight;
         }
     }
 

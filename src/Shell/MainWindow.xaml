@@ -218,6 +218,47 @@
             <Setter Property="BorderThickness" Value="0,0,0,1" />
             <Setter Property="CornerRadius" Value="6,6,0,0" />
         </Style>
+
+        <Style x:Key="PanelToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#89b4fa" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border
+                            x:Name="ToggleSurface"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="4"
+                        >
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                            />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="False">
+                                <Setter Property="Foreground" Value="#585b70" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter
+                                    TargetName="ToggleSurface"
+                                    Property="Background"
+                                    Value="#313244"
+                                />
+                                <Setter Property="Foreground" Value="#cdd6f4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Background="{StaticResource WindowBrush}">
@@ -577,13 +618,19 @@
                                 Width="21*"
                                 MinWidth="220"
                             />
-                        <ColumnDefinition Width="3" />
+                        <ColumnDefinition
+                                x:Name="LeftSplitterColumn"
+                                Width="3"
+                            />
                         <ColumnDefinition
                                 x:Name="CenterPaneColumn"
                                 Width="58*"
                                 MinWidth="500"
                             />
-                        <ColumnDefinition Width="3" />
+                        <ColumnDefinition
+                                x:Name="RightSplitterColumn"
+                                Width="3"
+                            />
                         <ColumnDefinition
                                 x:Name="RightPaneColumn"
                                 Width="21*"
@@ -591,7 +638,10 @@
                             />
                     </Grid.ColumnDefinitions>
 
-                    <Grid Grid.Column="0">
+                    <Grid
+                        x:Name="GitPane"
+                        Grid.Column="0"
+                    >
                         <Grid.RowDefinitions><RowDefinition
                                     Height="27"
                                 /><RowDefinition
@@ -641,7 +691,10 @@
                                     Height="80*"
                                     MinHeight="220"
                                 />
-                            <RowDefinition Height="3" />
+                            <RowDefinition
+                                    x:Name="RunnerSplitterRow"
+                                    Height="3"
+                                />
                             <RowDefinition
                                     x:Name="RunnerPaneRow"
                                     Height="20*"
@@ -689,7 +742,10 @@
                                 Style="{StaticResource HorizontalSplitterStyle}"
                                 DragCompleted="LayoutSplitter_DragCompleted"
                             />
-                        <Grid Grid.Row="2">
+                        <Grid
+                                x:Name="RunnerPane"
+                                Grid.Row="2"
+                            >
                             <Grid.RowDefinitions><RowDefinition
                                         Height="27"
                                     /><RowDefinition
@@ -733,9 +789,12 @@
                             DragCompleted="LayoutSplitter_DragCompleted"
                         />
 
-                    <Grid Grid.Column="4">
-                        <Grid.RowDefinitions><RowDefinition
-                                    Height="27"
+<Grid
+                            x:Name="AgentPane"
+                            Grid.Column="4"
+                        >
+                            <Grid.RowDefinitions><RowDefinition
+                                        Height="27"
                                 /><RowDefinition
                                     Height="*"
                                 /></Grid.RowDefinitions>
@@ -777,12 +836,25 @@
                     >
                     <Grid Margin="10,0">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
+                        <ToggleButton
+                                x:Name="GitPanelToggle"
+                                Grid.Column="0"
+                                Margin="0,0,12,0"
+                                Click="GitPanelToggle_Click"
+                                Content="&#xE90C;"
+                                IsChecked="True"
+                                Style="{StaticResource PanelToggleStyle}"
+                                ToolTip="Toggle Git panel"
+                            />
                         <TextBlock
                                 x:Name="ProjectStatus"
+                                Grid.Column="1"
                                 VerticalAlignment="Center"
                                 Foreground="#a6adc8"
                                 FontFamily="Cascadia Mono"
@@ -790,7 +862,7 @@
                                 TextTrimming="CharacterEllipsis"
                             />
                         <TextBlock
-                                Grid.Column="1"
+                                Grid.Column="2"
                                 x:Name="WorkspaceHealthText"
                                 Text="starting tools"
                                 Margin="14,0"
@@ -800,13 +872,38 @@
                                 FontSize="10"
                             />
                         <TextBlock
-                                Grid.Column="2"
+                                Grid.Column="3"
                                 Text="Ctrl+1 Git   Ctrl+2 Helix   Ctrl+3 Run   Ctrl+4 OpenCode"
+                                Margin="0,0,12,0"
                                 VerticalAlignment="Center"
                                 Foreground="#6c7086"
                                 FontFamily="Cascadia Mono"
                                 FontSize="9"
                             />
+                        <StackPanel
+                                Grid.Column="4"
+                                Margin="4,0,0,0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                            >
+                            <ToggleButton
+                                    x:Name="RunnerPanelToggle"
+                                    Click="RunnerPanelToggle_Click"
+                                    Content="&#xE90E;"
+                                    IsChecked="True"
+                                    Style="{StaticResource PanelToggleStyle}"
+                                    ToolTip="Toggle Run panel"
+                                />
+                            <ToggleButton
+                                    x:Name="AgentPanelToggle"
+                                    Margin="2,0,0,0"
+                                    Click="AgentPanelToggle_Click"
+                                    Content="&#xE90D;"
+                                    IsChecked="True"
+                                    Style="{StaticResource PanelToggleStyle}"
+                                    ToolTip="Toggle OpenCode panel"
+                                />
+                        </StackPanel>
                     </Grid>
                 </Border>
             </Grid>

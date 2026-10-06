@@ -114,6 +114,18 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         _terminal.ConPTYTerm.WriteToTerm(command + "\r");
     }
 
+    // Called after the host pane is expanded again. The renderer already resizes
+    // itself when arranged at a real size, so this only forces a fresh measure
+    // and repaint in case the hidden HWND came back stale.
+    public void Refresh()
+    {
+        if (_disposed)
+            return;
+
+        UpdateLayout();
+        InvalidateVisual();
+    }
+
     private void Terminal_Loaded(object sender, RoutedEventArgs e)
     {
         try
