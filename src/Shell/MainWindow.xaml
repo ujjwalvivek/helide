@@ -972,38 +972,224 @@
                             DragCompleted="LayoutSplitter_DragCompleted"
                         />
 
-<Grid
+                        <Grid
                             x:Name="AgentPane"
                             Grid.Column="4"
                         >
-                            <Grid.RowDefinitions><RowDefinition
-                                        Height="27"
-                                /><RowDefinition
-                                    Height="*"
-                                /></Grid.RowDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="27" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" MinHeight="32" />
+                            </Grid.RowDefinitions>
                         <Border
                                 Grid.Row="0"
                                 Style="{StaticResource PaneHeaderStyle}"
                             >
-<DockPanel Margin="9,0" LastChildFill="False">
-                                    <TextBlock
-                                            DockPanel.Dock="Left"
-                                            Text="OPENCODE"
-                                            VerticalAlignment="Center"
-                                            FontFamily="Cascadia Mono"
-                                            FontSize="9"
-                                            Foreground="#a9a8b6"
-                                        />
-                                    <TextBlock
-                                            DockPanel.Dock="Right"
-                                            x:Name="AgentPaneState"
-                                            Text="starting"
-                                            VerticalAlignment="Center"
-                                            Foreground="#666779"
-                                            FontSize="10"
+                            <DockPanel Margin="9,0" LastChildFill="False">
+                                <!-- Title -->
+                                <TextBlock
+                                        DockPanel.Dock="Left"
+                                        x:Name="AgentPaneTitle"
+                                        Text="OPENCODE"
+                                        VerticalAlignment="Center"
+                                        FontFamily="Cascadia Mono"
+                                        FontSize="9"
+                                        Foreground="#a9a8b6"
+                                    />
+                                <!-- Separator -->
+                                <Border
+                                        DockPanel.Dock="Left"
+                                        Width="1"
+                                        Margin="8,6"
+                                        Background="#313244"
+                                        VerticalAlignment="Center"
+                                    />
+                                <!-- Session tab strip -->
+                                <Border
+                                        DockPanel.Dock="Left"
+                                        VerticalAlignment="Stretch"
+                                        Height="27"
+                                        MaxWidth="400"
+                                        Margin="9,0,0,0"
+                                        Background="Transparent"
+                                        ClipToBounds="True"
+                                    >
+                                    <ScrollViewer
+                                            HorizontalScrollBarVisibility="Auto"
+                                            VerticalScrollBarVisibility="Disabled"
+                                            Focusable="False"
+                                        >
+                                        <ItemsControl x:Name="AgentTabStrip" Margin="0,1,0,0">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border
+                                                            Background="{Binding Background}"
+                                                            Padding="9,0,4,0"
+                                                            BorderThickness="0,0,0,2"
+                                                            BorderBrush="{Binding Underline}"
+                                                            ToolTip="{Binding TypeLabel}"
+                                                        >
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <TextBlock
+                                                                    Text="{Binding TypeLabel}"
+                                                                    FontFamily="Cascadia Mono"
+                                                                    FontSize="10"
+                                                                    Foreground="{Binding Foreground}"
+                                                                    FontWeight="{Binding Weight}"
+                                                                    MaxWidth="70"
+                                                                    Padding="0,0,4,0"
+                                                                    TextTrimming="CharacterEllipsis"
+                                                                    VerticalAlignment="Center"
+                                                                    Cursor="Hand"
+                                                                    Tag="{Binding}"
+                                                                    MouseLeftButtonUp="AgentTabStrip_Click"
+                                                                />
+                                                            <Button
+                                                                    Width="16"
+                                                                    Height="22"
+                                                                    Padding="0"
+                                                                    Click="AgentTabClose_Click"
+                                                                    Tag="{Binding}"
+                                                                    Content="×"
+                                                                    FontFamily="Cascadia Mono"
+                                                                    FontSize="10"
+                                                                    Foreground="#7f849c"
+                                                                    Background="Transparent"
+                                                                    BorderThickness="0"
+                                                                    Cursor="Hand"
+                                                                    ToolTip="Close session"
+                                                                >
+                                                                <Button.Template>
+                                                                    <ControlTemplate TargetType="Button">
+                                                                        <Border
+                                                                                x:Name="CloseSurface"
+                                                                                Background="{TemplateBinding Background}"
+                                                                                CornerRadius="3"
+                                                                                Width="16"
+                                                                                Height="22"
+                                                                            >
+                                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                        </Border>
+                                                                        <ControlTemplate.Triggers>
+                                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                                <Setter TargetName="CloseSurface" Property="Background" Value="#f38ba8" />
+                                                                                <Setter Property="Foreground" Value="#11111b" />
+                                                                            </Trigger>
+                                                                        </ControlTemplate.Triggers>
+                                                                    </ControlTemplate>
+                                                                </Button.Template>
+                                                            </Button>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Border>
+                                <!-- + icon -->
+                                <Button
+                                        x:Name="AgentNewSessionButton"
+                                        Click="AgentNewSessionButton_Click"
+                                        ToolTip="New agent session"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Width="22"
+                                        Height="27"
+                                        Margin="0,0,4,0"
+                                        Padding="0"
+                                        Foreground="#7f849c"
+                                        Cursor="Hand"
+                                        FontFamily="Cascadia Mono"
+                                        FontSize="12"
+                                        Content="+"
+                                    >
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border
+                                                    x:Name="SplitSurface"
+                                                    Background="{TemplateBinding Background}"
+                                                    Width="22"
+                                                    Height="27"
+                                                >
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="SplitSurface" Property="Background" Value="#313244" />
+                                                    <Setter Property="Foreground" Value="#cdd6f4" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                                <!-- State -->
+                                <TextBlock
+                                        DockPanel.Dock="Right"
+                                        x:Name="AgentPaneState"
+                                        Text="starting"
+                                        VerticalAlignment="Center"
+                                        Foreground="#666779"
+                                        FontSize="10"
                                     />
                             </DockPanel>
                         </Border>
+                        <!-- Flyout for new agent session -->
+                        <Popup
+                                x:Name="AgentNewSessionFlyout"
+                                PlacementTarget="{Binding ElementName=AgentNewSessionButton}"
+                                Placement="Bottom"
+                                StaysOpen="False"
+                                AllowsTransparency="True"
+                            >
+                            <Border
+                                    Background="#181825"
+                                    BorderBrush="#313244"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="8"
+                                >
+                                <StackPanel>
+                                    <TextBlock
+                                            Text="NEW SESSION"
+                                            FontFamily="Cascadia Mono"
+                                            FontSize="9"
+                                            Foreground="#6c7086"
+                                            Margin="0,0,0,6"
+                                        />
+                                    <Button
+                                            x:Name="NewOpenCodeButton"
+                                            Click="NewOpenCodeButton_Click"
+                                            Style="{StaticResource WelcomeActionStyle}"
+                                            Padding="8,4"
+                                            Margin="0,0,0,4"
+                                            HorizontalContentAlignment="Left"
+                                        >
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE710;" FontFamily="Segoe Fluent Icons" Foreground="#89b4fa" Margin="0,0,6,0" />
+                                            <TextBlock Text="New OpenCode session" FontSize="11" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button
+                                            x:Name="NewCodexButton"
+                                            Click="NewCodexButton_Click"
+                                            Style="{StaticResource WelcomeActionStyle}"
+                                            Padding="8,4"
+                                            HorizontalContentAlignment="Left"
+                                        >
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xF0A0;" FontFamily="Segoe Fluent Icons" Foreground="#89b4fa" Margin="0,0,6,0" />
+                                            <TextBlock Text="New Codex session" FontSize="11" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                        <!-- Agent session content -->
                         <ContentControl
                                 Grid.Row="1"
                                 x:Name="AgentSlot"

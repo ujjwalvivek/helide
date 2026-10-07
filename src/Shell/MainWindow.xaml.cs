@@ -67,6 +67,10 @@ public partial class MainWindow : Window
     private double _rightPanePixels;
     private double _runnerPanePixels;
 
+    // Agent session tracking
+    private readonly ObservableCollection<AgentSessionView> _agentSessions = [];
+    private AgentSessionView? _activeAgentSession;
+
     internal MainWindow(AppStateStore stateStore, AppState state, string? startupProject = null)
     {
         _stateStore = stateStore;
@@ -304,8 +308,24 @@ public partial class MainWindow : Window
                 project);
             if (_runnerHost is null)
                 failures++;
-            if (CreateTerminal(AgentSlot, AgentPaneState, "opencode", ToolCommand("opencode.cmd"), project) is null)
-                failures++;
+            // Initialize agent session from saved state or create default
+            InitializeAgentSessions(project);
+            // Agent session is initialized separately; keep panel collapsed by default
+            if (_agentSessions.Count == 0)
+                CreateAgentSession("opencode", "OpenCode", ToolCommand("opencode.cmd"));
+
+            // Force agent and runner panels collapsed by default (matches state, fixes mismatch)
+            SetPanelCollapsed(ToolPanel.Agent, true);
+            SetPanelCollapsed(ToolPanel.Runner, true);
+            // Explicit absolute zero column/row to eliminate remaining space
+            RightPaneColumn.Width = new GridLength(0);
+            RightPaneColumn.MinWidth = 0;
+            RightSplitterColumn.Width = new GridLength(0);
+            RunnerPaneRow.Height = new GridLength(0);
+            RunnerPaneRow.MinHeight = 0;
+            RunnerSplitterRow.Height = new GridLength(0);
+            AgentPane.Visibility = Visibility.Collapsed;
+            RunnerPane.Visibility = Visibility.Collapsed;
 
             RunCommandButton.IsEnabled = _runnerHost is not null;
 
@@ -1034,12 +1054,12 @@ UpdateWorkspaceHealth();
     private double RememberedRightWidth() => FirstPositive(
         _rightPanePixels,
         _state.Layout.RightPixels,
-        ClampRatio(_state.Layout.RightRatio, 0.21) * Math.Max(RightPaneColumn.ActualWidth, 400));
+        Math.Max(ClampRatio(_state.Layout.RightRatio, 0.21) * Math.Max(ActualWidth > 0 ? ActualWidth : 1500, 1200), 250));
 
     private double RememberedRunnerHeight() => FirstPositive(
         _runnerPanePixels,
         _state.Layout.RunnerPixels,
-        ClampRatio(_state.Layout.RunnerRatio, 0.20) * Math.Max(RunnerPaneRow.ActualHeight, 200));
+        Math.Max(ClampRatio(_state.Layout.RunnerRatio, 0.20) * Math.Max(ActualHeight > 0 ? ActualHeight : 900, 600), 150));
 
     private static double FirstPositive(params double[] candidates)
     {
@@ -1095,6 +1115,119 @@ UpdateWorkspaceHealth();
     private NativeTerminalHost? ActiveLeftHost() => _leftHost;
 
     private NativeTerminalHost? ActiveEditorHost() => _activeEditorTab?.Host;
+
+    // Agent new session: opens the flyout
+    private void AgentNewSessionButton_Click(object sender, RoutedEventArgs e) =>
+        AgentNewSessionFlyout.IsOpen = true;
+
+    // Create a new OpenCode session replacing the panel
+    private void NewOpenCodeButton_Click(object sender, RoutedEventArgs e)
+    {
+        AgentNewSessionFlyout.IsOpen = false;
+        CreateAgentSession("opencode", "OpenCode", ToolCommand("opencode.cmd"));
+    }
+
+    // Create a new Codex session replacing the panel
+    private void NewCodexButton_Click(object sender, RoutedEventArgs e)
+    {
+        AgentNewSessionFlyout.IsOpen = false;
+        CreateAgentSession("codex", "Codex", ToolCommand("codex.cmd"));
+    }
+
+    private void CreateAgentSession(string type, string typeLabel, string commandLine)
+    {
+        if (_currentProject is null)
+            return;
+
+        try
+        {
+            // Create the new session host
+            var host = new NativeTerminalHost(type, commandLine, _currentProject!);
+            host.StateChanged += (_, state) => UpdatePaneState(AgentPaneState, state);
+
+            // Replace the agent panel content
+            AgentSlot.Content = host;
+            _terminalHosts.Add(host);
+            UpdateWorkspaceHealth();
+
+            // Track session - deactivate all, activate this new one
+            var session = new AgentSessionView(type, typeLabel);
+            session.Host = host;
+            foreach (var s in _agentSessions)
+                s.IsActive = false;
+            session.IsActive = true;
+            _agentSessions.Add(session);
+            _activeAgentSession = session;
+
+            // Update UI
+            AgentPaneTitle.Text = typeLabel.ToUpper();
+            UpdateAgentSessionUI();
+        }
+        catch (Exception exception)
+        {
+            AgentSlot.Content = CreateErrorPanel(type, exception);
+            AgentPaneState.Text = "failed";
+            AgentPaneState.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
+            UpdateWorkspaceHealth();
+        }
+    }
+
+    // Switch to an existing agent session
+    private void AgentSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is AgentSessionView session)
+        {
+            // Deactivate all, activate selected
+            foreach (var s in _agentSessions)
+                s.IsActive = ReferenceEquals(s, session);
+
+            if (session.Host is not null)
+            {
+                AgentSlot.Content = session.Host;
+                AgentPaneTitle.Text = session.TypeLabel.ToUpper();
+                _activeAgentSession = session;
+                session.Host.BringToFront();
+            }
+            UpdateAgentSessionUI();
+        }
+    }
+
+    // Update session list and title
+    private void UpdateAgentSessionUI()
+    {
+        AgentTabStrip.ItemsSource = null;
+        AgentTabStrip.ItemsSource = _agentSessions;
+    }
+
+    private void InitializeAgentSessions(string project)
+    {
+        _agentSessions.Clear();
+
+        // Load saved sessions for this project from AppState
+        var savedSessions = _state.AgentSessions;
+        if (savedSessions.Count > 0)
+        {
+            foreach (var saved in savedSessions)
+            {
+                var sessionType = saved.Type;
+                var sessionName = string.IsNullOrEmpty(saved.Name) ? sessionType.ToUpper() : saved.Name;
+                try
+                {
+                    var command = sessionType == "codex" ? ToolCommand("codex.cmd") : ToolCommand("opencode.cmd");
+                    CreateAgentSession(sessionType, sessionName, command);
+                }
+                catch
+                {
+                    // Skip failed sessions
+                }
+            }
+        }
+        else
+        {
+            // Default: create an OpenCode session
+            CreateAgentSession("opencode", "OpenCode", ToolCommand("opencode.cmd"));
+        }
+    }
 
     private static double ClampRatio(double value, double fallback) =>
         double.IsFinite(value) && value > 0.02 ? value : fallback;
@@ -1265,6 +1398,19 @@ UpdateWorkspaceHealth();
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        // Save agent sessions to AppState
+        _state.AgentSessions.Clear();
+        foreach (var session in _agentSessions)
+        {
+            _state.AgentSessions.Add(new AgentSessionState
+            {
+                Type = session.Type,
+                Name = session.Name,
+                CommandLine = session.Host is not null ? session.Host.Label : string.Empty,
+                CreatedUtc = DateTime.UtcNow,
+            });
+        }
+
         SaveWorkspaceLayout();
         SaveWindowGeometry();
         _stateStore.Save(_state);
@@ -1340,4 +1486,111 @@ UpdateWorkspaceHealth();
     }
 
     private sealed record RecentProjectView(string Name, string Path, string Shortcut);
+
+    // Agent tab strip click - switch sessions
+    private void AgentTabStrip_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is TextBlock tb && tb.Tag is AgentSessionView session)
+        {
+            // Deactivate all, activate this one
+            foreach (var s in _agentSessions)
+                s.IsActive = ReferenceEquals(s, session);
+
+            // Switch to this session
+            if (session.Host is not null)
+            {
+                AgentSlot.Content = session.Host;
+                AgentPaneTitle.Text = session.TypeLabel.ToUpper();
+                _activeAgentSession = session;
+                session.Host.BringToFront();
+            }
+            UpdateAgentSessionUI();
+            AgentTabStrip.Items.Refresh();
+        }
+    }
+
+    // Close agent session tab
+    private void AgentTabClose_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is AgentSessionView session)
+        {
+            // Dispose the session host
+            session.Host?.Dispose();
+
+            // Remove from tracking collections
+            _agentSessions.Remove(session);
+            if (session.Host is not null && _terminalHosts.Contains(session.Host))
+                _terminalHosts.Remove(session.Host);
+
+            // If this was the active session, switch to another one or create default
+            if (ReferenceEquals(_activeAgentSession, session))
+            {
+                if (_agentSessions.Count > 0)
+                {
+                    var nextSession = _agentSessions.Last();
+                    nextSession.IsActive = true;
+                    AgentSlot.Content = nextSession.Host;
+                    AgentPaneTitle.Text = nextSession.TypeLabel.ToUpper();
+                    _activeAgentSession = nextSession;
+                    nextSession.Host?.BringToFront();
+                }
+                else
+                {
+                    AgentSlot.Content = null;
+                    AgentPaneTitle.Text = "OPENCODE";
+                    _activeAgentSession = null;
+                }
+            }
+
+            UpdateAgentSessionUI();
+            UpdateWorkspaceHealth();
+        }
+    }
+
+    private sealed class AgentSessionView : INotifyPropertyChanged
+    {
+        private bool _isActive;
+
+        public string Type { get; }  // "opencode" or "codex"
+        public string TypeLabel => Type == "codex" ? "Codex" : "OpenCode";
+        public string Name { get; }
+        public NativeTerminalHost? Host { get; set; }
+
+        public AgentSessionView(string type, string name)
+        {
+            Type = type;
+            Name = name;
+        }
+
+        public System.Windows.Media.Brush Background => IsActive
+            ? new SolidColorBrush(Color.FromRgb(38, 39, 58))
+            : System.Windows.Media.Brushes.Transparent;
+
+        public System.Windows.Media.Brush Underline => IsActive
+            ? new SolidColorBrush(Color.FromRgb(137, 180, 250))
+            : System.Windows.Media.Brushes.Transparent;
+
+        public System.Windows.Media.Brush Foreground => IsActive
+            ? new SolidColorBrush(Color.FromRgb(205, 214, 244))
+            : new SolidColorBrush(Color.FromRgb(127, 132, 156));
+
+        public FontWeight Weight => IsActive ? FontWeights.SemiBold : FontWeights.Normal;
+
+        public bool IsActive
+        {
+            get => _isActive;
+            set
+            {
+                if (_isActive == value) return;
+                _isActive = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsActive)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Foreground)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Background)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Underline)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Weight)));
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
 }

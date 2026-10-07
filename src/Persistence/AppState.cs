@@ -7,6 +7,7 @@ internal sealed class AppState
     public List<RecentProjectState> RecentProjects { get; set; } = [];
     public WindowGeometryState Window { get; set; } = new();
     public WorkspaceLayoutState Layout { get; set; } = new();
+    public List<AgentSessionState> AgentSessions { get; set; } = [];
 }
 
 internal sealed class RecentProjectState
@@ -25,6 +26,14 @@ internal sealed class WindowGeometryState
     public bool IsMaximized { get; set; }
 }
 
+internal sealed class AgentSessionState
+{
+    public string Type { get; set; } = "opencode";  // "opencode" or "codex"
+    public string Name { get; set; } = string.Empty;
+    public string CommandLine { get; set; } = string.Empty;
+    public DateTime CreatedUtc { get; set; }
+}
+
 internal sealed class WorkspaceLayoutState
 {
     public double LeftRatio { get; set; } = 0.21;
@@ -37,7 +46,7 @@ internal sealed class WorkspaceLayoutState
     public double RightPixels { get; set; }
     public double RunnerPixels { get; set; }
     public bool LeftCollapsed { get; set; }
-    public bool RunnerCollapsed { get; set; }
-    public bool AgentCollapsed { get; set; }
+    public bool RunnerCollapsed { get; set; } = true;
+    public bool AgentCollapsed { get; set; } = true;
     public string LeftTool { get; set; } = "git";
 }
