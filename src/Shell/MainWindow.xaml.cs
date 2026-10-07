@@ -71,6 +71,10 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<AgentSessionView> _agentSessions = [];
     private AgentSessionView? _activeAgentSession;
 
+    // Runner session tracking
+    private readonly ObservableCollection<AgentSessionView> _runnerSessions = [];
+    private AgentSessionView? _activeRunnerSession;
+
     internal MainWindow(AppStateStore stateStore, AppState state, string? startupProject = null)
     {
         _stateStore = stateStore;
@@ -298,34 +302,51 @@ public partial class MainWindow : Window
             // this single host rather than adding a second one beside it.
             if (CreateEditorTab(null) is null)
                 failures++;
-            _runnerHost = CreateTerminal(
-                RunnerSlot,
-                RunnerPaneState,
-                "runner",
-                PowerShellCommand(
+            // Initialize runner session with startup message, or create default
+            InitializeRunnerSessions(project);
+            if (_runnerSessions.Count == 0)
+                CreateRunnerSession("runner", "pwsh", PowerShellCommand(
                     $"Write-Host {PowerShellLiteral($" Try {_runCommand}")} -ForegroundColor DarkCyan"
-                ),
-                project);
-            if (_runnerHost is null)
-                failures++;
+                ));
             // Initialize agent session from saved state or create default
             InitializeAgentSessions(project);
-            // Agent session is initialized separately; keep panel collapsed by default
+            // Agent session is initialized separately
             if (_agentSessions.Count == 0)
                 CreateAgentSession("opencode", "OpenCode", ToolCommand("opencode.cmd"));
 
-            // Force agent and runner panels collapsed by default (matches state, fixes mismatch)
-            SetPanelCollapsed(ToolPanel.Agent, true);
-            SetPanelCollapsed(ToolPanel.Runner, true);
-            // Explicit absolute zero column/row to eliminate remaining space
-            RightPaneColumn.Width = new GridLength(0);
-            RightPaneColumn.MinWidth = 0;
-            RightSplitterColumn.Width = new GridLength(0);
-            RunnerPaneRow.Height = new GridLength(0);
-            RunnerPaneRow.MinHeight = 0;
-            RunnerSplitterRow.Height = new GridLength(0);
-            AgentPane.Visibility = Visibility.Collapsed;
-            RunnerPane.Visibility = Visibility.Collapsed;
+            // Apply saved panel state (default collapsed for fresh launches, expanded if user toggled)
+            SetPanelCollapsed(ToolPanel.Agent, _state.Layout.AgentCollapsed);
+            SetPanelCollapsed(ToolPanel.Runner, _state.Layout.RunnerCollapsed);
+            // Explicit sync so visibility + column/row tracks always match saved collapsed state
+            AgentPane.Visibility = _state.Layout.AgentCollapsed ? Visibility.Collapsed : Visibility.Visible;
+            AgentPanelToggle.IsChecked = !_state.Layout.AgentCollapsed;
+            RunnerPane.Visibility = _state.Layout.RunnerCollapsed ? Visibility.Collapsed : Visibility.Visible;
+            TerminalPanelToggle.IsChecked = !_state.Layout.RunnerCollapsed;
+            // Direct column/width sync to eliminate leftover empty space from star redistribution
+            if (_state.Layout.AgentCollapsed)
+            {
+                RightPaneColumn.Width = new GridLength(0);
+                RightPaneColumn.MinWidth = 0;
+                RightSplitterColumn.Width = new GridLength(0);
+            }
+            else
+            {
+                RightPaneColumn.Width = new GridLength(RememberedRightWidth());
+                RightPaneColumn.MinWidth = _rightPaneMinWidth;
+                RightSplitterColumn.Width = _rightSplitterWidth;
+            }
+            if (_state.Layout.RunnerCollapsed)
+            {
+                RunnerPaneRow.Height = new GridLength(0);
+                RunnerPaneRow.MinHeight = 0;
+                RunnerSplitterRow.Height = new GridLength(0);
+            }
+            else
+            {
+                RunnerPaneRow.Height = new GridLength(RememberedRunnerHeight());
+                RunnerPaneRow.MinHeight = _runnerMinHeight;
+                RunnerSplitterRow.Height = _runnerSplitterHeight;
+            }
 
             RunCommandButton.IsEnabled = _runnerHost is not null;
 
@@ -952,7 +973,9 @@ UpdateWorkspaceHealth();
     private void TogglePanel(ToolPanel panel)
     {
         SetPanelCollapsed(panel, !IsPanelCollapsed(panel));
-        SaveLayoutAfterLayoutPasses();
+        // Save synchronously so persistence works immediately (not async)
+        SaveWorkspaceLayout();
+        _stateStore.Save(_state);
     }
 
     // Reading ActualWidth/ActualHeight immediately after changing a track still
@@ -1227,6 +1250,12 @@ UpdateWorkspaceHealth();
             // Default: create an OpenCode session
             CreateAgentSession("opencode", "OpenCode", ToolCommand("opencode.cmd"));
         }
+    }
+
+    private void InitializeRunnerSessions(string project)
+    {
+        _runnerSessions.Clear();
+        // Default runner session with startup message is created in OpenWorkspace
     }
 
     private static double ClampRatio(double value, double fallback) =>
@@ -1543,6 +1572,90 @@ UpdateWorkspaceHealth();
             }
 
             UpdateAgentSessionUI();
+            UpdateWorkspaceHealth();
+        }
+    }
+
+    // Runner session click - switch sessions
+    private void RunnerTabStrip_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is TextBlock tb && tb.Tag is AgentSessionView session)
+        {
+            foreach (var s in _runnerSessions)
+                s.IsActive = ReferenceEquals(s, session);
+
+            if (session.Host is not null)
+            {
+                RunnerSlot.Content = session.Host;
+                _activeRunnerSession = session;
+                session.Host.BringToFront();
+            }
+            RunnerTabStrip.Items.Refresh();
+        }
+    }
+
+    // Runner session close
+    private void RunnerTabClose_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is AgentSessionView session)
+        {
+            session.Host?.Dispose();
+            _runnerSessions.Remove(session);
+            if (session.Host is not null && _terminalHosts.Contains(session.Host))
+                _terminalHosts.Remove(session.Host);
+
+            if (ReferenceEquals(_activeRunnerSession, session))
+            {
+                if (_runnerSessions.Count > 0)
+                {
+                    var nextSession = _runnerSessions.Last();
+                    nextSession.IsActive = true;
+                    RunnerSlot.Content = nextSession.Host;
+                    _activeRunnerSession = nextSession;
+                    nextSession.Host?.BringToFront();
+                }
+                else
+                {
+                    RunnerSlot.Content = null;
+                    _activeRunnerSession = null;
+                }
+            }
+            RunnerTabStrip.Items.Refresh();
+            UpdateWorkspaceHealth();
+        }
+    }
+
+    private void RunnerNewSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"));
+    }
+
+    private void CreateRunnerSession(string type, string label, string commandLine)
+    {
+        if (_currentProject is null) return;
+        try
+        {
+            var host = new NativeTerminalHost(type, commandLine, _currentProject!);
+            host.StateChanged += (_, state) => UpdatePaneState(RunnerPaneState, state);
+            RunnerSlot.Content = host;
+            _terminalHosts.Add(host);
+            UpdateWorkspaceHealth();
+
+            var session = new AgentSessionView(type, label);
+            session.Host = host;
+            foreach (var s in _runnerSessions)
+                s.IsActive = false;
+            session.IsActive = true;
+            _runnerSessions.Add(session);
+            _activeRunnerSession = session;
+            RunnerTabStrip.ItemsSource = null;
+            RunnerTabStrip.ItemsSource = _runnerSessions;
+        }
+        catch (Exception exception)
+        {
+            RunnerSlot.Content = CreateErrorPanel(type, exception);
+            RunnerPaneState.Text = "failed";
+            RunnerPaneState.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
             UpdateWorkspaceHealth();
         }
     }
