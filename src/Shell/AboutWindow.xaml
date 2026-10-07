@@ -1,0 +1,157 @@
+<Window
+    x:Class="Helide.AboutWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="About Helide"
+    Height="380"
+    Width="420"
+    WindowStartupLocation="CenterOwner"
+    WindowStyle="None"
+    ResizeMode="NoResize"
+    AllowsTransparency="True"
+    Background="Transparent"
+    Foreground="#cdd6f4"
+    FontFamily="Segoe UI Variable Text"
+    UseLayoutRounding="True"
+    SnapsToDevicePixels="True"
+>
+    <Window.Resources>
+        <SolidColorBrush x:Key="AboutBg" Color="#1e1e2e" />
+        <SolidColorBrush x:Key="AboutBorder" Color="#313244" />
+        <SolidColorBrush x:Key="AboutMuted" Color="#a6adc8" />
+        <SolidColorBrush x:Key="AboutFaint" Color="#6c7086" />
+        <SolidColorBrush x:Key="AboutAccent" Color="#89b4fa" />
+
+        <Style x:Key="AboutButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#313244" />
+            <Setter Property="Foreground" Value="#cdd6f4" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="16,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="BtnSurface"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="2"
+                            Padding="{TemplateBinding Padding}"
+                        >
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnSurface" Property="Background" Value="#45475a" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="BtnSurface" Property="Background" Value="#585b70" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AboutLinkStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#89b4fa" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock Text="{TemplateBinding Content}" TextDecorations="Underline" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border
+        Background="{StaticResource AboutBg}"
+        BorderBrush="{StaticResource AboutBorder}"
+        BorderThickness="1"
+        CornerRadius="4"
+    >
+        <Grid Margin="28,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal">
+                <Border
+                    Width="48"
+                    Height="48"
+                    CornerRadius="4"
+                    Margin="0,0,14,0"
+                    Background="Transparent"
+                >
+                    <Image
+                        Source="/src/Assets/helide.png"
+                        Width="48"
+                        Height="48"
+                        RenderOptions.BitmapScalingMode="HighQuality"
+                    />
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock
+                        Text="Helide"
+                        FontSize="20"
+                        FontWeight="SemiBold"
+                        Foreground="#cdd6f4"
+                    />
+                    <TextBlock
+                        Text="A terminal workspace that brings the project tools you need."
+                        Margin="0,3,0,0"
+                        Foreground="{StaticResource AboutMuted}"
+                        FontSize="11"
+                    />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" VerticalAlignment="Center">
+                <TextBlock
+                    Text="Version 0.1.0"
+                    Foreground="{StaticResource AboutFaint}"
+                    FontFamily="Cascadia Mono"
+                    FontSize="10"
+                    Margin="0,0,0,10"
+                />
+                <TextBlock
+                    Text="Source code on GitHub:"
+                    Foreground="{StaticResource AboutMuted}"
+                    FontSize="11"
+                    Margin="0,0,0,4"
+                />
+                <Button
+                    x:Name="GitHubLink"
+                    Click="GitHubLink_Click"
+                    Style="{StaticResource AboutLinkStyle}"
+                    Content="github.com/ujjwalvivek/helide"
+                    HorizontalAlignment="Left"
+                    FontSize="11"
+                />
+            </StackPanel>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button
+                    x:Name="UpdateButton"
+                    Click="UpdateButton_Click"
+                    Style="{StaticResource AboutButtonStyle}"
+                    Content="Check for Updates"
+                    Margin="0,0,8,0"
+                />
+                <Button
+                    x:Name="OkButton"
+                    Click="OkButton_Click"
+                    Style="{StaticResource AboutButtonStyle}"
+                    Content="OK"
+                    MinWidth="72"
+                />
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
