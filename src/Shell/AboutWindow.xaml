@@ -114,7 +114,7 @@
 
             <StackPanel Grid.Row="1" VerticalAlignment="Center">
                 <TextBlock
-                    Text="Version 0.1.0"
+                    Text="Version 1.2.0"
                     Foreground="{StaticResource AboutFaint}"
                     FontFamily="Cascadia Mono"
                     FontSize="10"

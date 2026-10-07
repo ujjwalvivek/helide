@@ -3,10 +3,10 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Helide | A terminal workspace for Windows</title>
+        <title>Helide | Workspace</title>
         <meta
             name="description"
-            content="Helide is a WPF terminal workspace for Windows: git status, the Helix editor, a command runner, and opencode chat in one dark window."
+            content="Helide is a WPF workspace for Windows: lazygit or yazi, Helix with tabbed buffers, a terminal runner, and multi-agent chat in one dark window."
         />
         <link rel="icon" type="image/svg+xml" href="helide.svg" />
         <link rel="stylesheet" href="styles.css" />
@@ -18,69 +18,57 @@
                     <span class="dot dot-pink"></span>
                     <span class="dot dot-blue"></span>
                     <span class="dot dot-green"></span>
-                    <span class="title">helide workspace</span>
+                    <span class="title">terminal workspace</span>
                 </div>
+
                 <div class="hero">
-                    <img
-                        class="logo"
-                        src="helide.svg"
-                        width="96"
-                        height="96"
-                        alt="Helide"
-                    />
-                    <h1>Helide</h1>
-                    <p class="tagline">
-                        A terminal workspace for Windows. Git status, the Helix
-                        editor, a command runner, and opencode chat in one dark
-                        window.
-                    </p>
-                    <div class="prompt">
-                        <span class="chevron">&gt;</span
-                        ><span>helide --version</span>
+                    <div class="fetch">
+                        <div class="logo-box">
+                            <img
+                                class="logo"
+                                src="helide.svg"
+                                alt="Helide"
+                            />
+                        </div>
+                        <div class="fetch-info">
+                            <pre class="fetch-text">
+<span class="label cat-rosewater">helide</span>@<span id="version" class="label cat-flamingo">loading…</span><span class="cursor"></span>
+-------------------
+<span class="key cat-green">os</span>           <span class="cat-text">win x64</span>
+<span class="key cat-yellow">shell</span>        <span class="cat-text">pwsh</span>
+<span class="key cat-mauve">agent</span>        <span class="cat-text">opencode / codex</span>
+<span class="key cat-blue">editor</span>       <span class="cat-text">helix</span>
+<span class="key cat-teal">explorer</span>     <span class="cat-text">yazi</span>
+<span class="key cat-orange">versioning</span>   <span class="cat-text">lazygit</span>
+</pre>
+                        </div>
                     </div>
-                    <div class="prompt result">
-                        <span id="version" class="result-text">loading…</span
-                        ><span class="cursor"></span>
-                    </div>
-                    <a
-                        id="download"
-                        class="btn"
-                        href="https://github.com/ujjwalvivek/helide/releases/latest"
-                        target="_blank"
-                        rel="noopener"
-                    >
-                        <span id="btn-label">Download for Windows</span>
-                    </a>
-                    <a
-                        class="link"
-                        href="https://github.com/ujjwalvivek/helide"
-                        target="_blank"
-                        rel="noopener"
-                        >view source on github</a
-                    >
                 </div>
-            </section>
-            <section class="panes">
-                <div class="pane" style="--accent: #a6e3a1">
-                    <span class="pane-dot"></span>
-                    <h2>git</h2>
-                    <p>Branch, status, and diff at a glance.</p>
-                </div>
-                <div class="pane" style="--accent: #89b4fa">
-                    <span class="pane-dot"></span>
-                    <h2>helix</h2>
-                    <p>The modal editor, always open.</p>
-                </div>
-                <div class="pane" style="--accent: #cba6f7">
-                    <span class="pane-dot"></span>
-                    <h2>runner</h2>
-                    <p>Run commands without leaving.</p>
-                </div>
-                <div class="pane" style="--accent: #f5c2e7">
-                    <span class="pane-dot"></span>
-                    <h2>opencode</h2>
-                    <p>Chat with your codebase.</p>
-                </div>
+                
+                <section class="panes">
+                    <div class="prompt"><span class="chevron">></span><span class="chevron">lazygit + yazi</span></div>
+                    <div class="prompt result"><span class="result-text">Git status, diffs, or file trees, swap from the status bar.</span></div>
+
+                    <div class="prompt"><span class="chevron">></span><span class="chevron" >helix</span></div>
+                    <div class="prompt result"><span class="result-text">The modal editor, open by default. Each file gets its own tab.</span></div>
+
+                    <div class="prompt"><span class="chevron">></span><span class="chevron">runner</span></div>
+                    <div class="prompt result"><span class="result-text">Terminal sessions that stay out of your way until you need them.</span></div>
+
+                    <div class="prompt"><span class="chevron">></span><span class="chevron">agent panel</span></div>
+                    <div class="prompt result"><span class="result-text">Multi-agent tabs for OpenCode or Codex. Keep chats alongside code.</span></div>
+
+                    <div class="prompt"><span class="chevron">></span><span class="chevron">tabbed everything</span></div>
+                    <div class="prompt result"><span class="result-text">Editor buffers, agents, and terminal runners, all tabbed.</span></div>
+
+                    <div class="prompt"><span class="chevron">></span><span class="chevron">collapsible panels</span></div>
+                    <div class="prompt result"><span class="result-text">Expand or collapse any surface. Your layout remains saved.</span></div>
+                </section>
+
+                <section class="download">
+                    <div class="prompt"><span class="chevron">></span><a id="download" href="https://github.com/ujjwalvivek/helide/releases/latest" target="_blank" rel="noopener" class="term-link">Download <span id="version" class="label cat-flamingo">loading…</span> for Windows </a></div>
+                    <div class="prompt"><span class="chevron">></span><a href="https://github.com/ujjwalvivek/helide" target="_blank" rel="noopener" class="term-link">view source on github</a></div>
+                </section>
             </section>
         </main>
         <footer>

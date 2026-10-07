@@ -1,7 +1,7 @@
 const API = "https://api.github.com/repos/ujjwalvivek/helide/releases/latest";
 const FALLBACK = "https://github.com/ujjwalvivek/helide/releases/latest";
 
-const versionEl = document.getElementById("version");
+const versionEls = document.querySelectorAll("#version");
 const downloadEl = document.getElementById("download");
 const btnLabel = document.getElementById("btn-label");
 
@@ -26,18 +26,18 @@ async function loadRelease() {
       (a) => a.name === "helide-win-x64.zip",
     );
 
-    if (tag) versionEl.textContent = "v" + tag;
+    if (tag) versionEls.forEach(el => el.textContent = "v" + tag);
 
     if (asset && asset.browser_download_url) {
-      downloadEl.href = asset.browser_download_url;
+      if (downloadEl) downloadEl.href = asset.browser_download_url;
       const size = formatSize(asset.size);
-      btnLabel.textContent =
+      if (btnLabel) btnLabel.textContent =
         "Download for Windows" + (size ? " - " + size : "");
     }
   } catch (err) {
-    versionEl.textContent = "v1.2.0";
-    downloadEl.href = FALLBACK;
-    btnLabel.textContent = "Download for Windows";
+    versionEls.forEach(el => el.textContent = "v1.2.0");
+    if (downloadEl) downloadEl.href = FALLBACK;
+    if (btnLabel) btnLabel.textContent = "Download for Windows";
   }
 }
 
