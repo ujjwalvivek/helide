@@ -139,7 +139,7 @@ public partial class MainWindow : Window
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
-    private void HomeButton_Click(object sender, RoutedEventArgs e) => ShowWelcome();
+    private void HomeButton_Click(object sender, RoutedEventArgs e) => AppMenuPopup.IsOpen = true;
 
     private void MinimizeCaptionButton_Click(object sender, RoutedEventArgs e) =>
         SystemCommands.MinimizeWindow(this);
@@ -167,9 +167,9 @@ public partial class MainWindow : Window
         SaveWorkspaceLayout();
         WorkspaceRoot.Visibility = Visibility.Collapsed;
         WelcomeRoot.Visibility = Visibility.Visible;
-        WindowTitleText.Text = "Open Recent Project";
-        RunCommandButton.Visibility = Visibility.Collapsed;
-        OpenFolderTopButton.Content = "Open folder…";
+        ProjectNamePill.Visibility = Visibility.Collapsed;
+        ProjectPathPill.Visibility = Visibility.Collapsed;
+        GitBranchPill.Visibility = Visibility.Collapsed;
         Title = "Open Recent Project";
         PopulateWelcome();
         OpenProjectButton.Focus();
@@ -186,9 +186,6 @@ public partial class MainWindow : Window
         WelcomeRoot.Visibility = Visibility.Collapsed;
         WorkspaceRoot.Visibility = Visibility.Visible;
         var projectName = new DirectoryInfo(_currentProject).Name;
-        WindowTitleText.Text = projectName;
-        RunCommandButton.Visibility = Visibility.Visible;
-        OpenFolderTopButton.Content = "Open…";
         Title = $"Helide | {projectName}";
     }
 
@@ -281,11 +278,19 @@ public partial class MainWindow : Window
             var projectName = new DirectoryInfo(project).Name;
             var branch = ProjectDetector.DetectGitBranch(project);
 
-            ProjectStatus.Text = branch is null
-                ? project
-                : $"{project}  ·  {branch}";
-            RunCommandButton.Content = _runCommand == "pwsh" ? "Focus runner" : $"Run  {_runCommand}";
-            RunCommandButton.ToolTip = _runCommand;
+            ProjectNamePillText.Text = projectName;
+            ProjectNamePill.Visibility = Visibility.Visible;
+            ProjectPathPillText.Text = project;
+            ProjectPathPill.Visibility = Visibility.Visible;
+            if (branch is not null)
+            {
+                GitBranchPillText.Text = branch;
+                GitBranchPill.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                GitBranchPill.Visibility = Visibility.Collapsed;
+            }
             ResetPaneStates();
 
             ShowWorkspace();
@@ -348,8 +353,6 @@ public partial class MainWindow : Window
                 RunnerSplitterRow.Height = _runnerSplitterHeight;
             }
 
-            RunCommandButton.IsEnabled = _runnerHost is not null;
-
             _stateStore.RecordProject(_state, project);
             if (failures > 0)
                 WelcomeStatus.Text = $"{failures} tool pane{(failures == 1 ? "" : "s")} failed to start.";
@@ -376,7 +379,6 @@ public partial class MainWindow : Window
             host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
             slot.Content = host;
             _terminalHosts.Add(host);
-            UpdateWorkspaceHealth();
             return host;
         }
         catch (Exception exception)
@@ -384,7 +386,6 @@ public partial class MainWindow : Window
             slot.Content = CreateErrorPanel(label, exception);
             stateText.Text = "failed";
             stateText.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
-            UpdateWorkspaceHealth();
             return null;
         }
     }
@@ -406,9 +407,9 @@ public partial class MainWindow : Window
         _leftHost = host;
         _leftHostTool = tool;
         stateText.Text = "starting";
-UpdateWorkspaceHealth();
-            // Opening a file should land the caret in it, so move real keyboard focus
-            // to the new renderer rather than leaving it on the file browser.
+            Dispatcher.BeginInvoke(
+                DispatcherPriority.ContextIdle,
+                new Action(() => host.BringToFront()));
             Dispatcher.BeginInvoke(
                 DispatcherPriority.ContextIdle,
                 new Action(() => host.BringToFront()));
@@ -603,7 +604,6 @@ UpdateWorkspaceHealth();
             _editorTabs.Add(tab);
             _terminalHosts.Add(host);
             ActivateEditorTab(tab);
-            UpdateWorkspaceHealth();
             return tab;
         }
         catch (Exception exception)
@@ -677,7 +677,6 @@ UpdateWorkspaceHealth();
             ActivateNeighbourAfter(tab);
         }
 
-        UpdateWorkspaceHealth();
     }
 
     private void ActivateNeighbourAfter(EditorTab removed)
@@ -718,22 +717,6 @@ UpdateWorkspaceHealth();
             TerminalHostState.Failed => Color.FromRgb(243, 139, 168),
             _ => Color.FromRgb(102, 103, 121),
         });
-        UpdateWorkspaceHealth();
-    }
-
-    private void UpdateWorkspaceHealth()
-    {
-        if (_closingWorkspace)
-            return;
-
-        // Left tool, editor, runner, agent: one host each, always.
-        var ready = _terminalHosts.Count(host => host.State == TerminalHostState.Ready);
-        var total = Math.Max(_terminalHosts.Count, ExpectedToolCount);
-        WorkspaceHealthText.Text = ready == total
-            ? "workspace ready"
-            : $"{ready}/{total} tools ready";
-        WorkspaceHealthText.Foreground = new SolidColorBrush(
-            ready == total ? Color.FromRgb(166, 227, 161) : Color.FromRgb(119, 120, 136));
     }
 
     private void ResetPaneStates()
@@ -744,7 +727,6 @@ UpdateWorkspaceHealth();
             stateText.Text = "starting";
             stateText.Foreground = new SolidColorBrush(Color.FromRgb(102, 103, 121));
         }
-        WorkspaceHealthText.Text = $"0/{ExpectedToolCount} tools ready";
     }
 
     private static Border CreateErrorPanel(string label, Exception exception) => new()
@@ -761,14 +743,86 @@ UpdateWorkspaceHealth();
         },
     };
 
-    private void RunCommandButton_Click(object sender, RoutedEventArgs e)
+    private void MenuOpenFolder_Click(object sender, RoutedEventArgs e)
     {
+        AppMenuPopup.IsOpen = false;
+        OpenProjectButton_Click(this, new RoutedEventArgs());
+    }
+
+    private void MenuCloseWorkspace_Click(object sender, RoutedEventArgs e)
+    {
+        AppMenuPopup.IsOpen = false;
+        ShowWelcome();
+    }
+
+    private void MenuExit_Click(object sender, RoutedEventArgs e)
+    {
+        AppMenuPopup.IsOpen = false;
+        Close();
+    }
+
+    private void MenuFocusLeft_Click(object sender, RoutedEventArgs e)
+    {
+        AppMenuPopup.IsOpen = false;
+        if (ActiveLeftHost() is { } host)
+        {
+            if (IsPanelCollapsed(ToolPanel.Left))
+                TogglePanel(ToolPanel.Left);
+            host.FocusTerminal();
+        }
+    }
+
+    private void MenuFocusEditor_Click(object sender, RoutedEventArgs e)
+    {
+        AppMenuPopup.IsOpen = false;
+        if (ActiveEditorHost() is { } host)
+            host.FocusTerminal();
+    }
+
+    private void MenuFocusRunner_Click(object sender, RoutedEventArgs e)
+    {
+        AppMenuPopup.IsOpen = false;
+        if (_runnerHost is { } host)
+        {
+            if (IsPanelCollapsed(ToolPanel.Runner))
+                TogglePanel(ToolPanel.Runner);
+            host.FocusTerminal();
+        }
+    }
+
+    private void MenuFocusAgent_Click(object sender, RoutedEventArgs e)
+    {
+        AppMenuPopup.IsOpen = false;
+        if (_activeAgentSession?.Host is { } host)
+        {
+            if (IsPanelCollapsed(ToolPanel.Agent))
+                TogglePanel(ToolPanel.Agent);
+            host.FocusTerminal();
+        }
+    }
+
+    private void MenuFocusProject_Click(object sender, RoutedEventArgs e)
+    {
+        AppMenuPopup.IsOpen = false;
+        ToggleLeftTool(LeftTool.Project);
+    }
+
+    private void MenuRunCommand_Click(object sender, RoutedEventArgs e)
+    {
+        AppMenuPopup.IsOpen = false;
         if (_runnerHost is null)
             return;
 
         _runnerHost.FocusTerminal();
         if (_runCommand != "pwsh")
             _runnerHost.WriteLine(_runCommand);
+    }
+
+    private void MenuAbout_Click(object sender, RoutedEventArgs e)
+    {
+        AppMenuPopup.IsOpen = false;
+        var about = new AboutWindow { Owner = this };
+        about.ShowDialog();
     }
 
     private void MainWindow_PreviewKeyDown(object sender, WpfKeyEventArgs e)
@@ -1171,16 +1225,14 @@ UpdateWorkspaceHealth();
             // Replace the agent panel content
             AgentSlot.Content = host;
             _terminalHosts.Add(host);
-            UpdateWorkspaceHealth();
 
-            // Track session - deactivate all, activate this new one
-            var session = new AgentSessionView(type, typeLabel);
-            session.Host = host;
+            var newSession = new AgentSessionView(type, typeLabel);
+            newSession.Host = host;
             foreach (var s in _agentSessions)
                 s.IsActive = false;
-            session.IsActive = true;
-            _agentSessions.Add(session);
-            _activeAgentSession = session;
+            newSession.IsActive = true;
+            _agentSessions.Add(newSession);
+            _activeAgentSession = newSession;
 
             // Update UI
             AgentPaneTitle.Text = typeLabel.ToUpper();
@@ -1191,11 +1243,8 @@ UpdateWorkspaceHealth();
             AgentSlot.Content = CreateErrorPanel(type, exception);
             AgentPaneState.Text = "failed";
             AgentPaneState.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
-            UpdateWorkspaceHealth();
         }
     }
-
-    // Switch to an existing agent session
     private void AgentSessionButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is AgentSessionView session)
@@ -1572,11 +1621,8 @@ UpdateWorkspaceHealth();
             }
 
             UpdateAgentSessionUI();
-            UpdateWorkspaceHealth();
         }
     }
-
-    // Runner session click - switch sessions
     private void RunnerTabStrip_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is TextBlock tb && tb.Tag is AgentSessionView session)
@@ -1621,7 +1667,6 @@ UpdateWorkspaceHealth();
                 }
             }
             RunnerTabStrip.Items.Refresh();
-            UpdateWorkspaceHealth();
         }
     }
 
@@ -1639,7 +1684,6 @@ UpdateWorkspaceHealth();
             host.StateChanged += (_, state) => UpdatePaneState(RunnerPaneState, state);
             RunnerSlot.Content = host;
             _terminalHosts.Add(host);
-            UpdateWorkspaceHealth();
 
             var session = new AgentSessionView(type, label);
             session.Host = host;
@@ -1656,7 +1700,6 @@ UpdateWorkspaceHealth();
             RunnerSlot.Content = CreateErrorPanel(type, exception);
             RunnerPaneState.Text = "failed";
             RunnerPaneState.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
-            UpdateWorkspaceHealth();
         }
     }
 

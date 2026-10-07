@@ -18,10 +18,10 @@
 >
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome
-            CaptionHeight="42"
+            CaptionHeight="32"
             ResizeBorderThickness="6"
             GlassFrameThickness="0"
-            CornerRadius="10"
+            CornerRadius="4"
             UseAeroCaptionButtons="False"
         />
     </shell:WindowChrome.WindowChrome>
@@ -48,7 +48,7 @@
                         <Border
                             x:Name="Chrome"
                             Background="{TemplateBinding Background}"
-                            CornerRadius="4"
+                            CornerRadius="2"
                             Padding="{TemplateBinding Padding}"
                         >
                             <ContentPresenter
@@ -93,7 +93,7 @@
 
         <Style x:Key="CaptionButtonStyle" TargetType="Button">
             <Setter Property="Width" Value="46" />
-            <Setter Property="Height" Value="42" />
+            <Setter Property="Height" Value="32" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="#cdd6f4" />
             <Setter Property="BorderThickness" Value="0" />
@@ -216,7 +216,7 @@
             <Setter Property="Background" Value="#181825" />
             <Setter Property="BorderBrush" Value="#313244" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
-            <Setter Property="CornerRadius" Value="6,6,0,0" />
+            <Setter Property="CornerRadius" Value="2,2,0,0" />
         </Style>
 
         <Style x:Key="PanelToggleStyle" TargetType="ToggleButton">
@@ -235,7 +235,7 @@
                         <Border
                             x:Name="ToggleSurface"
                             Background="{TemplateBinding Background}"
-                            CornerRadius="4"
+                            CornerRadius="2"
                         >
                             <ContentPresenter
                                 HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -283,12 +283,65 @@
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
+
+        <Style x:Key="TitlePillStyle" TargetType="Border">
+            <Setter Property="Background" Value="#313244" />
+            <Setter Property="CornerRadius" Value="2" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+        </Style>
+
+        <Style x:Key="TitlePillTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#a6adc8" />
+            <Setter Property="FontFamily" Value="Cascadia Mono" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="MenuItemStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#cdd6f4" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="MenuRow"
+                            Background="{TemplateBinding Background}"
+                            Padding="{TemplateBinding Padding}"
+                        >
+                            <ContentPresenter
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="Center"
+                            />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="MenuRow" Property="Background" Value="#313244" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MenuHeaderStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#6c7086" />
+            <Setter Property="FontFamily" Value="Cascadia Mono" />
+            <Setter Property="FontSize" Value="9" />
+            <Setter Property="Padding" Value="12,6,12,4" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
     </Window.Resources>
 
     <Grid Background="{StaticResource WindowBrush}">
         <Grid x:Name="MaximizeInset" Margin="0">
         <Grid.RowDefinitions>
-            <RowDefinition Height="42" />
+            <RowDefinition Height="32" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -303,7 +356,6 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel
                         Grid.Column="0"
@@ -314,10 +366,10 @@
                             x:Name="HomeButton"
                             Click="HomeButton_Click"
                             Style="{StaticResource ChromeButtonStyle}"
-                            Width="30"
-                            Height="30"
-                            Padding="5"
-                            ToolTip="Welcome"
+                            Width="26"
+                            Height="26"
+                            Padding="1"
+                            ToolTip="Menu"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         >
                         <Image
@@ -327,40 +379,28 @@
                                 RenderOptions.BitmapScalingMode="HighQuality"
                             />
                     </Button>
-                    <TextBlock
-                            x:Name="WindowTitleText"
-                            Text="Open Recent Project"
-                            Margin="9,0,0,0"
-                            VerticalAlignment="Center"
-                            Foreground="#cdd6f4"
-                            FontSize="12"
-                            FontWeight="SemiBold"
-                        />
+                    <Border x:Name="ProjectNamePill" Style="{StaticResource TitlePillStyle}" Visibility="Collapsed">
+                        <TextBlock
+                                x:Name="ProjectNamePillText"
+                                Style="{StaticResource TitlePillTextStyle}"
+                            />
+                    </Border>
+                    <Border x:Name="ProjectPathPill" Style="{StaticResource TitlePillStyle}" Visibility="Collapsed">
+                        <TextBlock
+                                x:Name="ProjectPathPillText"
+                                Style="{StaticResource TitlePillTextStyle}"
+                            />
+                    </Border>
+                    <Border x:Name="GitBranchPill" Style="{StaticResource TitlePillStyle}" Visibility="Collapsed">
+                        <TextBlock
+                                x:Name="GitBranchPillText"
+                                Style="{StaticResource TitlePillTextStyle}"
+                            />
+                    </Border>
                 </StackPanel>
 
                 <StackPanel
                         Grid.Column="2"
-                        Orientation="Horizontal"
-                        VerticalAlignment="Center"
-                    >
-                    <Button
-                            x:Name="RunCommandButton"
-                            Click="RunCommandButton_Click"
-                            Style="{StaticResource ChromeButtonStyle}"
-                            Content="Run project"
-                            Visibility="Collapsed"
-                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                        />
-                    <Button
-                            x:Name="OpenFolderTopButton"
-                            Click="OpenProjectButton_Click"
-                            Style="{StaticResource ChromeButtonStyle}"
-                            Content="Open folder…"
-                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                        />
-                </StackPanel>
-                <StackPanel
-                        Grid.Column="3"
                         Orientation="Horizontal"
                         Margin="8,0,0,0"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"
@@ -405,6 +445,78 @@
             </Grid>
         </Border>
 
+        <Popup
+            x:Name="AppMenuPopup"
+            PlacementTarget="{Binding ElementName=HomeButton}"
+            Placement="Bottom"
+            StaysOpen="False"
+            AllowsTransparency="True"
+        >
+            <Border
+                Background="#1e1e2e"
+                BorderBrush="#313244"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="4"
+            >
+                <StackPanel>
+                    <TextBlock Text="FILE" Style="{StaticResource MenuHeaderStyle}" />
+                    <Button x:Name="MenuOpenFolder" Click="MenuOpenFolder_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock>
+                            <Run Text="Open Folder" />
+                            <Run Text="  Ctrl+O" Foreground="#6c7086" FontSize="10" />
+                        </TextBlock>
+                    </Button>
+                    <Button x:Name="MenuCloseWorkspace" Click="MenuCloseWorkspace_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock Text="Close Workspace" />
+                    </Button>
+                    <Button x:Name="MenuExit" Click="MenuExit_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock Text="Exit" />
+                    </Button>
+
+                    <TextBlock Text="CONTROLS" Style="{StaticResource MenuHeaderStyle}" />
+                    <Button x:Name="MenuFocusLeft" Click="MenuFocusLeft_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock>
+                            <Run Text="Focus Left Panel" />
+                            <Run Text="  Ctrl+1" Foreground="#6c7086" FontSize="10" />
+                        </TextBlock>
+                    </Button>
+                    <Button x:Name="MenuFocusEditor" Click="MenuFocusEditor_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock>
+                            <Run Text="Focus Editor" />
+                            <Run Text="  Ctrl+2" Foreground="#6c7086" FontSize="10" />
+                        </TextBlock>
+                    </Button>
+                    <Button x:Name="MenuFocusRunner" Click="MenuFocusRunner_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock>
+                            <Run Text="Focus Runner" />
+                            <Run Text="  Ctrl+3" Foreground="#6c7086" FontSize="10" />
+                        </TextBlock>
+                    </Button>
+                    <Button x:Name="MenuFocusAgent" Click="MenuFocusAgent_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock>
+                            <Run Text="Focus Agent" />
+                            <Run Text="  Ctrl+4" Foreground="#6c7086" FontSize="10" />
+                        </TextBlock>
+                    </Button>
+                    <Button x:Name="MenuFocusProject" Click="MenuFocusProject_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock>
+                            <Run Text="Focus Project" />
+                            <Run Text="  Ctrl+5" Foreground="#6c7086" FontSize="10" />
+                        </TextBlock>
+                    </Button>
+                    <Button x:Name="MenuRunCommand" Click="MenuRunCommand_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock Text="Run Command" />
+                    </Button>
+
+                    <TextBlock Text="HELP" Style="{StaticResource MenuHeaderStyle}" />
+                    <Button x:Name="MenuAbout" Click="MenuAbout_Click" Style="{StaticResource MenuItemStyle}">
+                        <TextBlock Text="About Helide" />
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Popup>
+
         <Grid Grid.Row="1">
             <Grid
                     x:Name="WelcomeRoot"
@@ -427,7 +539,7 @@
                                 <Border
                                         Width="60"
                                         Height="60"
-                                        CornerRadius="16"
+                                        CornerRadius="4"
                                         Margin="0,0,18,0"
                                         Background="Transparent"
                                     >
@@ -843,7 +955,7 @@
                                                                                 <Border
                                                                                         x:Name="CloseSurface"
                                                                                         Background="{TemplateBinding Background}"
-                                                                                        CornerRadius="3"
+                                                                                        CornerRadius="2"
                                                                                 >
                                                                                     <ContentPresenter
                                                                                             HorizontalAlignment="Center"
@@ -1017,7 +1129,7 @@
                                                                             <Border
                                                                                     x:Name="CloseSurface"
                                                                                     Background="{TemplateBinding Background}"
-                                                                                    CornerRadius="3"
+                                                                                    CornerRadius="2"
                                                                                     Width="16"
                                                                                     Height="22"
                                                                                 >
@@ -1197,7 +1309,7 @@
                                                                         <Border
                                                                                 x:Name="CloseSurface"
                                                                                 Background="{TemplateBinding Background}"
-                                                                                CornerRadius="3"
+                                                                                CornerRadius="2"
                                                                                 Width="16"
                                                                                 Height="22"
                                                                             >
@@ -1278,7 +1390,7 @@
                                     Background="#181825"
                                     BorderBrush="#313244"
                                     BorderThickness="1"
-                                    CornerRadius="6"
+                                    CornerRadius="2"
                                     Padding="8"
                                 >
                                 <StackPanel>
@@ -1337,8 +1449,6 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel
                                 Grid.Column="0"
@@ -1372,36 +1482,8 @@
                                         />
                                 </ToggleButton>
                         </StackPanel>
-                        <TextBlock
-                                x:Name="ProjectStatus"
-                                Grid.Column="1"
-                                VerticalAlignment="Center"
-                                Foreground="#a6adc8"
-                                FontFamily="Cascadia Mono"
-                                FontSize="10"
-                                TextTrimming="CharacterEllipsis"
-                            />
-                        <TextBlock
-                                Grid.Column="2"
-                                x:Name="WorkspaceHealthText"
-                                Text="starting tools"
-                                Margin="14,0"
-                                VerticalAlignment="Center"
-                                Foreground="#7f849c"
-                                FontFamily="Cascadia Mono"
-                                FontSize="10"
-                            />
-                        <TextBlock
-                                Grid.Column="3"
-                                Text="Ctrl+1 Left   Ctrl+2 Helix   Ctrl+3 Run   Ctrl+4 OpenCode   Ctrl+5 Project"
-                                Margin="0,0,12,0"
-                                VerticalAlignment="Center"
-                                Foreground="#6c7086"
-                                FontFamily="Cascadia Mono"
-                                FontSize="9"
-                            />
                         <StackPanel
-                                Grid.Column="4"
+                                Grid.Column="2"
                                 Margin="4,0,0,0"
                                 Orientation="Horizontal"
                                 VerticalAlignment="Center"
