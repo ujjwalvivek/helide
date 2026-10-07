@@ -761,6 +761,146 @@
                                             FontSize="9"
                                             Foreground="#a9a8b6"
                                         />
+                                    <Border
+                                            DockPanel.Dock="Left"
+                                            Width="1"
+                                            Margin="8,6"
+                                            Background="#313244"
+                                            VerticalAlignment="Center"
+                                        />
+<Border
+                                            DockPanel.Dock="Left"
+                                            VerticalAlignment="Stretch"
+                                            Height="27"
+                                            MaxWidth="560"
+                                            Margin="9,0,0,0"
+                                            Background="Transparent"
+                                            ClipToBounds="True">
+                                            <!-- The tab strip is clipped to the header row, so a
+                                                 long list of tabs slides out of sight instead of
+                                                 spilling down the pane. -->
+                                            <ScrollViewer
+                                                    HorizontalScrollBarVisibility="Auto"
+                                                    VerticalScrollBarVisibility="Disabled"
+                                                    Focusable="False"
+                                            >
+                                                <ItemsControl x:Name="EditorTabStrip">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <StackPanel Orientation="Horizontal" />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+<Border
+                                                                    Background="{Binding Background}"
+                                                                    Padding="9,0,4,0"
+                                                                    BorderThickness="0,0,0,2"
+                                                                    BorderBrush="{Binding Underline}"
+                                                                    ToolTip="{Binding ToolTipText}">
+                                                                <StackPanel
+                                                                        Orientation="Horizontal"
+                                                                        VerticalAlignment="Center">
+                                                                    <!-- Activation is bound to the label rather
+                                                                         than to the whole tab. With the close
+                                                                         button inside a tab that also handled
+                                                                         MouseLeftButtonUp, the two targets
+                                                                         competed and the close never fired. -->
+                                                                    <TextBlock
+                                                                            Text="{Binding Name}"
+                                                                            FontFamily="Cascadia Mono"
+                                                                            FontSize="10"
+                                                                            Foreground="{Binding Foreground}"
+                                                                            FontWeight="{Binding Weight}"
+                                                                            MaxWidth="160"
+                                                                            Padding="0,0,6,0"
+                                                                            TextTrimming="CharacterEllipsis"
+                                                                            VerticalAlignment="Center"
+                                                                            Cursor="Hand"
+                                                                            Tag="{Binding}"
+                                                                            MouseLeftButtonUp="EditorTab_Click"
+                                                                    />
+                                                                    <!-- A real button rather than a glyph to aim
+                                                                         at, and a generous one: 16x16 was easy to
+                                                                         miss in a header row this short. -->
+                                                                    <Button
+                                                                            Width="20"
+                                                                            Height="22"
+                                                                            Padding="0"
+                                                                            Click="EditorTab_Close"
+                                                                            Tag="{Binding}"
+                                                                            Content="×"
+                                                                            FontFamily="Cascadia Mono"
+                                                                            FontSize="12"
+                                                                            Foreground="{Binding Foreground}"
+                                                                            Background="Transparent"
+                                                                            BorderThickness="0"
+                                                                            Cursor="Hand"
+                                                                            ToolTip="Close this tab"
+                                                                    >
+                                                                        <Button.Template>
+                                                                            <ControlTemplate TargetType="Button">
+                                                                                <Border
+                                                                                        x:Name="CloseSurface"
+                                                                                        Background="{TemplateBinding Background}"
+                                                                                        CornerRadius="3"
+                                                                                >
+                                                                                    <ContentPresenter
+                                                                                            HorizontalAlignment="Center"
+                                                                                            VerticalAlignment="Center"
+                                                                                    />
+                                                                                </Border>
+                                                                                <ControlTemplate.Triggers>
+                                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                                        <Setter TargetName="CloseSurface" Property="Background" Value="#f38ba8" />
+                                                                                        <Setter Property="Foreground" Value="#11111b" />
+                                                                                    </Trigger>
+                                                                                </ControlTemplate.Triggers>
+                                                                            </ControlTemplate>
+                                                                        </Button.Template>
+                                                                    </Button>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Border>
+                                        <Button
+                                                x:Name="EditorTabSplitButton"
+                                                Width="22"
+                                                Height="27"
+                                                Margin="0,0,4,0"
+                                                Padding="0"
+                                                Click="EditorTabSplitButton_Click"
+                                                Content="+"
+                                                FontFamily="Cascadia Mono"
+                                                FontSize="12"
+                                                Foreground="#7f849c"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Cursor="Hand"
+                                                ToolTip="New empty editor tab"
+                                        >
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border
+                                                            x:Name="SplitSurface"
+                                                            Background="{TemplateBinding Background}"
+                                                            Width="22"
+                                                            Height="27"
+                                                    >
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="SplitSurface" Property="Background" Value="#313244" />
+                                                            <Setter Property="Foreground" Value="#cdd6f4" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
                                     <TextBlock
                                             DockPanel.Dock="Right"
                                             x:Name="EditorPaneState"
@@ -771,10 +911,10 @@
                                         />
                                 </DockPanel>
                             </Border>
-                            <ContentControl
+                            <Grid
                                     Grid.Row="1"
                                     x:Name="EditorSlot"
-                                    Style="{StaticResource TerminalSlotStyle}"
+                                    Background="{StaticResource TerminalBrush}"
                                 />
                         </Grid>
                         <GridSplitter

@@ -1,8 +1,10 @@
 ﻿using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using EasyWindowsTerminalControl;
@@ -10,6 +12,8 @@ using Microsoft.Terminal.Wpf;
 using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
 using WpfScrollBar = System.Windows.Controls.Primitives.ScrollBar;
+using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
+using WpfKeyEventHandler = System.Windows.Input.KeyEventHandler;
 
 namespace Helide.Terminal;
 
@@ -23,6 +27,21 @@ internal enum TerminalHostState
 
 internal sealed class NativeTerminalHost : Grid, IDisposable
 {
+    private static class NativeMethods
+    {
+        public const uint SwpNoSize = 0x0001;
+        public const uint SwpNoMove = 0x0002;
+        public const uint SwpNoActivate = 0x0010;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr SetFocus(IntPtr hWnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetWindowPos(
+            IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+    }
+
     private const int TerminalFontSize = 10;
     private static readonly Color TerminalBackground = Color.FromRgb(25, 23, 36);
     private static readonly SolidColorBrush TerminalBackgroundBrush =
@@ -36,12 +55,18 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     private readonly Border _startupSurface;
     private readonly TextBlock _startupStatus;
     private DispatcherTimer? _revealTimer;
+    private HwndHost? _rendererHost;
     private bool _disposed;
 
-    public NativeTerminalHost(string label, string commandLine, string workingDirectory)
+    public NativeTerminalHost(
+        string label,
+        string commandLine,
+        string workingDirectory,
+        string? filePath = null)
     {
         _focusChangedHandler = Terminal_GotKeyboardFocus;
         Label = label;
+        FilePath = filePath;
         Background = TerminalBackgroundBrush;
         ClipToBounds = true;
         SnapsToDevicePixels = true;
@@ -60,6 +85,9 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         {
             Background = TerminalBackgroundBrush,
             Child = _startupStatus,
+            // Never let the placeholder eat input: it covers the whole surface and
+            // would swallow clicks while it is still visible.
+            IsHitTestVisible = false,
         };
 
         _terminal = new EasyTerminalControl
@@ -83,6 +111,9 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
 
         PrepareTerminalSurface();
         _terminal.Terminal.Loaded += Terminal_Loaded;
+        _terminal.AddHandler(
+            Keyboard.PreviewKeyDownEvent,
+            new WpfKeyEventHandler(Terminal_PreviewKeyDown));
         _terminal.Terminal.AddHandler(
             Keyboard.GotKeyboardFocusEvent,
             _focusChangedHandler,
@@ -96,6 +127,8 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
 
     public string Label { get; }
 
+    public string? FilePath { get; }
+
     public TerminalHostState State { get; private set; }
 
     public event Action<NativeTerminalHost, TerminalHostState>? StateChanged;
@@ -104,6 +137,68 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     {
         _terminal.Focus();
         _terminal.Terminal.Focus();
+
+        // WPF focus is not enough on its own. The renderer is a child HWND of the
+        // Helide window (Microsoft.Terminal.Wpf.TerminalContainer derives from
+        // HwndHost), and a window can hand real keyboard focus to exactly one child.
+        // Without handing focus to the HWND, keystrokes keep going to whichever pane
+        // last held it: arrows would move the cursor in one pane while typing landed
+        // in another.
+        var handle = RendererHandle();
+        if (handle != IntPtr.Zero)
+            NativeMethods.SetFocus(handle);
+    }
+
+    // Resolved lazily because the renderer only builds its HwndHost once the control
+    // has been loaded and laid out.
+    private IntPtr RendererHandle()
+    {
+        var host = FindRendererHost();
+        if (host is null)
+            return IntPtr.Zero;
+
+        try
+        {
+            return host.Handle;
+        }
+        catch
+        {
+            // HwndHost throws while its window is being torn down.
+            return IntPtr.Zero;
+        }
+    }
+
+    private HwndHost? FindRendererHost()
+    {
+        if (_rendererHost is not null)
+            return _rendererHost;
+
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(_terminal); index++)
+        {
+            var match = FindRendererHost(VisualTreeHelper.GetChild(_terminal, index));
+            if (match is not null)
+            {
+                _rendererHost = match;
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private static HwndHost? FindRendererHost(DependencyObject root)
+    {
+        if (root is HwndHost host)
+            return host;
+
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var match = FindRendererHost(VisualTreeHelper.GetChild(root, index));
+            if (match is not null)
+                return match;
+        }
+
+        return null;
     }
 
     public void WriteLine(string command)
@@ -124,6 +219,76 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
 
         UpdateLayout();
         InvalidateVisual();
+    }
+
+    // Panel.SetZIndex only reorders WPF visuals; it has no authority over the child
+    // HWNDs that back these renderers, and those are what actually get painted and
+    // clicked. So stacking several hosts in one Grid is only safe if the one that
+    // should be on top is explicitly moved there. Toggling Visibility alone is not
+    // enough: SW_SHOW does not change z-order.
+    public void BringToFront()
+    {
+        if (_disposed)
+            return;
+
+        UpdateLayout();
+        InvalidateVisual();
+        _terminal.InvalidateMeasure();
+
+        RaiseRenderer();
+        FocusTerminal();
+    }
+
+    private void RaiseRenderer()
+    {
+        var handle = RendererHandle();
+        if (handle == IntPtr.Zero)
+            return;
+
+        try
+        {
+            NativeMethods.SetWindowPos(
+                handle,
+                new IntPtr(-1), // HWND_TOP
+                0, 0, 0, 0,
+                NativeMethods.SwpNoMove | NativeMethods.SwpNoSize |
+                NativeMethods.SwpNoActivate);
+        }
+        catch
+        {
+            // The renderer window is on its way out.
+        }
+    }
+
+// Enter has to reach the pseudoconsole as a carriage return. The renderer sends a
+    // line feed instead, and that is a real difference rather than an equivalent
+    // encoding: crossterm only promotes LF to KeyCode::Enter when the tty is NOT in
+    // raw mode. Every TUI in here (yazi, lazygit, helix) puts its terminal in raw
+    // mode, so LF arrives as Ctrl+J and Enter does nothing -- yazi would highlight
+    // files, quit on `q`, and refuse to open or enter anything. Shells and opencode
+    // accept LF, which is why only the file browser looked broken.
+    private void Terminal_PreviewKeyDown(object sender, WpfKeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || _disposed)
+            return;
+
+        WriteRaw("\r");
+        e.Handled = true;
+    }
+
+    private void WriteRaw(string text)
+    {
+        if (_terminal.ConPTYTerm is null)
+            return;
+
+        try
+        {
+            _terminal.ConPTYTerm.WriteToTerm(text);
+        }
+        catch
+        {
+            // The pseudoconsole is gone; there is nowhere to send the key.
+        }
     }
 
     private void Terminal_Loaded(object sender, RoutedEventArgs e)

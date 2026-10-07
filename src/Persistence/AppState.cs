@@ -32,6 +32,10 @@ internal sealed class WorkspaceLayoutState
     public double RightRatio { get; set; } = 0.21;
     public double EditorRatio { get; set; } = 0.80;
     public double RunnerRatio { get; set; } = 0.20;
+    public double LeftPixels { get; set; }
+    public double CenterPixels { get; set; }
+    public double RightPixels { get; set; }
+    public double RunnerPixels { get; set; }
     public bool LeftCollapsed { get; set; }
     public bool RunnerCollapsed { get; set; }
     public bool AgentCollapsed { get; set; }

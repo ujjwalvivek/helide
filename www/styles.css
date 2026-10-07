@@ -9,7 +9,7 @@
     --mauve: #cba6f7;
     --pink: #f5c2e7;
     --green: #a6e3a1;
-    --radius: 18px;
+    --radius: 2px;
 }
 * {
     margin: 0;
@@ -100,7 +100,7 @@ main {
 .logo {
     width: 96px;
     height: 96px;
-    border-radius: 22px;
+    border-radius: 2px;
     box-shadow:
         0 0 0 1px var(--surface0),
         0 16px 40px rgba(0, 0, 0, 0.45);
@@ -152,7 +152,7 @@ h1 {
 .btn {
     margin-top: 10px;
     padding: 13px 30px;
-    border-radius: 12px;
+    border-radius: 2px;
     background: linear-gradient(120deg, var(--blue), var(--mauve));
     color: var(--base);
     font-family: inherit;
@@ -188,7 +188,7 @@ h1 {
 .pane {
     background: var(--base);
     border: 1px solid var(--surface0);
-    border-radius: 14px;
+    border-radius: 2px;
     padding: 16px;
     display: flex;
     flex-direction: column;

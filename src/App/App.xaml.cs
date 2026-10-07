@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using Helide.Persistence;
 using Application = System.Windows.Application;
@@ -41,9 +42,41 @@ public partial class App : Application
             ? Path.GetFullPath(e.Args[0])
             : null;
 
+        LogFatalExceptions();
+
         var window = new MainWindow(stateStore, state, projectPath);
         MainWindow = window;
         window.Show();
+    }
+
+    // A WPF app has no console, so a crash on the dispatcher thread is just a
+    // silent exit and an APPCRASH event naming KERNELBASE.dll rather than anything
+    // useful. Anything raised outside a handler -- a binding fault, a layout pass, a
+    // timer -- lands here, which is the only place the real stack still exists.
+    private void LogFatalExceptions()
+    {
+        void Write(string kind, Exception exception)
+        {
+            try
+            {
+                var directory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Helide");
+                Directory.CreateDirectory(directory);
+                File.AppendAllText(
+                    Path.Combine(directory, "crash.log"),
+                    $"[{DateTime.Now:O}] {kind}{Environment.NewLine}{exception}{Environment.NewLine}{new string('-', 72)}{Environment.NewLine}");
+            }
+            catch
+            {
+                // Never let logging turn a crash into a different crash.
+            }
+        }
+
+        DispatcherUnhandledException += (_, args) => Write("Dispatcher", args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            Write("AppDomain", args.ExceptionObject as Exception ?? new Exception(args.ExceptionObject?.ToString()));
+        TaskScheduler.UnobservedTaskException += (_, args) => Write("Task", args.Exception);
     }
 
     protected override void OnExit(ExitEventArgs e)
