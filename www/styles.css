@@ -181,6 +181,123 @@ main {
     text-decoration: underline;
 }
 
+.header-strip {
+    padding: 8px 14px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--pink);
+    opacity: 1;
+    background: rgba(245, 194, 231, 0.08);
+    border: none;
+    border-radius: 0;
+    width: calc(100% + 28px);
+    margin: -12px -14px 10px -14px;
+}
+
+.header-title {
+    color: var(--text);
+    font-weight: 700;
+    text-transform: uppercase;
+    opacity: 0.9;
+}
+
+.header-links {
+    display: flex;
+    gap: 14px;
+}
+
+.header-link {
+    color: var(--subtext);
+    text-decoration: none;
+    opacity: 0.7;
+    transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.header-link:hover {
+    color: var(--blue);
+    opacity: 1;
+}
+
+.layout {
+    display: flex;
+    gap: 24px;
+    align-items: stretch;
+}
+
+.main {
+    flex: 1;
+    min-width: 0;
+}
+
+.sidebar {
+    width: 180px;
+    flex-shrink: 0;
+    padding: 12px 14px;
+    border-left: 1px solid var(--surface0);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.pill {
+    display: block;
+    padding: 8px 10px;
+    border: 1px solid var(--surface0);
+    border-radius: 0;
+    color: var(--pill, var(--text));
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: 0.02em;
+    background: rgba(255,255,255,0.02);
+    transition: background 0.15s ease, border-color 0.15s ease;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.pill:hover {
+    border-color: var(--pill, var(--surface0));
+    background: rgba(255,255,255,0.06);
+}
+
+.sidebar footer {
+    margin-top: auto;
+    padding-top: 12px;
+    opacity: 0.6;
+    font-size: 11px;
+    text-align: center;
+}
+
+.statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 14px;
+    border-top: 1px solid var(--surface0);
+    background: var(--mantle);
+    font-size: 11px;
+    color: var(--subtext);
+    letter-spacing: 0.02em;
+}
+
+.statusbar .status-left,
+.statusbar .status-right {
+    display: flex;
+    gap: 12px;
+}
+
+.statusbar .mode {
+    color: var(--green);
+    font-weight: 700;
+}
+
+.statusbar .path {
+    color: var(--text);
+    opacity: 0.7;
+}
+
 .download {
     padding: 8px 32px 28px;
 }
@@ -206,27 +323,6 @@ main {
     margin-bottom: 24px;
 }
 
-
-
-footer {
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    color: var(--subtext);
-    font-size: 12px;
-    opacity: 0.8;
-    padding-bottom: 8px;
-}
-
-footer a {
-    color: var(--subtext);
-    text-decoration: none;
-    transition: color 0.15s ease;
-}
-
-footer a:hover {
-    color: var(--blue);
-}
 
 @media (max-width: 640px) {
     .fetch {
