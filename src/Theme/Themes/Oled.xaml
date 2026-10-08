@@ -1,0 +1,85 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+    <!--
+        OLED. Near-black rather than true black: on an OLED panel a literal #000000
+        canvas is dark enough that the window reads as a hole punched in the screen
+        and the pane borders vanish into it. The base is #0E0E0E, with the chrome
+        built up in small greyscale steps from there.
+
+        Moving the base means moving everything that sits above it. Surface,
+        PaneHeader, Popover and the interactive fills are all defined relative to
+        the canvas, so they are lifted in step; changing the base alone would have
+        left them darker than the window and reading as recesses rather than
+        raised surfaces. TabActiveBackgroundBrush deliberately equals
+        BorderBrush so an active tab does not pick up a hairline of its own.
+
+        Two deliberate exceptions to "no colour at all". Danger and Success stay
+        faintly tinted because the pane headers use them to mean ready and failed,
+        and a fully grey palette makes those two states identical, which loses
+        information rather than style. Same reasoning for the terminal's ANSI
+        table: helix and lazygit colour diffs and branches by hue, so the ANSI
+        colours are dimmed rather than flattened. Accent is pure white, since
+        nothing depends on telling the accent apart from anything else.
+
+        BorderBrush is dimmer than InteractiveBrush on purpose. A full-width
+        status bar hairline at interactive brightness is a lot of lit pixels for
+        a line, so the rule is quieter than the fill it sits against.
+    -->
+
+    <!-- Surfaces -->
+    <SolidColorBrush x:Key="WindowBrush" Color="#FF0E0E0E" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#FF141414" />
+    <SolidColorBrush x:Key="RaisedBrush" Color="#FF1A1A1A" />
+    <SolidColorBrush x:Key="TerminalBrush" Color="#FF0E0E0E" />
+    <SolidColorBrush x:Key="PaneHeaderBrush" Color="#FF161616" />
+    <SolidColorBrush x:Key="PopoverBrush" Color="#FF1C1C1C" />
+    <SolidColorBrush x:Key="InteractiveBrush" Color="#FF262626" />
+    <SolidColorBrush x:Key="PressedBrush" Color="#FF323232" />
+    <SolidColorBrush x:Key="PressedStrongBrush" Color="#FF3E3E3E" />
+    <SolidColorBrush x:Key="TabActiveBackgroundBrush" Color="#FF1E1E1E" />
+
+    <!-- Lines -->
+    <SolidColorBrush x:Key="BorderBrush" Color="#FF1E1E1E" />
+
+    <!-- Text -->
+    <SolidColorBrush x:Key="TextBrush" Color="#FFF2F2F2" />
+    <SolidColorBrush x:Key="TextStrongBrush" Color="#FFD9D9D9" />
+    <SolidColorBrush x:Key="TextMutedBrush" Color="#FFB0B0B0" />
+    <SolidColorBrush x:Key="TextSubtleBrush" Color="#FF8A8A8A" />
+    <SolidColorBrush x:Key="TextFaintBrush" Color="#FF6E6E6E" />
+    <SolidColorBrush x:Key="TextIdleBrush" Color="#FF5A5A5A" />
+    <SolidColorBrush x:Key="TextPaneTitleBrush" Color="#FF9E9E9E" />
+    <SolidColorBrush x:Key="TextOnAccentBrush" Color="#FF000000" />
+    <SolidColorBrush x:Key="TextOnCaptionCloseBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="TerminalHintBrush" Color="#FF6C6C6C" />
+
+    <!-- Status -->
+    <SolidColorBrush x:Key="AccentBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#FFD06C6C" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="#FF8FCF8F" />
+    <SolidColorBrush x:Key="CaptionCloseBrush" Color="#FF7A2626" />
+    <SolidColorBrush x:Key="CaptionClosePressedBrush" Color="#FF521818" />
+
+    <!-- Terminal -->
+    <SolidColorBrush x:Key="TerminalBackgroundBrush" Color="#FF0E0E0E" />
+    <SolidColorBrush x:Key="TerminalForegroundBrush" Color="#FFE6E6E6" />
+    <SolidColorBrush x:Key="TerminalSelectionBrush" Color="#FF2B2B2B" />
+    <SolidColorBrush x:Key="TerminalAnsi0Brush" Color="#FF1A1A1A" />
+    <SolidColorBrush x:Key="TerminalAnsi1Brush" Color="#FFD06C6C" />
+    <SolidColorBrush x:Key="TerminalAnsi2Brush" Color="#FF8FCF8F" />
+    <SolidColorBrush x:Key="TerminalAnsi3Brush" Color="#FFD9C48A" />
+    <SolidColorBrush x:Key="TerminalAnsi4Brush" Color="#FF7FA8D9" />
+    <SolidColorBrush x:Key="TerminalAnsi5Brush" Color="#FFD79ACB" />
+    <SolidColorBrush x:Key="TerminalAnsi6Brush" Color="#FF7EC8C0" />
+    <SolidColorBrush x:Key="TerminalAnsi7Brush" Color="#FFE6E6E6" />
+    <SolidColorBrush x:Key="TerminalAnsi8Brush" Color="#FF555555" />
+    <SolidColorBrush x:Key="TerminalAnsi9Brush" Color="#FFE08C8C" />
+    <SolidColorBrush x:Key="TerminalAnsi10Brush" Color="#FFA8DFA8" />
+    <SolidColorBrush x:Key="TerminalAnsi11Brush" Color="#FFE6D2A0" />
+    <SolidColorBrush x:Key="TerminalAnsi12Brush" Color="#FF9CC4EC" />
+    <SolidColorBrush x:Key="TerminalAnsi13Brush" Color="#FFE2B4DE" />
+    <SolidColorBrush x:Key="TerminalAnsi14Brush" Color="#FF9AD8D0" />
+    <SolidColorBrush x:Key="TerminalAnsi15Brush" Color="#FFFFFFFF" />
+</ResourceDictionary>

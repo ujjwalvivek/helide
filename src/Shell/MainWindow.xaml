@@ -291,29 +291,102 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
-        <Style x:Key="MenuItemStyle" TargetType="Button">
+        <!--
+            The app menu is built from the real MenuItem primitive rather than a
+            hand-rolled Popup, because MenuItem is what supplies the parts that are
+            tedious to fake: IsSubmenuEnabled opens on hover instead of click, the
+            submenu tracks the parent item, arrow keys walk the tree, Escape closes
+            one level at a time, and IsChecked draws the tick. Corners are square
+            because every border here sets no CornerRadius.
+        -->
+        <Style x:Key="HelideMenuItemStyle" TargetType="MenuItem">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="12,7" />
-            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding" Value="7,5" />
+            <Setter Property="MinWidth" Value="170" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="StaysOpenOnClick" Value="False" />
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="Button">
+                    <ControlTemplate TargetType="MenuItem">
                         <Border
-                            x:Name="MenuRow"
+                            x:Name="Row"
                             Background="{TemplateBinding Background}"
                             Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True"
                         >
-                            <ContentPresenter
-                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                VerticalAlignment="Center"
-                            />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <ContentPresenter
+                                    Grid.Column="0"
+                                    ContentSource="Header"
+                                    RecognizesAccessKey="True"
+                                    VerticalAlignment="Center"
+                                />
+
+                                <StackPanel
+                                    Grid.Column="1"
+                                    Margin="16,0,0,0"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                >
+                                    <TextBlock
+                                        x:Name="GestureText"
+                                        Text="{TemplateBinding InputGestureText}"
+                                        Foreground="{DynamicResource TextFaintBrush}"
+                                        FontFamily="{DynamicResource UiMonoFontFamily}"
+                                        FontSize="{DynamicResource FontSizeSmall}"
+                                    />
+                                    <TextBlock
+                                        x:Name="SubmenuArrow"
+                                        Text="&#xE76C;"
+                                        Margin="12,0,0,0"
+                                        FontFamily="Segoe Fluent Icons"
+                                        FontSize="{DynamicResource FontSizeSmall}"
+                                        Foreground="{DynamicResource TextSubtleBrush}"
+                                        Visibility="Collapsed"
+                                    />
+                                </StackPanel>
+
+                                <Popup
+                                    x:Name="PART_Popup"
+                                    AllowsTransparency="True"
+                                    Placement="Right"
+                                    VerticalOffset="-4"
+                                    Focusable="False"
+                                    IsOpen="{TemplateBinding IsSubmenuOpen}"
+                                >
+                                    <Border
+                                        Background="{DynamicResource PopoverBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        Padding="4"
+                                    >
+                                        <StackPanel
+                                            IsItemsHost="True"
+                                            KeyboardNavigation.DirectionalNavigation="Cycle"
+                                        />
+                                    </Border>
+                                </Popup>
+                            </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="MenuRow" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                            <!-- HasItems, not IsSubmenuEnabled: the latter is a plain
+                                 CLR property on MenuItem and cannot be used in a trigger. -->
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                            </Trigger>
+                            <Trigger Property="HasItems" Value="True">
+                                <Setter TargetName="SubmenuArrow" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="GestureText" Property="Visibility" Value="Collapsed" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource TextFaintBrush}" />
+                                <Setter Property="Cursor" Value="Arrow" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -321,13 +394,149 @@
             </Setter>
         </Style>
 
-        <Style x:Key="MenuHeaderStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource TextFaintBrush}" />
-            <Setter Property="FontFamily" Value="{DynamicResource UiMonoFontFamily}" />
-            <Setter Property="FontSize" Value="9" />
-            <Setter Property="Padding" Value="12,6,12,4" />
+        <!-- A top-level row that only expands. Inherits the menu's own face and
+                 size rather than imposing its own, and is only a shade dimmer than
+                 its children so the group still reads as a label. -->
+        <Style
+            x:Key="HelideMenuGroupStyle"
+            TargetType="MenuItem"
+            BasedOn="{StaticResource HelideMenuItemStyle}"
+        >
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="MinWidth" Value="128" />
         </Style>
+
+        <Style x:Key="HelideMenuSeparatorStyle" TargetType="Separator">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Border
+                            Height="1"
+                            Margin="7,4"
+                            Background="{DynamicResource BorderBrush}"
+                        />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="HelideContextMenuStyle" TargetType="ContextMenu">
+            <!--
+                A ContextMenu lives in its own popup visual tree, so it inherits
+                nothing from the Window that owns it. Without these two setters the
+                menu renders in the WPF default face at the default size instead of
+                the app's, which is what made it look like a foreign control.
+            -->
+            <Setter Property="FontFamily" Value="{DynamicResource UiFontFamily}" />
+            <Setter Property="FontSize" Value="{DynamicResource FontSizeMedium}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border
+                            Background="{DynamicResource PopoverBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            Padding="4"
+                        >
+                            <StackPanel
+                                IsItemsHost="True"
+                                KeyboardNavigation.DirectionalNavigation="Cycle"
+                            />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <ContextMenu x:Key="AppMenu" Style="{DynamicResource HelideContextMenuStyle}">
+            <!--
+                Each group collapses into one row. Flattening them here would mean
+                eleven rows before you could reach anything, and the group names
+                double as the submenu labels.
+            -->
+            <MenuItem Header="FILE" Style="{DynamicResource HelideMenuGroupStyle}">
+                <MenuItem
+                    Header="Open Folder"
+                    InputGestureText="Ctrl+O"
+                    Click="MenuOpenFolder_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+                <MenuItem
+                    Header="Close Workspace"
+                    Click="MenuCloseWorkspace_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+                <Separator Style="{DynamicResource HelideMenuSeparatorStyle}" />
+                <MenuItem
+                    Header="Exit"
+                    Click="MenuExit_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+            </MenuItem>
+
+            <MenuItem Header="CONTROLS" Style="{DynamicResource HelideMenuGroupStyle}">
+                <MenuItem
+                    Header="Focus Left Panel"
+                    InputGestureText="Ctrl+1"
+                    Click="MenuFocusLeft_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+                <MenuItem
+                    Header="Focus Editor"
+                    InputGestureText="Ctrl+2"
+                    Click="MenuFocusEditor_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+                <MenuItem
+                    Header="Focus Runner"
+                    InputGestureText="Ctrl+3"
+                    Click="MenuFocusRunner_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+                <MenuItem
+                    Header="Focus Agent"
+                    InputGestureText="Ctrl+4"
+                    Click="MenuFocusAgent_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+                <MenuItem
+                    Header="Focus Project"
+                    InputGestureText="Ctrl+5"
+                    Click="MenuFocusProject_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+                <Separator Style="{DynamicResource HelideMenuSeparatorStyle}" />
+                <MenuItem
+                    Header="Run Command"
+                    Click="MenuRunCommand_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+            </MenuItem>
+
+            <MenuItem Header="THEME" Style="{DynamicResource HelideMenuGroupStyle}">
+                <MenuItem
+                    Header="Catppuccin Mocha"
+                    Tag="mocha"
+                    Click="MenuThemeChoice_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+                <MenuItem
+                    Header="OLED"
+                    Tag="oled"
+                    Click="MenuThemeChoice_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+            </MenuItem>
+
+            <MenuItem Header="HELP" Style="{DynamicResource HelideMenuGroupStyle}">
+                <MenuItem
+                    Header="About Helide"
+                    Click="MenuAbout_Click"
+                    Style="{DynamicResource HelideMenuItemStyle}"
+                />
+            </MenuItem>
+        </ContextMenu>
     </Window.Resources>
 
     <Grid Background="{DynamicResource WindowBrush}">
@@ -357,6 +566,7 @@
                     <Button
                             x:Name="HomeButton"
                             Click="HomeButton_Click"
+                            ContextMenu="{StaticResource AppMenu}"
                             Style="{DynamicResource ChromeButtonStyle}"
                             Width="26"
                             Height="26"
@@ -436,78 +646,6 @@
                 </StackPanel>
             </Grid>
         </Border>
-
-        <Popup
-            x:Name="AppMenuPopup"
-            PlacementTarget="{Binding ElementName=HomeButton}"
-            Placement="Bottom"
-            StaysOpen="False"
-            AllowsTransparency="True"
-        >
-            <Border
-                Background="{DynamicResource PopoverBrush}"
-                BorderBrush="{DynamicResource BorderBrush}"
-                BorderThickness="1"
-                CornerRadius="4"
-                Padding="4"
-            >
-                <StackPanel>
-                    <TextBlock Text="FILE" Style="{DynamicResource MenuHeaderStyle}" />
-                    <Button x:Name="MenuOpenFolder" Click="MenuOpenFolder_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock>
-                            <Run Text="Open Folder" />
-                            <Run Text="  Ctrl+O" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
-                        </TextBlock>
-                    </Button>
-                    <Button x:Name="MenuCloseWorkspace" Click="MenuCloseWorkspace_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock Text="Close Workspace" />
-                    </Button>
-                    <Button x:Name="MenuExit" Click="MenuExit_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock Text="Exit" />
-                    </Button>
-
-                    <TextBlock Text="CONTROLS" Style="{DynamicResource MenuHeaderStyle}" />
-                    <Button x:Name="MenuFocusLeft" Click="MenuFocusLeft_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock>
-                            <Run Text="Focus Left Panel" />
-                            <Run Text="  Ctrl+1" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
-                        </TextBlock>
-                    </Button>
-                    <Button x:Name="MenuFocusEditor" Click="MenuFocusEditor_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock>
-                            <Run Text="Focus Editor" />
-                            <Run Text="  Ctrl+2" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
-                        </TextBlock>
-                    </Button>
-                    <Button x:Name="MenuFocusRunner" Click="MenuFocusRunner_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock>
-                            <Run Text="Focus Runner" />
-                            <Run Text="  Ctrl+3" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
-                        </TextBlock>
-                    </Button>
-                    <Button x:Name="MenuFocusAgent" Click="MenuFocusAgent_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock>
-                            <Run Text="Focus Agent" />
-                            <Run Text="  Ctrl+4" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
-                        </TextBlock>
-                    </Button>
-                    <Button x:Name="MenuFocusProject" Click="MenuFocusProject_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock>
-                            <Run Text="Focus Project" />
-                            <Run Text="  Ctrl+5" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
-                        </TextBlock>
-                    </Button>
-                    <Button x:Name="MenuRunCommand" Click="MenuRunCommand_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock Text="Run Command" />
-                    </Button>
-
-                    <TextBlock Text="HELP" Style="{DynamicResource MenuHeaderStyle}" />
-                    <Button x:Name="MenuAbout" Click="MenuAbout_Click" Style="{DynamicResource MenuItemStyle}">
-                        <TextBlock Text="About Helide" />
-                    </Button>
-                </StackPanel>
-            </Border>
-        </Popup>
 
         <Grid Grid.Row="1">
             <Grid

@@ -8,6 +8,7 @@ internal sealed class AppState
     public WindowGeometryState Window { get; set; } = new();
     public WorkspaceLayoutState Layout { get; set; } = new();
     public List<AgentSessionState> AgentSessions { get; set; } = [];
+    public string Theme { get; set; } = "mocha";  // "mocha" or "oled"
 }
 
 internal sealed class RecentProjectState

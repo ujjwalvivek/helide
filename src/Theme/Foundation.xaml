@@ -1,0 +1,35 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sys="clr-namespace:System;assembly=mscorlib"
+>
+    <!--
+        Theme-independent values, merged once and never swapped.
+
+        Fonts and sizes do not vary between themes, so keeping them out of the
+        per-theme dictionaries means adding a theme does not mean restating them,
+        and they cannot drift apart.
+
+        Three families, not two, because the chrome monospace and the terminal
+        monospace are not the same choice. The chrome uses Cascadia Mono because
+        its metrics fit the fixed-height pane headers. The terminal uses a Nerd
+        Font because yazi, lazygit and helix draw glyphs that plain Cascadia Mono
+        has no boxes for. Collapsing these into one token swaps the whole UI's
+        typeface as a side effect of touching the terminal.
+
+        The family keys are placeholders that App.OnStartup overwrites with
+        whatever is actually installed, so a missing Nerd Font degrades to
+        Cascadia Mono instead of a WPF fallback box.
+    -->
+    <FontFamily x:Key="UiFontFamily">Segoe UI Variable Text</FontFamily>
+    <FontFamily x:Key="UiMonoFontFamily">Cascadia Mono</FontFamily>
+    <FontFamily x:Key="TerminalFontFamily">Cascadia Mono</FontFamily>
+
+    <sys:Double x:Key="FontSizeCaption">9</sys:Double>
+    <sys:Double x:Key="FontSizeSmall">10</sys:Double>
+    <sys:Double x:Key="FontSizeBody">11</sys:Double>
+    <sys:Double x:Key="FontSizeMedium">12</sys:Double>
+    <sys:Double x:Key="FontSizeLarge">13</sys:Double>
+    <sys:Double x:Key="FontSizeDisplay">20</sys:Double>
+    <sys:Double x:Key="FontSizeTitle">27</sys:Double>
+</ResourceDictionary>

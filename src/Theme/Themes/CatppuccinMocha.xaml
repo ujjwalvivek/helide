@@ -1,21 +1,24 @@
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:sys="clr-namespace:System;assembly=mscorlib"
 >
     <!--
-        Every colour, font and size in Helide is declared here and nowhere else.
+        Catppuccin Mocha. The default theme.
 
-        Palette is Catppuccin Mocha. The three window chrome brushes carry an alpha
-        channel so the acrylic backdrop shows through, which is why they are not
-        simply base/manture. A handful of values are not part of Catppuccin and were
-        chosen for this app: the pane titles, the idle pane state, the terminal hint
-        text, the active tab fill, and the Windows caption close-button reds. They are
-        tokenised here for the same reason as everything else.
+        Every colour in Helide is declared in one of the theme dictionaries and
+        nowhere else. Tokens are referenced with {DynamicResource} throughout, so
+        swapping this dictionary re-skins every element that points at a token
+        without a restart. Code reads the same keys through ThemePalette rather
+        than hardcoding RGB.
 
-        Tokens are referenced with {DynamicResource} throughout, so swapping a brush
-        at runtime re-skins every element that points at it. Code reads the same keys
-        through ThemePalette rather than hardcoding RGB.
+        A handful of values here are not part of Catppuccin and were chosen for
+        this app: the pane titles, the idle pane state, the terminal hint text,
+        the active tab fill, and the Windows caption close-button reds. They are
+        tokenised for the same reason as everything else.
+
+        Every key defined here must also exist in every other theme dictionary;
+        ThemePalette verifies this at startup and falls back rather than throwing
+        mid-layout.
     -->
 
     <!-- Surfaces -->
@@ -26,9 +29,9 @@
     <SolidColorBrush x:Key="PaneHeaderBrush" Color="#181825" />
     <SolidColorBrush x:Key="PopoverBrush" Color="#1e1e2e" />
     <!--
-        BorderBrush and InteractiveBrush are the same value today and are kept
-        apart on purpose: one is a hairline, the other is the resting and hover
-        fill of something you can click. A light theme would want those to differ.
+        BorderBrush and InteractiveBrush are the same value and are kept apart on
+        purpose: one is a hairline, the other is the resting and hover fill of
+        something you can click. The OLED theme gives them different values.
     -->
     <SolidColorBrush x:Key="InteractiveBrush" Color="#313244" />
     <SolidColorBrush x:Key="PressedBrush" Color="#45475a" />
@@ -41,7 +44,7 @@
     <!--
         Text runs on four near-identical greys. They are close enough to look like
         an accident and different enough that collapsing them would change what the
-        app looks like, so they stay separate tokens until something says otherwise.
+        app looks like, so they stay separate tokens.
     -->
     <SolidColorBrush x:Key="TextBrush" Color="#cdd6f4" />
     <SolidColorBrush x:Key="TextStrongBrush" Color="#bac2de" />
@@ -86,24 +89,4 @@
     <SolidColorBrush x:Key="TerminalAnsi13Brush" Color="#f5c2e7" />
     <SolidColorBrush x:Key="TerminalAnsi14Brush" Color="#94e2d5" />
     <SolidColorBrush x:Key="TerminalAnsi15Brush" Color="#ffffff" />
-
-    <!--
-        Fonts and sizes. Three families, not two, because the chrome monospace and
-        the terminal monospace are not the same choice. The chrome uses Cascadia
-        Mono because its metrics fit the fixed-height pane headers. The terminal
-        uses a Nerd Font because yazi, lazygit and helix draw glyphs that plain
-        Cascadia Mono has no boxes for. Collapsing these into one token swaps the
-        whole UI's typeface as a side effect of touching the terminal.
-    -->
-    <FontFamily x:Key="UiFontFamily">Segoe UI Variable Text</FontFamily>
-    <FontFamily x:Key="UiMonoFontFamily">Cascadia Mono</FontFamily>
-    <FontFamily x:Key="TerminalFontFamily">Cascadia Mono</FontFamily>
-
-    <sys:Double x:Key="FontSizeCaption">9</sys:Double>
-    <sys:Double x:Key="FontSizeSmall">10</sys:Double>
-    <sys:Double x:Key="FontSizeBody">11</sys:Double>
-    <sys:Double x:Key="FontSizeMedium">12</sys:Double>
-    <sys:Double x:Key="FontSizeLarge">13</sys:Double>
-    <sys:Double x:Key="FontSizeDisplay">20</sys:Double>
-    <sys:Double x:Key="FontSizeTitle">27</sys:Double>
 </ResourceDictionary>

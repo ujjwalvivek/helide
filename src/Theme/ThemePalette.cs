@@ -105,7 +105,63 @@ public static int FontSize(string key) =>
                 return found;
         }
 
-        throw new KeyNotFoundException($"Theme resource '{key}' is not defined in Theme.xaml.");
+        throw new KeyNotFoundException($"Theme resource '{key}' is not defined in any theme dictionary.");
+    }
+
+    // Index of the palette slot in Application.Resources.MergedDictionaries.
+    // Foundation occupies slot 0 and is never replaced; ApplyTheme overwrites
+    // slot 1 only, so swapping a theme cannot disturb the fonts.
+    private const int ThemeDictionaryIndex = 1;
+
+    public const string CatppuccinMocha = "mocha";
+    public const string Oled = "oled";
+
+    // File is carried explicitly rather than derived from Key. Deriving it means a
+    // theme called "mocha" has to live in mocha.xaml, and the moment a file is
+    // named after anything else the pack URI resolves to nothing and
+    // ResourceDictionary.Source throws.
+    public static readonly (string Key, string Name, string File)[] AvailableThemes =
+    [
+        (CatppuccinMocha, "Catppuccin Mocha", "CatppuccinMocha"),
+        (Oled, "OLED", "Oled"),
+    ];
+
+    public static string ActiveTheme { get; private set; } = CatppuccinMocha;
+
+    public static event EventHandler? ThemeChanged;
+
+    public static string DisplayName(string key) =>
+        AvailableThemes.FirstOrDefault(theme => theme.Key == key).Name ?? key;
+
+    public static void ApplyTheme(string key)
+    {
+        var resources = Application.Current?.Resources;
+        if (resources is null)
+            return;
+
+        var theme = AvailableThemes.FirstOrDefault(candidate => candidate.Key == key);
+        if (theme.File is null)
+            theme = AvailableThemes[0];
+
+        if (ActiveTheme == key && resources.MergedDictionaries.Count > ThemeDictionaryIndex)
+            return;
+
+        try
+        {
+            var uri = new Uri($"pack://application:,,,/src/Theme/Themes/{theme.File}.xaml", UriKind.Absolute);
+            resources.MergedDictionaries[ThemeDictionaryIndex] =
+                new ResourceDictionary { Source = uri };
+        }
+        catch (Exception)
+        {
+            // Source throws straight through to an unhandled exception, which takes
+            // the app down. A theme that will not load is a cosmetic failure: leave
+            // the current palette alone and let the menu tick stay put.
+            return;
+        }
+
+        ActiveTheme = theme.Key;
+        ThemeChanged?.Invoke(null, EventArgs.Empty);
     }
 
 // Resolved once at startup and written back into the dictionary, so every

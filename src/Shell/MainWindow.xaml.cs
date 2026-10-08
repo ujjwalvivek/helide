@@ -98,6 +98,24 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         StateChanged += MainWindow_StateChanged;
+
+        // Subscribed once here rather than per tab: the view models below hand
+        // brushes to their bindings as values, so they are the one part of the UI
+        // that {DynamicResource} cannot reach on a palette swap.
+        ThemePalette.ThemeChanged += ThemePalette_ThemeChanged;
+        Closed += (_, _) => ThemePalette.ThemeChanged -= ThemePalette_ThemeChanged;
+    }
+
+    private void ThemePalette_ThemeChanged(object? sender, EventArgs e)
+    {
+        foreach (var tab in _editorTabs)
+            tab.RefreshTheme();
+
+        foreach (var session in _runnerSessions)
+            session.RefreshTheme();
+
+        foreach (var session in _agentSessions)
+            session.RefreshTheme();
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -140,7 +158,19 @@ public partial class MainWindow : Window
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
-    private void HomeButton_Click(object sender, RoutedEventArgs e) => AppMenuPopup.IsOpen = true;
+    private void HomeButton_Click(object sender, RoutedEventArgs e)
+    {
+        // A ContextMenu anchored to the button and opened by hand rather than
+        // through ContextMenuService, which would anchor it to the pointer and
+        // lose the caption-button hit test.
+        if (HomeButton.ContextMenu is not { } menu)
+            return;
+
+        menu.PlacementTarget = HomeButton;
+        menu.Placement = PlacementMode.Bottom;
+        menu.HorizontalOffset = -8;
+        menu.IsOpen = true;
+    }
 
     private void MinimizeCaptionButton_Click(object sender, RoutedEventArgs e) =>
         SystemCommands.MinimizeWindow(this);
@@ -746,25 +776,32 @@ public partial class MainWindow : Window
 
     private void MenuOpenFolder_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         OpenProjectButton_Click(this, new RoutedEventArgs());
     }
 
     private void MenuCloseWorkspace_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         ShowWelcome();
     }
 
     private void MenuExit_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         Close();
+    }
+
+    private void MenuThemeChoice_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string key })
+            return;
+
+        ThemePalette.ApplyTheme(key);
+
+        _state.Theme = ThemePalette.ActiveTheme;
+        _stateStore.Save(_state);
     }
 
     private void MenuFocusLeft_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         if (ActiveLeftHost() is { } host)
         {
             if (IsPanelCollapsed(ToolPanel.Left))
@@ -775,14 +812,12 @@ public partial class MainWindow : Window
 
     private void MenuFocusEditor_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         if (ActiveEditorHost() is { } host)
             host.FocusTerminal();
     }
 
     private void MenuFocusRunner_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         if (_runnerHost is { } host)
         {
             if (IsPanelCollapsed(ToolPanel.Runner))
@@ -793,7 +828,6 @@ public partial class MainWindow : Window
 
     private void MenuFocusAgent_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         if (_activeAgentSession?.Host is { } host)
         {
             if (IsPanelCollapsed(ToolPanel.Agent))
@@ -804,13 +838,11 @@ public partial class MainWindow : Window
 
     private void MenuFocusProject_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         ToggleLeftTool(LeftTool.Project);
     }
 
     private void MenuRunCommand_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         if (_runnerHost is null)
             return;
 
@@ -821,7 +853,6 @@ public partial class MainWindow : Window
 
     private void MenuAbout_Click(object sender, RoutedEventArgs e)
     {
-        AppMenuPopup.IsOpen = false;
         var about = new AboutWindow { Owner = this };
         about.ShowDialog();
     }
@@ -1561,6 +1592,17 @@ public partial class MainWindow : Window
             }
         }
 
+        public void RefreshTheme()
+        {
+            // These three are re-read on every get, so the values are already
+            // correct after a palette swap. Nothing pushes them at the binding
+            // though, which is what left the tab strip on the previous theme's
+            // colours until a different tab was activated.
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Foreground)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Background)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Underline)));
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
     }
 
@@ -1746,6 +1788,13 @@ public partial class MainWindow : Window
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Underline)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Weight)));
             }
+        }
+
+        public void RefreshTheme()
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Foreground)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Background)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Underline)));
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

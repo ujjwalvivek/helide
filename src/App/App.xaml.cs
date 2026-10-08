@@ -43,6 +43,11 @@ public partial class App : Application
 
         var stateStore = new AppStateStore();
         var state = stateStore.Load();
+
+        // Before the window is constructed, so the persisted theme is the one the
+        // first layout pass paints rather than a flash of the default.
+        ThemePalette.ApplyTheme(state.Theme);
+
         var projectPath = e.Args.Length == 1 && Directory.Exists(e.Args[0])
             ? Path.GetFullPath(e.Args[0])
             : null;

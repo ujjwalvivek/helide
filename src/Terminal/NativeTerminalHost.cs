@@ -43,11 +43,14 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
     }
 
-    private static readonly int TerminalFontSize = ThemePalette.FontSize(ThemePalette.FontSizeSmall);
-    private static readonly Color TerminalBackground = ThemePalette.Color(ThemePalette.TerminalBackgroundBrush);
-    private static readonly SolidColorBrush TerminalBackgroundBrush =
+    // Properties rather than cached fields: these are read again every time a theme
+    // is applied, so a live pane picks up the palette it was switched to instead
+    // of whatever was current when the type was first initialised.
+    private static int TerminalFontSize => ThemePalette.FontSize(ThemePalette.FontSizeSmall);
+    private static Color TerminalBackground => ThemePalette.Color(ThemePalette.TerminalBackgroundBrush);
+    private static SolidColorBrush TerminalBackgroundBrush =>
         ThemePalette.Brush(ThemePalette.TerminalBackgroundBrush);
-    private static readonly FontFamily TerminalFont = ThemePalette.Font(ThemePalette.TerminalFontFamily);
+    private static FontFamily TerminalFont => ThemePalette.Font(ThemePalette.TerminalFontFamily);
     private static readonly FieldInfo? ScrollBarField = typeof(TerminalControl)
         .GetField("scrollbar", BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -120,10 +123,30 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             _focusChangedHandler,
             handledEventsToo: true);
         _terminal.ConPTYTerm.TermReady += ConPtyTerm_TermReady;
+        ThemePalette.ThemeChanged += Palette_ThemeChanged;
 
         Children.Add(_startupSurface);
         Children.Add(_terminal);
         SetState(TerminalHostState.Starting);
+    }
+
+    private void Palette_ThemeChanged(object? sender, EventArgs e)
+    {
+        // WPF re-skins the chrome around the renderer on its own through
+        // {DynamicResource}, but the ConPTY renderer is driven imperatively and
+        // holds its own palette, so it has to be told.
+        if (_disposed)
+            return;
+
+        try
+        {
+            PrepareTerminalSurface();
+            ApplyTheme();
+        }
+        catch
+        {
+            // A pane that cannot repaint is not worth taking the app down for.
+        }
     }
 
     public string Label { get; }
@@ -431,6 +454,7 @@ private void Fail(string message)
 
         _disposed = true;
         _revealTimer?.Stop();
+        ThemePalette.ThemeChanged -= Palette_ThemeChanged;
         _terminal.Terminal.Loaded -= Terminal_Loaded;
         _terminal.Terminal.RemoveHandler(Keyboard.GotKeyboardFocusEvent, _focusChangedHandler);
         if (_terminal.ConPTYTerm is not null)
