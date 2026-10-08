@@ -260,6 +260,19 @@ main {
     width: 100%;
 }
 
+.palette {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    margin-top: auto;
+    padding-top: 10px;
+}
+
+.swatch {
+    width: 100%;
+    aspect-ratio: 1.75;
+    border-radius: 0;
+}
+
 .pill:hover {
     border-color: var(--pill, var(--surface0));
     background: rgba(255,255,255,0.06);
@@ -339,6 +352,9 @@ main {
         min-width: 80px;
         padding: 6px 8px;
         font-size: 11px;
+    }
+    .palette {
+        display: none;
     }
     .header-strip {
         width: 100%;
