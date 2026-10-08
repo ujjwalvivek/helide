@@ -12,9 +12,10 @@
         <link rel="stylesheet" href="styles.css" />
     </head>
     <body>
+        <canvas id="bg-shader" style="position:fixed; top:0; left:0; width:100%; height:100vh; z-index:-1; display:block;"></canvas>
         <main>
             <section class="window">
-                <div class="titlebar">
+                <div class="titlebar" style="position:relative; z-index:1;">
                     <span class="dot dot-pink"></span>
                     <span class="dot dot-blue"></span>
                     <span class="dot dot-green"></span>
@@ -38,7 +39,7 @@
 -------------------
 <span class="key cat-green">os</span>           <span class="cat-text">win x64</span>
 <span class="key cat-yellow">shell</span>        <span class="cat-text">pwsh</span>
-<span class="key cat-mauve">agent</span>        <span class="cat-text">opencode / codex</span>
+<span class="key cat-mauve">agent</span>        <span class="cat-text">opencode & codex</span>
 <span class="key cat-blue">editor</span>       <span class="cat-text">helix</span>
 <span class="key cat-teal">explorer</span>     <span class="cat-text">yazi</span>
 <span class="key cat-orange">versioning</span>   <span class="cat-text">lazygit</span>
@@ -48,28 +49,100 @@
                         </div>
 
                         <section class="panes">
-                            <div class="prompt"><span class="chevron">></span><span>lazygit + yazi</span></div>
-                            <div class="prompt result"><span class="result-text">Git status, diffs, or file trees, swap from the status bar.</span></div>
+                            <div class="prompt">
+                                <span class="chevron">></span
+                                ><span>lazygit + yazi</span>
+                            </div>
+                            <div class="prompt result">
+                                <span class="result-text"
+                                    >Git status, diffs, or file trees, swap from
+                                    the status bar.</span
+                                >
+                            </div>
 
-                            <div class="prompt"><span class="chevron">></span><span>helix</span></div>
-                            <div class="prompt result"><span class="result-text">The modal editor, open by default. Each file gets its own tab.</span></div>
+                            <div class="prompt">
+                                <span class="chevron">></span><span>helix</span>
+                            </div>
+                            <div class="prompt result">
+                                <span class="result-text"
+                                    >The modal editor, open by default. Each
+                                    file gets its own tab.</span
+                                >
+                            </div>
 
-                            <div class="prompt"><span class="chevron">></span><span>runner</span></div>
-                            <div class="prompt result"><span class="result-text">Terminal sessions that stay out of your way until you need them.</span></div>
+                            <div class="prompt">
+                                <span class="chevron">></span
+                                ><span>runner</span>
+                            </div>
+                            <div class="prompt result">
+                                <span class="result-text"
+                                    >Terminal sessions that stay out of your way
+                                    until you need them.</span
+                                >
+                            </div>
 
-                            <div class="prompt"><span class="chevron">></span><span>agent panel</span></div>
-                            <div class="prompt result"><span class="result-text">Multi-agent tabs for OpenCode or Codex. Keep chats alongside code.</span></div>
+                            <div class="prompt">
+                                <span class="chevron">></span
+                                ><span>agent panel</span>
+                            </div>
+                            <div class="prompt result">
+                                <span class="result-text"
+                                    >Multi-agent tabs for OpenCode or Codex.
+                                    Keep chats alongside code.</span
+                                >
+                            </div>
 
-                            <div class="prompt"><span class="chevron">></span><span>tabbed everything</span></div>
-                            <div class="prompt result"><span class="result-text">Editor buffers, agents, and terminal runners, all tabbed.</span></div>
+                            <div class="prompt">
+                                <span class="chevron">></span
+                                ><span>tabbed everything</span>
+                            </div>
+                            <div class="prompt result">
+                                <span class="result-text"
+                                    >Editor buffers, agents, and terminal
+                                    runners, all tabbed.</span
+                                >
+                            </div>
 
-                            <div class="prompt"><span class="chevron">></span><span>collapsible panels</span></div>
-                            <div class="prompt result"><span class="result-text">Expand or collapse any surface. Your layout remains saved.</span></div>
+                            <div class="prompt">
+                                <span class="chevron">></span
+                                ><span>collapsible panels</span>
+                            </div>
+                            <div class="prompt result">
+                                <span class="result-text"
+                                    >Expand or collapse any surface. Your layout
+                                    remains saved.</span
+                                >
+                            </div>
                         </section>
 
                         <section class="download">
-                            <div class="prompt"><span class="chevron">></span><a id="download" href="https://github.com/ujjwalvivek/helide/releases/latest" target="_blank" rel="noopener" class="term-link">Download <span id="version" class="label cat-flamingo">loading…</span> for Windows</a></div>
-                            <div class="prompt"><span class="chevron">></span><a href="https://github.com/ujjwalvivek/helide" target="_blank" rel="noopener" class="term-link">view source on github</a></div>
+                            <div class="prompt">
+                                <span class="chevron">></span
+                                ><a
+                                    id="download"
+                                    href="https://github.com/ujjwalvivek/helide/releases/latest"
+                                    target="_blank"
+                                    rel="noopener"
+                                    class="term-link"
+                                    >Download
+                                    <span
+                                        id="version"
+                                        class="label cat-flamingo"
+                                        >loading…</span
+                                    >
+                                    for Windows</a
+                                >
+                            </div>
+                            <div class="prompt">
+                                <span class="chevron">></span
+                                ><a
+                                    href="https://github.com/ujjwalvivek/helide"
+                                    target="_blank"
+                                    rel="noopener"
+                                    class="term-link"
+                                    >view source on github</a
+                                >
+                            </div>
                         </section>
                     </div>
 
@@ -77,30 +150,57 @@
                         <div class="header-strip">
                             <span class="header-title">official links</span>
                         </div>
-                        <a href="https://yazi-rs.github.io/" class="pill" style="--pill: #89b4fa">yazi</a>
-                        <a href="https://github.com/jesseduffield/lazygit" class="pill" style="--pill: #a6e3a1">lazygit</a>
-                        <a href="https://helix-editor.com/" class="pill" style="--pill: #cba6f7">helix</a>
-                        <a href="https://pwsh.org/" class="pill" style="--pill: #fab387">powershell</a>
-                        <a href="https://opencode.com/" class="pill" style="--pill: #f5c2e7">opencode</a>
-                        <a href="https://codex.com/" class="pill" style="--pill: #b4befe">codex</a>
-                        <footer>
-                            <span class="chevron">MIT · Ujjwal Vivek</span>
-                        </footer>
+                        <a
+                            href="https://yazi-rs.github.io/"
+                            class="pill"
+                            style="--pill: #89b4fa"
+                            >yazi</a
+                        >
+                        <a
+                            href="https://github.com/jesseduffield/lazygit"
+                            class="pill"
+                            style="--pill: #a6e3a1"
+                            >lazygit</a
+                        >
+                        <a
+                            href="https://helix-editor.com/"
+                            class="pill"
+                            style="--pill: #cba6f7"
+                            >helix</a
+                        >
+                        <a
+                            href="https://github.com/powershell/powershell"
+                            class="pill"
+                            style="--pill: #fab387"
+                            >powershell</a
+                        >
+                        <a
+                            href="https://github.com/anomalyco/opencode"
+                            class="pill"
+                            style="--pill: #f5c2e7"
+                            >opencode</a
+                        >
+                        <a
+                            href="https://chatgpt.com/codex/"
+                            class="pill"
+                            style="--pill: #b4befe"
+                            >codex</a
+                        >
                     </aside>
                 </div>
 
                 <div class="statusbar">
-                        <div class="status-left">
-                            <span class="mode">NORMAL</span>
-                            <span class="path">release-branch</span>
-                        </div>
-                        <div class="status-right">
-                            <span>win x64</span>
-                            <span>pwsh</span>
-                            <span>utf-8</span>
-                        </div>
+                    <div class="status-left">
+                        <span class="mode">MIT</span>
+                        <span class="path">ujjwalvivek</span>
                     </div>
-                </section>
+                    <div class="status-right">
+                        <span>win x64</span>
+                        <span>pwsh</span>
+                        <span>utf-8</span>
+                    </div>
+                </div>
+            </section>
         </main>
         <script src="app.js"></script>
     </body>

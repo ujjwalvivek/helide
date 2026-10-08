@@ -28,7 +28,7 @@ body {
     justify-content: center;
     gap: 28px;
     padding: 48px 20px;
-    background: var(--mantle);
+    background: transparent;
     color: var(--text);
     font-family: "Cascadia Code", Consolas, "JetBrains Mono", Menlo, monospace;
     -webkit-font-smoothing: antialiased;
@@ -40,11 +40,12 @@ main {
 }
 
 .window {
-    background: var(--base);
+    background: rgba(30, 30, 46, 0.80);
     border: 1px solid var(--surface0);
     border-radius: var(--radius);
     overflow: hidden;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.03) inset;
+    backdrop-filter: blur(32px) saturate(1.2);
+    -webkit-backdrop-filter: blur(32px) saturate(1.2);
 }
 
 .titlebar {
@@ -223,6 +224,8 @@ main {
     display: flex;
     gap: 24px;
     align-items: stretch;
+    position: relative;
+    z-index: 1;
 }
 
 .main {
@@ -262,14 +265,6 @@ main {
     background: rgba(255,255,255,0.06);
 }
 
-.sidebar footer {
-    margin-top: auto;
-    padding-top: 12px;
-    opacity: 0.6;
-    font-size: 11px;
-    text-align: center;
-}
-
 .statusbar {
     display: flex;
     align-items: center;
@@ -304,13 +299,6 @@ main {
 
 
 
-.divider {
-    border: none;
-    border-top: 1px dashed var(--surface0);
-    margin: 0 32px;
-    opacity: 0.6;
-}
-
 .panes {
     padding: 8px 32px 8px;
 }
@@ -324,27 +312,75 @@ main {
 }
 
 
-@media (max-width: 640px) {
-    .fetch {
+@media (max-width: 860px) {
+    main { max-width: 100%; }
+}
+
+@media (max-width: 720px) {
+    .layout {
         flex-direction: column;
-        align-items: center;
+        gap: 0;
+    }
+    .main {
+        min-width: 0;
+    }
+    .sidebar {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid var(--surface0);
+        padding: 16px 14px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .pill {
+        width: auto;
+        flex: 1;
+        min-width: 80px;
+        padding: 6px 8px;
+        font-size: 11px;
+    }
+    .header-strip {
+        width: 100%;
+        margin: 0;
+        border-radius: 0;
+        padding: 6px 10px;
+    }
+    .logo {
+        width: 100px;
+        height: 100px;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 24px 12px;
         gap: 16px;
     }
+    .hero {
+        padding: 24px 16px 0;
+    }
+    .fetch {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        text-align: left;
+    }
     .fetch-info {
-        text-align: center;
+        text-align: left;
+    }
+    .fetch-text {
+        text-align: left;
     }
     .panes {
-        padding: 20px 20px 24px;
+        padding: 8px 16px 8px;
     }
-    .hero {
-        padding: 28px 20px 24px;
+    .download {
+        padding: 8px 16px 20px;
     }
-    .divider {
-        margin: 0 20px;
-    }
-    footer {
-        flex-direction: column;
-        gap: 6px;
-        text-align: center;
+    .statusbar {
+        min-width: 287px;
+        gap: 4px;
+        padding: 6px 10px;
     }
 }
