@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using Helide.Persistence;
+using Helide.Theme;
 using Application = System.Windows.Application;
 
 namespace Helide;
@@ -14,6 +15,10 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Before any window exists, so the first layout pass already sees the
+        // resolved family rather than swapping under a live renderer.
+        ThemePalette.ApplyFonts();
 
         try
         {

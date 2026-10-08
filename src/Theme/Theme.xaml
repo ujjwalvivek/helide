@@ -1,0 +1,109 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sys="clr-namespace:System;assembly=mscorlib"
+>
+    <!--
+        Every colour, font and size in Helide is declared here and nowhere else.
+
+        Palette is Catppuccin Mocha. The three window chrome brushes carry an alpha
+        channel so the acrylic backdrop shows through, which is why they are not
+        simply base/manture. A handful of values are not part of Catppuccin and were
+        chosen for this app: the pane titles, the idle pane state, the terminal hint
+        text, the active tab fill, and the Windows caption close-button reds. They are
+        tokenised here for the same reason as everything else.
+
+        Tokens are referenced with {DynamicResource} throughout, so swapping a brush
+        at runtime re-skins every element that points at it. Code reads the same keys
+        through ThemePalette rather than hardcoding RGB.
+    -->
+
+    <!-- Surfaces -->
+    <SolidColorBrush x:Key="WindowBrush" Color="#D9191724" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#E6181825" />
+    <SolidColorBrush x:Key="RaisedBrush" Color="#E6313244" />
+    <SolidColorBrush x:Key="TerminalBrush" Color="#191724" />
+    <SolidColorBrush x:Key="PaneHeaderBrush" Color="#181825" />
+    <SolidColorBrush x:Key="PopoverBrush" Color="#1e1e2e" />
+    <!--
+        BorderBrush and InteractiveBrush are the same value today and are kept
+        apart on purpose: one is a hairline, the other is the resting and hover
+        fill of something you can click. A light theme would want those to differ.
+    -->
+    <SolidColorBrush x:Key="InteractiveBrush" Color="#313244" />
+    <SolidColorBrush x:Key="PressedBrush" Color="#45475a" />
+    <SolidColorBrush x:Key="PressedStrongBrush" Color="#585b70" />
+    <SolidColorBrush x:Key="TabActiveBackgroundBrush" Color="#26273a" />
+
+    <!-- Lines -->
+    <SolidColorBrush x:Key="BorderBrush" Color="#313244" />
+
+    <!--
+        Text runs on four near-identical greys. They are close enough to look like
+        an accident and different enough that collapsing them would change what the
+        app looks like, so they stay separate tokens until something says otherwise.
+    -->
+    <SolidColorBrush x:Key="TextBrush" Color="#cdd6f4" />
+    <SolidColorBrush x:Key="TextStrongBrush" Color="#bac2de" />
+    <SolidColorBrush x:Key="TextMutedBrush" Color="#a6adc8" />
+    <SolidColorBrush x:Key="TextSubtleBrush" Color="#7f849c" />
+    <SolidColorBrush x:Key="TextFaintBrush" Color="#6c7086" />
+    <SolidColorBrush x:Key="TextIdleBrush" Color="#666779" />
+    <SolidColorBrush x:Key="TextPaneTitleBrush" Color="#a9a8b6" />
+    <SolidColorBrush x:Key="TextOnAccentBrush" Color="#11111b" />
+    <SolidColorBrush x:Key="TextOnCaptionCloseBrush" Color="#ffffff" />
+    <SolidColorBrush x:Key="TerminalHintBrush" Color="#7782a4" />
+
+    <!-- Status -->
+    <SolidColorBrush x:Key="AccentBrush" Color="#89b4fa" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#f38ba8" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="#a6e3a1" />
+    <SolidColorBrush x:Key="CaptionCloseBrush" Color="#c42b1c" />
+    <SolidColorBrush x:Key="CaptionClosePressedBrush" Color="#9f2318" />
+
+    <!--
+        Terminal. Separate from the brushes above because these are what the ConPTY
+        renderer paints rather than what WPF paints, and they have to be opaque.
+        Helix, yazi and lazygit ship their own themes; only the default text colour,
+        the background and the selection highlight are Helide's to choose.
+    -->
+    <SolidColorBrush x:Key="TerminalBackgroundBrush" Color="#191724" />
+    <SolidColorBrush x:Key="TerminalForegroundBrush" Color="#cdd6f4" />
+    <SolidColorBrush x:Key="TerminalSelectionBrush" Color="#313244" />
+    <SolidColorBrush x:Key="TerminalAnsi0Brush" Color="#1e1e2e" />
+    <SolidColorBrush x:Key="TerminalAnsi1Brush" Color="#f38ba8" />
+    <SolidColorBrush x:Key="TerminalAnsi2Brush" Color="#a6e3a1" />
+    <SolidColorBrush x:Key="TerminalAnsi3Brush" Color="#f9e2af" />
+    <SolidColorBrush x:Key="TerminalAnsi4Brush" Color="#89b4fa" />
+    <SolidColorBrush x:Key="TerminalAnsi5Brush" Color="#f5c2e7" />
+    <SolidColorBrush x:Key="TerminalAnsi6Brush" Color="#94e2d5" />
+    <SolidColorBrush x:Key="TerminalAnsi7Brush" Color="#cdd6f4" />
+    <SolidColorBrush x:Key="TerminalAnsi8Brush" Color="#585b70" />
+    <SolidColorBrush x:Key="TerminalAnsi9Brush" Color="#f38ba8" />
+    <SolidColorBrush x:Key="TerminalAnsi10Brush" Color="#a6e3a1" />
+    <SolidColorBrush x:Key="TerminalAnsi11Brush" Color="#f9e2af" />
+    <SolidColorBrush x:Key="TerminalAnsi12Brush" Color="#89b4fa" />
+    <SolidColorBrush x:Key="TerminalAnsi13Brush" Color="#f5c2e7" />
+    <SolidColorBrush x:Key="TerminalAnsi14Brush" Color="#94e2d5" />
+    <SolidColorBrush x:Key="TerminalAnsi15Brush" Color="#ffffff" />
+
+    <!--
+        Fonts and sizes. Three families, not two, because the chrome monospace and
+        the terminal monospace are not the same choice. The chrome uses Cascadia
+        Mono because its metrics fit the fixed-height pane headers. The terminal
+        uses a Nerd Font because yazi, lazygit and helix draw glyphs that plain
+        Cascadia Mono has no boxes for. Collapsing these into one token swaps the
+        whole UI's typeface as a side effect of touching the terminal.
+    -->
+    <FontFamily x:Key="UiFontFamily">Segoe UI Variable Text</FontFamily>
+    <FontFamily x:Key="UiMonoFontFamily">Cascadia Mono</FontFamily>
+    <FontFamily x:Key="TerminalFontFamily">Cascadia Mono</FontFamily>
+
+    <sys:Double x:Key="FontSizeCaption">9</sys:Double>
+    <sys:Double x:Key="FontSizeSmall">10</sys:Double>
+    <sys:Double x:Key="FontSizeBody">11</sys:Double>
+    <sys:Double x:Key="FontSizeMedium">12</sys:Double>
+    <sys:Double x:Key="FontSizeLarge">13</sys:Double>
+    <sys:Double x:Key="FontSizeDisplay">20</sys:Double>
+    <sys:Double x:Key="FontSizeTitle">27</sys:Double>
+</ResourceDictionary>

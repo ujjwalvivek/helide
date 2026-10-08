@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Helide.Interop;
 using Helide.Persistence;
+using Helide.Theme;
 using Helide.Projects;
 using Helide.Terminal;
 using Button = System.Windows.Controls.Button;
@@ -385,7 +386,7 @@ public partial class MainWindow : Window
         {
             slot.Content = CreateErrorPanel(label, exception);
             stateText.Text = "failed";
-            stateText.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
+            stateText.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
             return null;
         }
     }
@@ -610,7 +611,7 @@ public partial class MainWindow : Window
         {
             EditorSlot.Children.Add(CreateErrorPanel("helix", exception));
             EditorPaneState.Text = "failed";
-            EditorPaneState.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
+            EditorPaneState.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
             return null;
         }
     }
@@ -711,12 +712,12 @@ public partial class MainWindow : Window
             TerminalHostState.Failed => "attention",
             _ => "stopped",
         };
-        stateText.Foreground = new SolidColorBrush(state switch
+        stateText.Foreground = state switch
         {
-            TerminalHostState.Ready => Color.FromRgb(166, 227, 161),
-            TerminalHostState.Failed => Color.FromRgb(243, 139, 168),
-            _ => Color.FromRgb(102, 103, 121),
-        });
+            TerminalHostState.Ready => ThemePalette.Brush(ThemePalette.SuccessBrush),
+            TerminalHostState.Failed => ThemePalette.Brush(ThemePalette.DangerBrush),
+            _ => ThemePalette.Brush(ThemePalette.TextIdleBrush),
+        };
     }
 
     private void ResetPaneStates()
@@ -725,20 +726,20 @@ public partial class MainWindow : Window
                  { GitPaneState, ProjectPaneState, EditorPaneState, RunnerPaneState, AgentPaneState })
         {
             stateText.Text = "starting";
-            stateText.Foreground = new SolidColorBrush(Color.FromRgb(102, 103, 121));
+            stateText.Foreground = ThemePalette.Brush(ThemePalette.TextIdleBrush);
         }
     }
 
     private static Border CreateErrorPanel(string label, Exception exception) => new()
     {
-        Background = new SolidColorBrush(Color.FromRgb(25, 23, 36)),
+        Background = ThemePalette.Brush(ThemePalette.TerminalBrush),
         Child = new TextBlock
         {
             Margin = new Thickness(18),
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168)),
-            FontFamily = new FontFamily("Cascadia Mono"),
-            FontSize = 10,
+            Foreground = ThemePalette.Brush(ThemePalette.DangerBrush),
+            FontFamily = ThemePalette.Font(ThemePalette.UiMonoFontFamily),
+            FontSize = ThemePalette.FontSize(ThemePalette.FontSizeSmall),
             Text = $"{label} could not start.\n\n{exception.Message}",
         },
     };
@@ -1007,7 +1008,7 @@ public partial class MainWindow : Window
                     showingGit ? "lazygit" : "yazi", exception));
                 var stateText = showingGit ? GitPaneState : ProjectPaneState;
                 stateText.Text = "failed";
-                stateText.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
+                stateText.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
             }
         }
         else
@@ -1242,7 +1243,7 @@ public partial class MainWindow : Window
         {
             AgentSlot.Content = CreateErrorPanel(type, exception);
             AgentPaneState.Text = "failed";
-            AgentPaneState.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
+            AgentPaneState.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
         }
     }
     private void AgentSessionButton_Click(object sender, RoutedEventArgs e)
@@ -1528,17 +1529,17 @@ public partial class MainWindow : Window
         public string ToolTipText => Path ?? "Project file picker";
 
         public System.Windows.Media.Brush Foreground => IsActive
-            ? new SolidColorBrush(Color.FromRgb(205, 214, 244))
-            : new SolidColorBrush(Color.FromRgb(127, 132, 156));
+            ? ThemePalette.Brush(ThemePalette.TextBrush)
+            : ThemePalette.Brush(ThemePalette.TextSubtleBrush);
 
         // The active tab carries an accent underline as well as a lighter fill, so
         // which one is in use reads at a glance rather than only on hover.
         public System.Windows.Media.Brush Background => IsActive
-            ? new SolidColorBrush(Color.FromRgb(38, 39, 58))
+            ? ThemePalette.Brush(ThemePalette.TabActiveBackgroundBrush)
             : System.Windows.Media.Brushes.Transparent;
 
         public System.Windows.Media.Brush Underline => IsActive
-            ? new SolidColorBrush(Color.FromRgb(137, 180, 250))
+            ? ThemePalette.Brush(ThemePalette.AccentBrush)
             : System.Windows.Media.Brushes.Transparent;
 
         public FontWeight Weight => IsActive ? FontWeights.SemiBold : FontWeights.Normal;
@@ -1699,7 +1700,7 @@ public partial class MainWindow : Window
         {
             RunnerSlot.Content = CreateErrorPanel(type, exception);
             RunnerPaneState.Text = "failed";
-            RunnerPaneState.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
+            RunnerPaneState.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
         }
     }
 
@@ -1719,16 +1720,16 @@ public partial class MainWindow : Window
         }
 
         public System.Windows.Media.Brush Background => IsActive
-            ? new SolidColorBrush(Color.FromRgb(38, 39, 58))
+            ? ThemePalette.Brush(ThemePalette.TabActiveBackgroundBrush)
             : System.Windows.Media.Brushes.Transparent;
 
         public System.Windows.Media.Brush Underline => IsActive
-            ? new SolidColorBrush(Color.FromRgb(137, 180, 250))
+            ? ThemePalette.Brush(ThemePalette.AccentBrush)
             : System.Windows.Media.Brushes.Transparent;
 
         public System.Windows.Media.Brush Foreground => IsActive
-            ? new SolidColorBrush(Color.FromRgb(205, 214, 244))
-            : new SolidColorBrush(Color.FromRgb(127, 132, 156));
+            ? ThemePalette.Brush(ThemePalette.TextBrush)
+            : ThemePalette.Brush(ThemePalette.TextSubtleBrush);
 
         public FontWeight Weight => IsActive ? FontWeights.SemiBold : FontWeights.Normal;
 

@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using EasyWindowsTerminalControl;
+using Helide.Theme;
 using Microsoft.Terminal.Wpf;
 using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
@@ -42,13 +43,13 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
     }
 
-    private const int TerminalFontSize = 10;
-    private static readonly Color TerminalBackground = Color.FromRgb(25, 23, 36);
+    private static readonly int TerminalFontSize = ThemePalette.FontSize(ThemePalette.FontSizeSmall);
+    private static readonly Color TerminalBackground = ThemePalette.Color(ThemePalette.TerminalBackgroundBrush);
     private static readonly SolidColorBrush TerminalBackgroundBrush =
-        new(TerminalBackground);
+        ThemePalette.Brush(ThemePalette.TerminalBackgroundBrush);
+    private static readonly FontFamily TerminalFont = ThemePalette.Font(ThemePalette.TerminalFontFamily);
     private static readonly FieldInfo? ScrollBarField = typeof(TerminalControl)
         .GetField("scrollbar", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly Lazy<string> TerminalFont = new(ResolveTerminalFont);
 
     private readonly EasyTerminalControl _terminal;
     private readonly KeyboardFocusChangedEventHandler _focusChangedHandler;
@@ -74,9 +75,9 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         _startupStatus = new TextBlock
         {
             Text = $"Starting {label}…",
-            FontFamily = new FontFamily("Cascadia Mono"),
-            FontSize = 10,
-            Foreground = new SolidColorBrush(Color.FromRgb(119, 130, 164)),
+            FontFamily = TerminalFont,
+            FontSize = TerminalFontSize,
+            Foreground = ThemePalette.Brush(ThemePalette.TerminalHintBrush),
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
         };
@@ -101,7 +102,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             Background = TerminalBackgroundBrush,
             HorizontalContentAlignment = System.Windows.HorizontalAlignment.Stretch,
             VerticalContentAlignment = VerticalAlignment.Stretch,
-            FontFamilyWhenSettingTheme = new FontFamily(TerminalFont.Value),
+            FontFamilyWhenSettingTheme = TerminalFont,
             FontSizeWhenSettingTheme = TerminalFontSize,
             Win32InputMode = true,
             InputCapture = EasyTerminalControl.INPUT_CAPTURE.TabKey |
@@ -367,8 +368,8 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
 
     private void ApplyTheme() => _terminal.Terminal.SetTheme(
         BuildTheme(),
-        TerminalFont.Value,
-        TerminalFontSize,
+        TerminalFont.Source,
+        (short)TerminalFontSize,
         TerminalBackground);
 
     private static void HideTerminalScrollBar(WpfScrollBar scrollBar)
@@ -395,67 +396,25 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         }
     }
 
-    private static string ResolveTerminalFont()
-    {
-        string[] preferredFonts =
-        [
-            "DepartureMono Nerd Font Mono",
-            "CaskaydiaCove Nerd Font Mono",
-            "JetBrainsMono Nerd Font Mono",
-        ];
-
-        var installedFonts = Fonts.SystemFontFamilies
-            .Select(font => font.Source)
-            .ToArray();
-
-        foreach (var preferredFont in preferredFonts)
-        {
-            var match = installedFonts.FirstOrDefault(font =>
-                string.Equals(font, preferredFont, StringComparison.OrdinalIgnoreCase));
-            if (match is not null)
-                return match;
-        }
-
-        return installedFonts.FirstOrDefault(font =>
-                   font.Contains("Nerd Font Mono", StringComparison.OrdinalIgnoreCase) ||
-                   font.Contains("NerdFontMono", StringComparison.OrdinalIgnoreCase))
-               ?? "Cascadia Mono";
-    }
-
-    private static uint TerminalColor(byte red, byte green, byte blue) =>
-        EasyTerminalControl.ColorToVal(Color.FromRgb(red, green, blue));
+    private static uint TerminalColor(string key) =>
+        EasyTerminalControl.ColorToVal(ThemePalette.Color(key));
 
     private static TerminalTheme BuildTheme() => new()
     {
-        DefaultBackground = TerminalColor(25, 23, 36),
-        DefaultForeground = TerminalColor(205, 214, 244),
-        DefaultSelectionBackground = TerminalColor(49, 50, 68),
+        DefaultBackground = TerminalColor(ThemePalette.TerminalBackgroundBrush),
+        DefaultForeground = TerminalColor(ThemePalette.TerminalForegroundBrush),
+        DefaultSelectionBackground = TerminalColor(ThemePalette.TerminalSelectionBrush),
         CursorStyle = CursorStyle.SteadyBar,
         ColorTable =
         [
-            TerminalColor(30, 30, 46),
-            TerminalColor(243, 139, 168),
-            TerminalColor(166, 227, 161),
-            TerminalColor(249, 226, 175),
-            TerminalColor(137, 180, 250),
-            TerminalColor(245, 194, 231),
-            TerminalColor(148, 226, 213),
-            TerminalColor(205, 214, 244),
-            TerminalColor(88, 91, 112),
-            TerminalColor(243, 139, 168),
-            TerminalColor(166, 227, 161),
-            TerminalColor(249, 226, 175),
-            TerminalColor(137, 180, 250),
-            TerminalColor(245, 194, 231),
-            TerminalColor(148, 226, 213),
-            TerminalColor(255, 255, 255),
+            .. ThemePalette.AnsiBrushKeys.Select(TerminalColor),
         ],
     };
 
-    private void Fail(string message)
+private void Fail(string message)
     {
         _startupStatus.Text = message;
-        _startupStatus.Foreground = new SolidColorBrush(Color.FromRgb(243, 139, 168));
+        _startupStatus.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
         SetState(TerminalHostState.Failed);
     }
 

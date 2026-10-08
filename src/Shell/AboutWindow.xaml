@@ -10,21 +10,15 @@
     ResizeMode="NoResize"
     AllowsTransparency="True"
     Background="Transparent"
-    Foreground="#cdd6f4"
-    FontFamily="Segoe UI Variable Text"
+    Foreground="{DynamicResource TextBrush}"
+    FontFamily="{DynamicResource UiFontFamily}"
     UseLayoutRounding="True"
     SnapsToDevicePixels="True"
 >
     <Window.Resources>
-        <SolidColorBrush x:Key="AboutBg" Color="#1e1e2e" />
-        <SolidColorBrush x:Key="AboutBorder" Color="#313244" />
-        <SolidColorBrush x:Key="AboutMuted" Color="#a6adc8" />
-        <SolidColorBrush x:Key="AboutFaint" Color="#6c7086" />
-        <SolidColorBrush x:Key="AboutAccent" Color="#89b4fa" />
-
         <Style x:Key="AboutButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#313244" />
-            <Setter Property="Foreground" Value="#cdd6f4" />
+            <Setter Property="Background" Value="{DynamicResource InteractiveBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="16,8" />
             <Setter Property="Cursor" Value="Hand" />
@@ -41,10 +35,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="BtnSurface" Property="Background" Value="#45475a" />
+                                <Setter TargetName="BtnSurface" Property="Background" Value="{DynamicResource PressedBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="BtnSurface" Property="Background" Value="#585b70" />
+                                <Setter TargetName="BtnSurface" Property="Background" Value="{DynamicResource PressedStrongBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -54,7 +48,7 @@
 
         <Style x:Key="AboutLinkStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#89b4fa" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
@@ -69,8 +63,8 @@
     </Window.Resources>
 
     <Border
-        Background="{StaticResource AboutBg}"
-        BorderBrush="{StaticResource AboutBorder}"
+        Background="{DynamicResource PopoverBrush}"
+        BorderBrush="{DynamicResource BorderBrush}"
         BorderThickness="1"
         CornerRadius="4"
     >
@@ -99,15 +93,15 @@
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock
                         Text="Helide"
-                        FontSize="20"
+                        FontSize="{DynamicResource FontSizeDisplay}"
                         FontWeight="SemiBold"
-                        Foreground="#cdd6f4"
+                        Foreground="{DynamicResource TextBrush}"
                     />
                     <TextBlock
                         Text="A terminal workspace that brings the project tools you need."
                         Margin="0,3,0,0"
-                        Foreground="{StaticResource AboutMuted}"
-                        FontSize="11"
+Foreground="{DynamicResource TextMutedBrush}"
+                        FontSize="{DynamicResource FontSizeBody}"
                     />
                 </StackPanel>
             </StackPanel>
@@ -115,24 +109,24 @@
             <StackPanel Grid.Row="1" VerticalAlignment="Center">
                 <TextBlock
                     Text="Version 1.2.0"
-                    Foreground="{StaticResource AboutFaint}"
-                    FontFamily="Cascadia Mono"
-                    FontSize="10"
+                    Foreground="{DynamicResource TextFaintBrush}"
+                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                    FontSize="{DynamicResource FontSizeSmall}"
                     Margin="0,0,0,10"
                 />
                 <TextBlock
                     Text="Source code on GitHub:"
-                    Foreground="{StaticResource AboutMuted}"
-                    FontSize="11"
+                    Foreground="{DynamicResource TextMutedBrush}"
+                    FontSize="{DynamicResource FontSizeBody}"
                     Margin="0,0,0,4"
                 />
                 <Button
                     x:Name="GitHubLink"
                     Click="GitHubLink_Click"
-                    Style="{StaticResource AboutLinkStyle}"
+                    Style="{DynamicResource AboutLinkStyle}"
                     Content="github.com/ujjwalvivek/helide"
                     HorizontalAlignment="Left"
-                    FontSize="11"
+                    FontSize="{DynamicResource FontSizeBody}"
                 />
             </StackPanel>
 
@@ -140,14 +134,14 @@
                 <Button
                     x:Name="UpdateButton"
                     Click="UpdateButton_Click"
-                    Style="{StaticResource AboutButtonStyle}"
+                    Style="{DynamicResource AboutButtonStyle}"
                     Content="Check for Updates"
                     Margin="0,0,8,0"
                 />
                 <Button
                     x:Name="OkButton"
                     Click="OkButton_Click"
-                    Style="{StaticResource AboutButtonStyle}"
+                    Style="{DynamicResource AboutButtonStyle}"
                     Content="OK"
                     MinWidth="72"
                 />

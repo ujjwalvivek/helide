@@ -10,8 +10,8 @@
     MinWidth="1050"
     WindowStartupLocation="CenterScreen"
     Background="Transparent"
-    Foreground="#cdd6f4"
-    FontFamily="Segoe UI Variable Text"
+    Foreground="{DynamicResource TextBrush}"
+    FontFamily="{DynamicResource UiFontFamily}"
     TextOptions.TextFormattingMode="Display"
     UseLayoutRounding="True"
     SnapsToDevicePixels="True"
@@ -26,17 +26,9 @@
         />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
-        <SolidColorBrush x:Key="WindowBrush" Color="#D9191724" />
-        <SolidColorBrush x:Key="SurfaceBrush" Color="#E6181825" />
-        <SolidColorBrush x:Key="RaisedBrush" Color="#E6313244" />
-        <SolidColorBrush x:Key="TerminalBrush" Color="#191724" />
-        <SolidColorBrush x:Key="BorderBrush" Color="#313244" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#89b4fa" />
-        <SolidColorBrush x:Key="MutedBrush" Color="#7f849c" />
-
         <Style x:Key="ChromeButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#bac2de" />
+            <Setter Property="Foreground" Value="{DynamicResource TextStrongBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="10,5" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -61,15 +53,15 @@
                                 <Setter
                                     TargetName="Chrome"
                                     Property="Background"
-                                    Value="#313244"
+                                    Value="{DynamicResource InteractiveBrush}"
                                 />
-                                <Setter Property="Foreground" Value="#cdd6f4" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter
                                     TargetName="Chrome"
                                     Property="Background"
-                                    Value="#45475a"
+                                    Value="{DynamicResource PressedBrush}"
                                 />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -88,14 +80,14 @@
             <Setter Property="Padding" Value="10,10" />
             <Setter Property="MinHeight" Value="42" />
             <Setter Property="FontSize" Value="13" />
-            <Setter Property="Foreground" Value="#89b4fa" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
         </Style>
 
         <Style x:Key="CaptionButtonStyle" TargetType="Button">
             <Setter Property="Width" Value="46" />
             <Setter Property="Height" Value="32" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#cdd6f4" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
             <Setter Property="FontSize" Value="10" />
@@ -118,14 +110,14 @@
                                 <Setter
                                     TargetName="CaptionSurface"
                                     Property="Background"
-                                    Value="#313244"
+                                    Value="{DynamicResource InteractiveBrush}"
                                 />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter
                                     TargetName="CaptionSurface"
                                     Property="Background"
-                                    Value="#45475a"
+                                    Value="{DynamicResource PressedBrush}"
                                 />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -141,11 +133,11 @@
         >
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#c42b1c" />
-                    <Setter Property="Foreground" Value="White" />
+                    <Setter Property="Background" Value="{DynamicResource CaptionCloseBrush}" />
+                    <Setter Property="Foreground" Value="{DynamicResource TextOnCaptionCloseBrush}" />
                 </Trigger>
                 <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="#9f2318" />
+                    <Setter Property="Background" Value="{DynamicResource CaptionClosePressedBrush}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -167,7 +159,7 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter
                 Property="Background"
-                Value="{StaticResource TerminalBrush}"
+                Value="{DynamicResource TerminalBrush}"
             />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="VerticalContentAlignment" Value="Stretch" />
@@ -183,7 +175,7 @@
                         <Grid Background="Transparent">
                             <Border
                                 Width="1"
-                                Background="#313244"
+                                Background="{DynamicResource BorderBrush}"
                                 HorizontalAlignment="Center"
                             />
                         </Grid>
@@ -202,7 +194,7 @@
                         <Grid Background="Transparent">
                             <Border
                                 Height="1"
-                                Background="#313244"
+                                Background="{DynamicResource BorderBrush}"
                                 VerticalAlignment="Center"
                             />
                         </Grid>
@@ -213,8 +205,8 @@
 
         <Style x:Key="PaneHeaderStyle" TargetType="Border">
             <Setter Property="Height" Value="27" />
-            <Setter Property="Background" Value="#181825" />
-            <Setter Property="BorderBrush" Value="#313244" />
+            <Setter Property="Background" Value="{DynamicResource PaneHeaderBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
             <Setter Property="CornerRadius" Value="2,2,0,0" />
         </Style>
@@ -224,7 +216,7 @@
             <Setter Property="Height" Value="22" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#89b4fa" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -260,7 +252,7 @@
                                 <Setter
                                     TargetName="ToggleSurface"
                                     Property="Background"
-                                    Value="#313244"
+                                    Value="{DynamicResource InteractiveBrush}"
                                 />
                                 <Setter
                                     TargetName="ToggleSurface"
@@ -285,7 +277,7 @@
         </Style>
 
         <Style x:Key="TitlePillStyle" TargetType="Border">
-            <Setter Property="Background" Value="#313244" />
+            <Setter Property="Background" Value="{DynamicResource InteractiveBrush}" />
             <Setter Property="CornerRadius" Value="2" />
             <Setter Property="Padding" Value="4,2" />
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -293,15 +285,15 @@
         </Style>
 
         <Style x:Key="TitlePillTextStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#a6adc8" />
-            <Setter Property="FontFamily" Value="Cascadia Mono" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="FontFamily" Value="{DynamicResource UiMonoFontFamily}" />
             <Setter Property="FontSize" Value="10" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
         <Style x:Key="MenuItemStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#cdd6f4" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="12,7" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
@@ -321,7 +313,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="MenuRow" Property="Background" Value="#313244" />
+                                <Setter TargetName="MenuRow" Property="Background" Value="{DynamicResource InteractiveBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -330,15 +322,15 @@
         </Style>
 
         <Style x:Key="MenuHeaderStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#6c7086" />
-            <Setter Property="FontFamily" Value="Cascadia Mono" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFaintBrush}" />
+            <Setter Property="FontFamily" Value="{DynamicResource UiMonoFontFamily}" />
             <Setter Property="FontSize" Value="9" />
             <Setter Property="Padding" Value="12,6,12,4" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
     </Window.Resources>
 
-    <Grid Background="{StaticResource WindowBrush}">
+    <Grid Background="{DynamicResource WindowBrush}">
         <Grid x:Name="MaximizeInset" Margin="0">
         <Grid.RowDefinitions>
             <RowDefinition Height="32" />
@@ -348,7 +340,7 @@
         <Border
                 Grid.Row="0"
                 Background="Transparent"
-                BorderBrush="{StaticResource BorderBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,0,1"
             >
             <Grid Margin="8,0,0,0">
@@ -365,7 +357,7 @@
                     <Button
                             x:Name="HomeButton"
                             Click="HomeButton_Click"
-                            Style="{StaticResource ChromeButtonStyle}"
+                            Style="{DynamicResource ChromeButtonStyle}"
                             Width="26"
                             Height="26"
                             Padding="1"
@@ -379,22 +371,22 @@
                                 RenderOptions.BitmapScalingMode="HighQuality"
                             />
                     </Button>
-                    <Border x:Name="ProjectNamePill" Style="{StaticResource TitlePillStyle}" Visibility="Collapsed">
+                    <Border x:Name="ProjectNamePill" Style="{DynamicResource TitlePillStyle}" Visibility="Collapsed">
                         <TextBlock
                                 x:Name="ProjectNamePillText"
-                                Style="{StaticResource TitlePillTextStyle}"
+                                Style="{DynamicResource TitlePillTextStyle}"
                             />
                     </Border>
-                    <Border x:Name="ProjectPathPill" Style="{StaticResource TitlePillStyle}" Visibility="Collapsed">
+                    <Border x:Name="ProjectPathPill" Style="{DynamicResource TitlePillStyle}" Visibility="Collapsed">
                         <TextBlock
                                 x:Name="ProjectPathPillText"
-                                Style="{StaticResource TitlePillTextStyle}"
+                                Style="{DynamicResource TitlePillTextStyle}"
                             />
                     </Border>
-                    <Border x:Name="GitBranchPill" Style="{StaticResource TitlePillStyle}" Visibility="Collapsed">
+                    <Border x:Name="GitBranchPill" Style="{DynamicResource TitlePillStyle}" Visibility="Collapsed">
                         <TextBlock
                                 x:Name="GitBranchPillText"
-                                Style="{StaticResource TitlePillTextStyle}"
+                                Style="{DynamicResource TitlePillTextStyle}"
                             />
                     </Border>
                 </StackPanel>
@@ -407,13 +399,13 @@
                     >
                     <Button
                             Click="MinimizeCaptionButton_Click"
-                            Style="{StaticResource CaptionButtonStyle}"
+                            Style="{DynamicResource CaptionButtonStyle}"
                             Content="&#xE921;"
                             ToolTip="Minimize"
                         />
                     <Button
                             Click="MaximizeRestoreCaptionButton_Click"
-                            Style="{StaticResource CaptionButtonStyle}"
+                            Style="{DynamicResource CaptionButtonStyle}"
                             ToolTip="Maximize or restore"
                         >
                         <TextBlock FontFamily="Segoe Fluent Icons">
@@ -437,7 +429,7 @@
                     </Button>
                     <Button
                             Click="CloseCaptionButton_Click"
-                            Style="{StaticResource CloseCaptionButtonStyle}"
+                            Style="{DynamicResource CloseCaptionButtonStyle}"
                             Content="&#xE8BB;"
                             ToolTip="Close"
                         />
@@ -453,64 +445,64 @@
             AllowsTransparency="True"
         >
             <Border
-                Background="#1e1e2e"
-                BorderBrush="#313244"
+                Background="{DynamicResource PopoverBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="1"
                 CornerRadius="4"
                 Padding="4"
             >
                 <StackPanel>
-                    <TextBlock Text="FILE" Style="{StaticResource MenuHeaderStyle}" />
-                    <Button x:Name="MenuOpenFolder" Click="MenuOpenFolder_Click" Style="{StaticResource MenuItemStyle}">
+                    <TextBlock Text="FILE" Style="{DynamicResource MenuHeaderStyle}" />
+                    <Button x:Name="MenuOpenFolder" Click="MenuOpenFolder_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock>
                             <Run Text="Open Folder" />
-                            <Run Text="  Ctrl+O" Foreground="#6c7086" FontSize="10" />
+                            <Run Text="  Ctrl+O" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
                         </TextBlock>
                     </Button>
-                    <Button x:Name="MenuCloseWorkspace" Click="MenuCloseWorkspace_Click" Style="{StaticResource MenuItemStyle}">
+                    <Button x:Name="MenuCloseWorkspace" Click="MenuCloseWorkspace_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock Text="Close Workspace" />
                     </Button>
-                    <Button x:Name="MenuExit" Click="MenuExit_Click" Style="{StaticResource MenuItemStyle}">
+                    <Button x:Name="MenuExit" Click="MenuExit_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock Text="Exit" />
                     </Button>
 
-                    <TextBlock Text="CONTROLS" Style="{StaticResource MenuHeaderStyle}" />
-                    <Button x:Name="MenuFocusLeft" Click="MenuFocusLeft_Click" Style="{StaticResource MenuItemStyle}">
+                    <TextBlock Text="CONTROLS" Style="{DynamicResource MenuHeaderStyle}" />
+                    <Button x:Name="MenuFocusLeft" Click="MenuFocusLeft_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock>
                             <Run Text="Focus Left Panel" />
-                            <Run Text="  Ctrl+1" Foreground="#6c7086" FontSize="10" />
+                            <Run Text="  Ctrl+1" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
                         </TextBlock>
                     </Button>
-                    <Button x:Name="MenuFocusEditor" Click="MenuFocusEditor_Click" Style="{StaticResource MenuItemStyle}">
+                    <Button x:Name="MenuFocusEditor" Click="MenuFocusEditor_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock>
                             <Run Text="Focus Editor" />
-                            <Run Text="  Ctrl+2" Foreground="#6c7086" FontSize="10" />
+                            <Run Text="  Ctrl+2" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
                         </TextBlock>
                     </Button>
-                    <Button x:Name="MenuFocusRunner" Click="MenuFocusRunner_Click" Style="{StaticResource MenuItemStyle}">
+                    <Button x:Name="MenuFocusRunner" Click="MenuFocusRunner_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock>
                             <Run Text="Focus Runner" />
-                            <Run Text="  Ctrl+3" Foreground="#6c7086" FontSize="10" />
+                            <Run Text="  Ctrl+3" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
                         </TextBlock>
                     </Button>
-                    <Button x:Name="MenuFocusAgent" Click="MenuFocusAgent_Click" Style="{StaticResource MenuItemStyle}">
+                    <Button x:Name="MenuFocusAgent" Click="MenuFocusAgent_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock>
                             <Run Text="Focus Agent" />
-                            <Run Text="  Ctrl+4" Foreground="#6c7086" FontSize="10" />
+                            <Run Text="  Ctrl+4" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
                         </TextBlock>
                     </Button>
-                    <Button x:Name="MenuFocusProject" Click="MenuFocusProject_Click" Style="{StaticResource MenuItemStyle}">
+                    <Button x:Name="MenuFocusProject" Click="MenuFocusProject_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock>
                             <Run Text="Focus Project" />
-                            <Run Text="  Ctrl+5" Foreground="#6c7086" FontSize="10" />
+                            <Run Text="  Ctrl+5" Foreground="{DynamicResource TextFaintBrush}" FontSize="{DynamicResource FontSizeSmall}" />
                         </TextBlock>
                     </Button>
-                    <Button x:Name="MenuRunCommand" Click="MenuRunCommand_Click" Style="{StaticResource MenuItemStyle}">
+                    <Button x:Name="MenuRunCommand" Click="MenuRunCommand_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock Text="Run Command" />
                     </Button>
 
-                    <TextBlock Text="HELP" Style="{StaticResource MenuHeaderStyle}" />
-                    <Button x:Name="MenuAbout" Click="MenuAbout_Click" Style="{StaticResource MenuItemStyle}">
+                    <TextBlock Text="HELP" Style="{DynamicResource MenuHeaderStyle}" />
+                    <Button x:Name="MenuAbout" Click="MenuAbout_Click" Style="{DynamicResource MenuItemStyle}">
                         <TextBlock Text="About Helide" />
                     </Button>
                 </StackPanel>
@@ -520,7 +512,7 @@
         <Grid Grid.Row="1">
             <Grid
                     x:Name="WelcomeRoot"
-                    Background="{StaticResource WindowBrush}"
+                    Background="{DynamicResource WindowBrush}"
                 >
                 <ScrollViewer
                         VerticalScrollBarVisibility="Auto"
@@ -553,16 +545,16 @@
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock
                                             Text="Helide"
-                                            FontSize="27"
+                                            FontSize="{DynamicResource FontSizeTitle}"
                                             FontWeight="SemiBold"
-                                            Foreground="#cdd6f4"
+                                            Foreground="{DynamicResource TextBrush}"
                                         />
                                     <TextBlock
                                             Text="Keep the editor you love. Bring the project tools you need."
                                             Margin="0,4,0,0"
-                                            FontSize="13"
+                                            FontSize="{DynamicResource FontSizeLarge}"
                                             FontStyle="Italic"
-                                            Foreground="#a6adc8"
+                                            Foreground="{DynamicResource TextMutedBrush}"
                                         />
                                 </StackPanel>
                             </StackPanel>
@@ -570,19 +562,19 @@
                             <TextBlock
                                     Text="GET STARTED"
                                     Margin="0,0,0,7"
-                                    FontFamily="Cascadia Mono"
-                                    FontSize="9"
-                                    Foreground="#6c7086"
+                                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                                    FontSize="{DynamicResource FontSizeCaption}"
+                                    Foreground="{DynamicResource TextFaintBrush}"
                                 />
                             <Border
                                     Height="1"
-                                    Background="{StaticResource BorderBrush}"
+                                    Background="{DynamicResource BorderBrush}"
                                 />
 
                             <Button
                                     x:Name="OpenProjectButton"
                                     Click="OpenProjectButton_Click"
-                                    Style="{StaticResource WelcomeActionStyle}"
+                                    Style="{DynamicResource WelcomeActionStyle}"
                                 >
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -592,7 +584,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock
                                             Text="+"
-                                            FontFamily="Cascadia Mono"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
                                         />
                                     <TextBlock
                                             Grid.Column="1"
@@ -601,9 +593,9 @@
                                     <TextBlock
                                             Grid.Column="2"
                                             Text="Ctrl+O"
-                                            Foreground="#7f849c"
-                                            FontFamily="Cascadia Mono"
-                                            FontSize="10"
+                                            Foreground="{DynamicResource TextSubtleBrush}"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                            FontSize="{DynamicResource FontSizeSmall}"
                                         />
                                 </Grid>
                             </Button>
@@ -611,7 +603,7 @@
                             <Button
                                     x:Name="ContinueProjectButton"
                                     Click="ContinueProjectButton_Click"
-                                    Style="{StaticResource WelcomeActionStyle}"
+                                    Style="{DynamicResource WelcomeActionStyle}"
                                     Visibility="Collapsed"
                                 >
                                 <Grid>
@@ -622,7 +614,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock
                                             Text="↻"
-                                            FontFamily="Cascadia Mono"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
                                         />
                                     <StackPanel Grid.Column="1">
                                         <TextBlock
@@ -630,17 +622,17 @@
                                             />
                                         <TextBlock
                                                 x:Name="ContinueProjectPathText"
-                                                FontSize="10"
-                                                Foreground="#7f849c"
+                                                FontSize="{DynamicResource FontSizeSmall}"
+                                                Foreground="{DynamicResource TextSubtleBrush}"
                                                 TextTrimming="CharacterEllipsis"
                                             />
                                     </StackPanel>
                                     <TextBlock
                                             Grid.Column="2"
                                             Text="Enter"
-                                            Foreground="#7f849c"
-                                            FontFamily="Cascadia Mono"
-                                            FontSize="10"
+                                            Foreground="{DynamicResource TextSubtleBrush}"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                            FontSize="{DynamicResource FontSizeSmall}"
                                         />
                                 </Grid>
                             </Button>
@@ -648,13 +640,13 @@
                             <TextBlock
                                     Text="RECENT PROJECTS"
                                     Margin="0,22,0,7"
-                                    FontFamily="Cascadia Mono"
-                                    FontSize="9"
-                                    Foreground="#6c7086"
+                                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                                    FontSize="{DynamicResource FontSizeCaption}"
+                                    Foreground="{DynamicResource TextFaintBrush}"
                                 />
                             <Border
                                     Height="1"
-                                    Background="{StaticResource BorderBrush}"
+                                    Background="{DynamicResource BorderBrush}"
                                 />
 
                             <ItemsControl x:Name="RecentProjectItems">
@@ -663,7 +655,7 @@
                                         <Button
                                                 Click="RecentProject_Click"
                                                 Tag="{Binding Path}"
-                                                Style="{StaticResource RecentProjectStyle}"
+                                                Style="{DynamicResource RecentProjectStyle}"
                                             >
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
@@ -679,30 +671,30 @@
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock
                                                         Text="▱"
-                                                        Foreground="#89b4fa"
-                                                        FontSize="12"
+                                                        Foreground="{DynamicResource AccentBrush}"
+                                                        FontSize="{DynamicResource FontSizeMedium}"
                                                     />
                                                 <StackPanel Grid.Column="1">
                                                     <TextBlock
                                                             Text="{Binding Name}"
-                                                            Foreground="#cdd6f4"
-                                                            FontSize="12"
+                                                            Foreground="{DynamicResource TextBrush}"
+                                                            FontSize="{DynamicResource FontSizeMedium}"
                                                             FontWeight="SemiBold"
                                                         />
                                                     <TextBlock
                                                             Text="{Binding Path}"
-                                                            Foreground="#7f849c"
-                                                            FontFamily="Cascadia Mono"
-                                                            FontSize="9"
+                                                            Foreground="{DynamicResource TextSubtleBrush}"
+                                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                            FontSize="{DynamicResource FontSizeCaption}"
                                                             TextTrimming="CharacterEllipsis"
                                                         />
                                                 </StackPanel>
                                                 <TextBlock
                                                         Grid.Column="2"
                                                         Text="{Binding Shortcut}"
-                                                        Foreground="#7f849c"
-                                                        FontFamily="Cascadia Mono"
-                                                        FontSize="10"
+                                                        Foreground="{DynamicResource TextSubtleBrush}"
+                                                        FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                        FontSize="{DynamicResource FontSizeSmall}"
                                                         VerticalAlignment="Center"
                                                     />
                                             </Grid>
@@ -715,16 +707,16 @@
                                     x:Name="RecentEmptyText"
                                     Text="No recent projects yet."
                                     Margin="10,14"
-                                    Foreground="#7f849c"
+                                    Foreground="{DynamicResource TextSubtleBrush}"
                                     FontStyle="Italic"
                                 />
                             <TextBlock
                                     x:Name="WelcomeStatus"
                                     Margin="8,20,8,0"
                                     Text="Helix  ·  git / project  ·  runner  ·  OpenCode"
-                                    Foreground="#6c7086"
-                                    FontFamily="Cascadia Mono"
-                                    FontSize="10"
+                                    Foreground="{DynamicResource TextFaintBrush}"
+                                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                                    FontSize="{DynamicResource FontSizeSmall}"
                                     TextAlignment="Center"
                                     TextWrapping="Wrap"
                                 />
@@ -736,7 +728,7 @@
             <Grid
                     x:Name="WorkspaceRoot"
                     Visibility="Collapsed"
-                    Background="{StaticResource TerminalBrush}"
+                    Background="{DynamicResource TerminalBrush}"
                 >
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" MinHeight="300" />
@@ -746,7 +738,7 @@
                 <Grid
                         Grid.Row="0"
                         x:Name="PaneGrid"
-                        Background="{StaticResource TerminalBrush}"
+                        Background="{DynamicResource TerminalBrush}"
                     >
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition
@@ -785,7 +777,7 @@
                                 /></Grid.RowDefinitions>
                         <Border
                                 Grid.Row="0"
-                                Style="{StaticResource PaneHeaderStyle}"
+                                Style="{DynamicResource PaneHeaderStyle}"
                             >
                             <Grid Margin="9,0">
                                 <Grid.ColumnDefinitions>
@@ -797,9 +789,9 @@
                                         x:Name="LeftPaneTitle"
                                         Text="GIT"
                                         VerticalAlignment="Center"
-                                        FontFamily="Cascadia Mono"
-                                        FontSize="9"
-                                        Foreground="#a9a8b6"
+                                        FontFamily="{DynamicResource UiMonoFontFamily}"
+                                        FontSize="{DynamicResource FontSizeCaption}"
+                                        Foreground="{DynamicResource TextPaneTitleBrush}"
                                     />
                                 <TextBlock
                                         Grid.Column="1"
@@ -807,8 +799,8 @@
                                         Text="starting"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
-                                        Foreground="#666779"
-                                        FontSize="10"
+                                        Foreground="{DynamicResource TextIdleBrush}"
+                                        FontSize="{DynamicResource FontSizeSmall}"
                                     />
                                 <TextBlock
                                         Grid.Column="1"
@@ -816,8 +808,8 @@
                                         Text="starting"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
-                                        Foreground="#666779"
-                                        FontSize="10"
+                                        Foreground="{DynamicResource TextIdleBrush}"
+                                        FontSize="{DynamicResource FontSizeSmall}"
                                         Visibility="Collapsed"
                                     />
                             </Grid>
@@ -825,7 +817,7 @@
                         <Grid
                                 Grid.Row="1"
                                 x:Name="LeftToolStack"
-                                Background="{StaticResource TerminalBrush}"
+                                Background="{DynamicResource TerminalBrush}"
                             />
                     </Grid>
 
@@ -833,7 +825,7 @@
                             Grid.Column="1"
                             Width="3"
                             HorizontalAlignment="Stretch"
-                            Style="{StaticResource VerticalSplitterStyle}"
+                            Style="{DynamicResource VerticalSplitterStyle}"
                             DragCompleted="LayoutSplitter_DragCompleted"
                         />
 
@@ -862,22 +854,22 @@
                                     /></Grid.RowDefinitions>
                             <Border
                                     Grid.Row="0"
-                                    Style="{StaticResource PaneHeaderStyle}"
+                                    Style="{DynamicResource PaneHeaderStyle}"
                                 >
                                 <DockPanel Margin="9,0" LastChildFill="False">
                                     <TextBlock
                                             DockPanel.Dock="Left"
                                             Text="HELIX"
                                             VerticalAlignment="Center"
-                                            FontFamily="Cascadia Mono"
-                                            FontSize="9"
-                                            Foreground="#a9a8b6"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                            FontSize="{DynamicResource FontSizeCaption}"
+                                            Foreground="{DynamicResource TextPaneTitleBrush}"
                                         />
                                     <Border
                                             DockPanel.Dock="Left"
                                             Width="1"
                                             Margin="8,6"
-                                            Background="#313244"
+                                            Background="{DynamicResource BorderBrush}"
                                             VerticalAlignment="Center"
                                         />
 <Border
@@ -920,8 +912,8 @@
                                                                          competed and the close never fired. -->
                                                                     <TextBlock
                                                                             Text="{Binding Name}"
-                                                                            FontFamily="Cascadia Mono"
-                                                                            FontSize="10"
+                                                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                                            FontSize="{DynamicResource FontSizeSmall}"
                                                                             Foreground="{Binding Foreground}"
                                                                             FontWeight="{Binding Weight}"
                                                                             MaxWidth="160"
@@ -942,8 +934,8 @@
                                                                             Click="EditorTab_Close"
                                                                             Tag="{Binding}"
                                                                             Content="×"
-                                                                            FontFamily="Cascadia Mono"
-                                                                            FontSize="12"
+                                                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                                            FontSize="{DynamicResource FontSizeMedium}"
                                                                             Foreground="{Binding Foreground}"
                                                                             Background="Transparent"
                                                                             BorderThickness="0"
@@ -964,8 +956,8 @@
                                                                                 </Border>
                                                                                 <ControlTemplate.Triggers>
                                                                                     <Trigger Property="IsMouseOver" Value="True">
-                                                                                        <Setter TargetName="CloseSurface" Property="Background" Value="#f38ba8" />
-                                                                                        <Setter Property="Foreground" Value="#11111b" />
+                                                                                        <Setter TargetName="CloseSurface" Property="Background" Value="{DynamicResource DangerBrush}" />
+                                                                                        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
                                                                                     </Trigger>
                                                                                 </ControlTemplate.Triggers>
                                                                             </ControlTemplate>
@@ -986,9 +978,9 @@
                                                 Padding="0"
                                                 Click="EditorTabSplitButton_Click"
                                                 Content="+"
-                                                FontFamily="Cascadia Mono"
-                                                FontSize="12"
-                                                Foreground="#7f849c"
+                                                FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                FontSize="{DynamicResource FontSizeMedium}"
+                                                Foreground="{DynamicResource TextSubtleBrush}"
                                                 Background="Transparent"
                                                 BorderThickness="0"
                                                 Cursor="Hand"
@@ -1006,8 +998,8 @@
                                                     </Border>
                                                     <ControlTemplate.Triggers>
                                                         <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="SplitSurface" Property="Background" Value="#313244" />
-                                                            <Setter Property="Foreground" Value="#cdd6f4" />
+                                                            <Setter TargetName="SplitSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
                                                         </Trigger>
                                                     </ControlTemplate.Triggers>
                                                 </ControlTemplate>
@@ -1018,22 +1010,22 @@
                                             x:Name="EditorPaneState"
                                             Text="starting"
                                             VerticalAlignment="Center"
-                                            Foreground="#666779"
-                                            FontSize="10"
+                                            Foreground="{DynamicResource TextIdleBrush}"
+                                            FontSize="{DynamicResource FontSizeSmall}"
                                         />
                                 </DockPanel>
                             </Border>
                             <Grid
                                     Grid.Row="1"
                                     x:Name="EditorSlot"
-                                    Background="{StaticResource TerminalBrush}"
+                                    Background="{DynamicResource TerminalBrush}"
                                 />
                         </Grid>
                         <GridSplitter
                                 Grid.Row="1"
                                 Height="3"
                                 HorizontalAlignment="Stretch"
-                                Style="{StaticResource HorizontalSplitterStyle}"
+                                Style="{DynamicResource HorizontalSplitterStyle}"
                                 DragCompleted="LayoutSplitter_DragCompleted"
                             />
                         <Grid
@@ -1047,22 +1039,22 @@
                                     /></Grid.RowDefinitions>
                             <Border
                                     Grid.Row="0"
-                                    Style="{StaticResource PaneHeaderStyle}"
+                                    Style="{DynamicResource PaneHeaderStyle}"
                                 >
                                 <DockPanel Margin="9,0" LastChildFill="False">
                                     <TextBlock
                                             DockPanel.Dock="Left"
                                             Text="RUN"
                                             VerticalAlignment="Center"
-                                            FontFamily="Cascadia Mono"
-                                            FontSize="9"
-                                            Foreground="#a9a8b6"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                            FontSize="{DynamicResource FontSizeCaption}"
+                                            Foreground="{DynamicResource TextPaneTitleBrush}"
                                         />
                                     <Border
                                             DockPanel.Dock="Left"
                                             Width="1"
                                             Margin="8,6"
-                                            Background="#313244"
+                                            Background="{DynamicResource BorderBrush}"
                                             VerticalAlignment="Center"
                                         />
                                     <Border
@@ -1097,8 +1089,8 @@
                                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                             <TextBlock
                                                                     Text="{Binding Name}"
-                                                                        FontFamily="Cascadia Mono"
-                                                                        FontSize="10"
+                                                                        FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                                        FontSize="{DynamicResource FontSizeSmall}"
                                                                         Foreground="{Binding Foreground}"
                                                                         FontWeight="{Binding Weight}"
                                                                         MaxWidth="70"
@@ -1116,9 +1108,9 @@
                                                                         Click="RunnerTabClose_Click"
                                                                         Tag="{Binding}"
                                                                         Content="×"
-                                                                        FontFamily="Cascadia Mono"
-                                                                        FontSize="10"
-                                                                        Foreground="#7f849c"
+                                                                        FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                                        FontSize="{DynamicResource FontSizeSmall}"
+                                                                        Foreground="{DynamicResource TextSubtleBrush}"
                                                                         Background="Transparent"
                                                                         BorderThickness="0"
                                                                         Cursor="Hand"
@@ -1137,8 +1129,8 @@
                                                                             </Border>
                                                                             <ControlTemplate.Triggers>
                                                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                                                    <Setter TargetName="CloseSurface" Property="Background" Value="#f38ba8" />
-                                                                                    <Setter Property="Foreground" Value="#11111b" />
+                                                                                    <Setter TargetName="CloseSurface" Property="Background" Value="{DynamicResource DangerBrush}" />
+                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
                                                                                 </Trigger>
                                                                             </ControlTemplate.Triggers>
                                                                         </ControlTemplate>
@@ -1161,10 +1153,10 @@
                                             Height="27"
                                             Margin="0,0,4,0"
                                             Padding="0"
-                                            Foreground="#7f849c"
+                                            Foreground="{DynamicResource TextSubtleBrush}"
                                             Cursor="Hand"
-                                            FontFamily="Cascadia Mono"
-                                            FontSize="12"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                            FontSize="{DynamicResource FontSizeMedium}"
                                             Content="+"
                                         >
                                         <Button.Template>
@@ -1179,8 +1171,8 @@
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                     <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="SplitSurface" Property="Background" Value="#313244" />
-                                                        <Setter Property="Foreground" Value="#cdd6f4" />
+                                                        <Setter TargetName="SplitSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
                                                     </Trigger>
                                                 </ControlTemplate.Triggers>
                                             </ControlTemplate>
@@ -1191,15 +1183,15 @@
                                             x:Name="RunnerPaneState"
                                             Text="starting"
                                             VerticalAlignment="Center"
-                                            Foreground="#666779"
-                                            FontSize="10"
+                                            Foreground="{DynamicResource TextIdleBrush}"
+                                            FontSize="{DynamicResource FontSizeSmall}"
                                         />
                                 </DockPanel>
                             </Border>
                             <ContentControl
                                     Grid.Row="1"
                                     x:Name="RunnerSlot"
-                                    Style="{StaticResource TerminalSlotStyle}"
+                                    Style="{DynamicResource TerminalSlotStyle}"
                                 />
                         </Grid>
                     </Grid>
@@ -1208,7 +1200,7 @@
                             Grid.Column="3"
                             Width="3"
                             HorizontalAlignment="Stretch"
-                            Style="{StaticResource VerticalSplitterStyle}"
+                            Style="{DynamicResource VerticalSplitterStyle}"
                             DragCompleted="LayoutSplitter_DragCompleted"
                         />
 
@@ -1223,7 +1215,7 @@
                             </Grid.RowDefinitions>
                         <Border
                                 Grid.Row="0"
-                                Style="{StaticResource PaneHeaderStyle}"
+                                Style="{DynamicResource PaneHeaderStyle}"
                             >
                             <DockPanel Margin="9,0" LastChildFill="False">
                                 <!-- Title -->
@@ -1232,16 +1224,16 @@
                                         x:Name="AgentPaneTitle"
                                         Text="OPENCODE"
                                         VerticalAlignment="Center"
-                                        FontFamily="Cascadia Mono"
-                                        FontSize="9"
-                                        Foreground="#a9a8b6"
+                                        FontFamily="{DynamicResource UiMonoFontFamily}"
+                                        FontSize="{DynamicResource FontSizeCaption}"
+                                        Foreground="{DynamicResource TextPaneTitleBrush}"
                                     />
                                 <!-- Separator -->
                                 <Border
                                         DockPanel.Dock="Left"
                                         Width="1"
                                         Margin="8,6"
-                                        Background="#313244"
+                                        Background="{DynamicResource BorderBrush}"
                                         VerticalAlignment="Center"
                                     />
                                 <!-- Session tab strip -->
@@ -1277,8 +1269,8 @@
                                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                                 <TextBlock
                                                                         Text="{Binding Name}"
-                                                                    FontFamily="Cascadia Mono"
-                                                                    FontSize="10"
+                                                                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                                    FontSize="{DynamicResource FontSizeSmall}"
                                                                     Foreground="{Binding Foreground}"
                                                                     FontWeight="{Binding Weight}"
                                                                     MaxWidth="70"
@@ -1296,9 +1288,9 @@
                                                                     Click="AgentTabClose_Click"
                                                                     Tag="{Binding}"
                                                                     Content="×"
-                                                                    FontFamily="Cascadia Mono"
-                                                                    FontSize="10"
-                                                                    Foreground="#7f849c"
+                                                                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                                    FontSize="{DynamicResource FontSizeSmall}"
+                                                                    Foreground="{DynamicResource TextSubtleBrush}"
                                                                     Background="Transparent"
                                                                     BorderThickness="0"
                                                                     Cursor="Hand"
@@ -1317,8 +1309,8 @@
                                                                         </Border>
                                                                         <ControlTemplate.Triggers>
                                                                             <Trigger Property="IsMouseOver" Value="True">
-                                                                                <Setter TargetName="CloseSurface" Property="Background" Value="#f38ba8" />
-                                                                                <Setter Property="Foreground" Value="#11111b" />
+                                                                                <Setter TargetName="CloseSurface" Property="Background" Value="{DynamicResource DangerBrush}" />
+                                                                                <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
                                                                             </Trigger>
                                                                         </ControlTemplate.Triggers>
                                                                     </ControlTemplate>
@@ -1342,10 +1334,10 @@
                                         Height="27"
                                         Margin="0,0,4,0"
                                         Padding="0"
-                                        Foreground="#7f849c"
+                                        Foreground="{DynamicResource TextSubtleBrush}"
                                         Cursor="Hand"
-                                        FontFamily="Cascadia Mono"
-                                        FontSize="12"
+                                        FontFamily="{DynamicResource UiMonoFontFamily}"
+                                        FontSize="{DynamicResource FontSizeMedium}"
                                         Content="+"
                                     >
                                     <Button.Template>
@@ -1360,8 +1352,8 @@
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="SplitSurface" Property="Background" Value="#313244" />
-                                                    <Setter Property="Foreground" Value="#cdd6f4" />
+                                                    <Setter TargetName="SplitSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -1373,8 +1365,8 @@
                                         x:Name="AgentPaneState"
                                         Text="starting"
                                         VerticalAlignment="Center"
-                                        Foreground="#666779"
-                                        FontSize="10"
+                                        Foreground="{DynamicResource TextIdleBrush}"
+                                        FontSize="{DynamicResource FontSizeSmall}"
                                     />
                             </DockPanel>
                         </Border>
@@ -1387,8 +1379,8 @@
                                 AllowsTransparency="True"
                             >
                             <Border
-                                    Background="#181825"
-                                    BorderBrush="#313244"
+                                    Background="{DynamicResource PaneHeaderBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="2"
                                     Padding="8"
@@ -1396,34 +1388,34 @@
                                 <StackPanel>
                                     <TextBlock
                                             Text="NEW SESSION"
-                                            FontFamily="Cascadia Mono"
-                                            FontSize="9"
-                                            Foreground="#6c7086"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                            FontSize="{DynamicResource FontSizeCaption}"
+                                            Foreground="{DynamicResource TextFaintBrush}"
                                             Margin="0,0,0,6"
                                         />
                                     <Button
                                             x:Name="NewOpenCodeButton"
                                             Click="NewOpenCodeButton_Click"
-                                            Style="{StaticResource WelcomeActionStyle}"
+                                            Style="{DynamicResource WelcomeActionStyle}"
                                             Padding="8,4"
                                             Margin="0,0,0,4"
                                             HorizontalContentAlignment="Left"
                                         >
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="&#xE710;" FontFamily="Segoe Fluent Icons" Foreground="#89b4fa" Margin="0,0,6,0" />
-                                            <TextBlock Text="New OpenCode session" FontSize="11" />
+                                            <TextBlock Text="&#xE710;" FontFamily="Segoe Fluent Icons" Foreground="{DynamicResource AccentBrush}" Margin="0,0,6,0" />
+                                            <TextBlock Text="New OpenCode session" FontSize="{DynamicResource FontSizeBody}" />
                                         </StackPanel>
                                     </Button>
                                     <Button
                                             x:Name="NewCodexButton"
                                             Click="NewCodexButton_Click"
-                                            Style="{StaticResource WelcomeActionStyle}"
+                                            Style="{DynamicResource WelcomeActionStyle}"
                                             Padding="8,4"
                                             HorizontalContentAlignment="Left"
                                         >
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="&#xF0A0;" FontFamily="Segoe Fluent Icons" Foreground="#89b4fa" Margin="0,0,6,0" />
-                                            <TextBlock Text="New Codex session" FontSize="11" />
+                                            <TextBlock Text="&#xF0A0;" FontFamily="Segoe Fluent Icons" Foreground="{DynamicResource AccentBrush}" Margin="0,0,6,0" />
+                                            <TextBlock Text="New Codex session" FontSize="{DynamicResource FontSizeBody}" />
                                         </StackPanel>
                                     </Button>
                                 </StackPanel>
@@ -1433,15 +1425,15 @@
                         <ContentControl
                                 Grid.Row="1"
                                 x:Name="AgentSlot"
-                                Style="{StaticResource TerminalSlotStyle}"
+                                Style="{DynamicResource TerminalSlotStyle}"
                             />
                     </Grid>
                 </Grid>
 
                 <Border
                         Grid.Row="1"
-                        Background="{StaticResource SurfaceBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="0,1,0,0"
                     >
                     <Grid Margin="10,0">
@@ -1460,12 +1452,12 @@
                                     x:Name="GitPanelToggle"
                                     Click="GitPanelToggle_Click"
                                     IsChecked="True"
-                                    Style="{StaticResource PanelToggleStyle}"
+                                    Style="{DynamicResource PanelToggleStyle}"
                                     ToolTip="Show git panel"
                                 >
                                     <Image
                                             Source="/src/Assets/icons/git.png"
-                                            Style="{StaticResource PanelIconStyle}"
+                                            Style="{DynamicResource PanelIconStyle}"
                                         />
                                 </ToggleButton>
                             <ToggleButton
@@ -1473,12 +1465,12 @@
                                     Margin="2,0,0,0"
                                     Click="ProjectPanelToggle_Click"
                                     IsChecked="False"
-                                    Style="{StaticResource PanelToggleStyle}"
+                                    Style="{DynamicResource PanelToggleStyle}"
                                     ToolTip="Show project panel"
                                 >
                                     <Image
                                             Source="/src/Assets/icons/project.png"
-                                            Style="{StaticResource PanelIconStyle}"
+                                            Style="{DynamicResource PanelIconStyle}"
                                         />
                                 </ToggleButton>
                         </StackPanel>
@@ -1492,12 +1484,12 @@
                                     x:Name="TerminalPanelToggle"
                                     Click="TerminalPanelToggle_Click"
                                     IsChecked="True"
-                                    Style="{StaticResource PanelToggleStyle}"
+                                    Style="{DynamicResource PanelToggleStyle}"
                                     ToolTip="Show terminal panel"
                                 >
                                     <Image
                                             Source="/src/Assets/icons/terminal.png"
-                                            Style="{StaticResource PanelIconStyle}"
+                                            Style="{DynamicResource PanelIconStyle}"
                                         />
                                 </ToggleButton>
                             <ToggleButton
@@ -1505,12 +1497,12 @@
                                     Margin="2,0,0,0"
                                     Click="AgentPanelToggle_Click"
                                     IsChecked="True"
-                                    Style="{StaticResource PanelToggleStyle}"
+                                    Style="{DynamicResource PanelToggleStyle}"
                                     ToolTip="Show agent panel"
                                 >
                                     <Image
                                             Source="/src/Assets/icons/agent.png"
-                                            Style="{StaticResource PanelIconStyle}"
+                                            Style="{DynamicResource PanelIconStyle}"
                                         />
                                 </ToggleButton>
                         </StackPanel>
