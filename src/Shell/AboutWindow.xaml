@@ -108,7 +108,8 @@ Foreground="{DynamicResource TextMutedBrush}"
 
             <StackPanel Grid.Row="1" VerticalAlignment="Center">
                 <TextBlock
-                    Text="Version 1.2.0"
+                    x:Name="VersionText"
+                    Text="Version"
                     Foreground="{DynamicResource TextFaintBrush}"
                     FontFamily="{DynamicResource UiMonoFontFamily}"
                     FontSize="{DynamicResource FontSizeSmall}"
