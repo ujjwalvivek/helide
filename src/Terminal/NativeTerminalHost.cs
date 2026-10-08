@@ -123,6 +123,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             _focusChangedHandler,
             handledEventsToo: true);
         _terminal.ConPTYTerm.TermReady += ConPtyTerm_TermReady;
+        _terminal.ConPTYTerm.TerminalOutput += ConPtyTerm_TerminalOutput;
         ThemePalette.ThemeChanged += Palette_ThemeChanged;
 
         Children.Add(_startupSurface);
@@ -154,6 +155,19 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     public string? FilePath { get; }
 
     public TerminalHostState State { get; private set; }
+
+    // Ticks of the last moment this host produced output, or 0 if it never has.
+    // Written from the ConPTY reader thread and polled from the UI thread by the
+    // attention timer.
+    //
+    // Deliberately a polled timestamp rather than an event. TerminalOutput fires
+    // once per read chunk -- thousands per second while an agent works -- so
+    // anything raising a notification per chunk would either flood the dispatcher
+    // or need its own throttle. Recording when output happened leaves the
+    // decision about what counts as interesting to the one place that can make it.
+    public long LastOutputTicks => Interlocked.Read(ref _lastOutputTicks);
+
+    private long _lastOutputTicks;
 
     public event Action<NativeTerminalHost, TerminalHostState>? StateChanged;
 
@@ -340,6 +354,9 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         }));
     }
 
+    private void ConPtyTerm_TerminalOutput(object? sender, TerminalOutputEventArgs output) =>
+        Interlocked.Exchange(ref _lastOutputTicks, DateTime.UtcNow.Ticks);
+
     private void ConPtyTerm_TermReady(object? sender, EventArgs e)
     {
         Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
@@ -459,6 +476,8 @@ private void Fail(string message)
         _terminal.Terminal.RemoveHandler(Keyboard.GotKeyboardFocusEvent, _focusChangedHandler);
         if (_terminal.ConPTYTerm is not null)
             _terminal.ConPTYTerm.TermReady -= ConPtyTerm_TermReady;
+        if (_terminal.ConPTYTerm is not null)
+            _terminal.ConPTYTerm.TerminalOutput -= ConPtyTerm_TerminalOutput;
 
         try
         {

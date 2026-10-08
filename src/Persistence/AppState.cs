@@ -1,4 +1,4 @@
-﻿namespace Helide.Persistence;
+namespace Helide.Persistence;
 
 internal sealed class AppState
 {
@@ -8,7 +8,21 @@ internal sealed class AppState
     public WindowGeometryState Window { get; set; } = new();
     public WorkspaceLayoutState Layout { get; set; } = new();
     public List<AgentSessionState> AgentSessions { get; set; } = [];
+
+    // Which agent tab was selected when the window closed. Every new session is made
+    // active on creation, so without this it is always the last one.
+    public int ActiveAgentIndex { get; set; } = -1;
     public string Theme { get; set; } = "mocha";  // "mocha" or "oled"
+
+    // The rest of the workspace. AgentSessions alone left a relaunch restoring half
+    // a workspace, which reads as deliberate rather than as a bug.
+    public List<EditorTabState> EditorTabs { get; set; } = [];
+}
+
+internal sealed class EditorTabState
+{
+    // null is Helix's file picker, which is what the pane opens on with no file.
+    public string? Path { get; set; }
 }
 
 internal sealed class RecentProjectState
@@ -33,6 +47,10 @@ internal sealed class AgentSessionState
     public string Name { get; set; } = string.Empty;
     public string CommandLine { get; set; } = string.Empty;
     public DateTime CreatedUtc { get; set; }
+
+    // The conversation to reopen. Without this the pane comes back empty, which is
+    // the whole thing this field exists to prevent.
+    public string? SessionId { get; set; }
 }
 
 internal sealed class WorkspaceLayoutState

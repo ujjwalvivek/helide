@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Helide.Interop;
 using Helide.Persistence;
+using Helide.Sessions;
 using Helide.Theme;
 using Helide.Projects;
 using Helide.Terminal;
@@ -17,6 +18,7 @@ using Button = System.Windows.Controls.Button;
 using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
 using MessageBox = System.Windows.MessageBox;
+using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace Helide;
@@ -36,7 +38,22 @@ public partial class MainWindow : Window
         Project,
     }
 
+    // What the attention timer needs from any tab it might mark. The two view
+    // models below are separate types with separate lifetimes, and the timer walks
+    // all three collections, so this is the only thing they have to agree on.
+    private interface IAttentiveTab
+    {
+        bool IsActive { get; }
+
+        void SetHovered(bool hovered);
+
+        void AttachStatusSource(ISessionStatusSource source);
+
+        void ClearAttention();
+    }
+
     private const int ExpectedToolCount = 4;
+
 
     private readonly AppStateStore _stateStore;
     private readonly AppState _state;
@@ -59,6 +76,7 @@ public partial class MainWindow : Window
     private GridLength _leftSplitterWidth;
     private double _rightPaneMinWidth;
     private GridLength _rightSplitterWidth;
+
     private double _runnerMinHeight;
     private GridLength _runnerSplitterHeight;
     private double _frozenLeftWeight;
@@ -103,7 +121,18 @@ public partial class MainWindow : Window
         // brushes to their bindings as values, so they are the one part of the UI
         // that {DynamicResource} cannot reach on a palette swap.
         ThemePalette.ThemeChanged += ThemePalette_ThemeChanged;
-        Closed += (_, _) => ThemePalette.ThemeChanged -= ThemePalette_ThemeChanged;
+        Closed += (_, _) =>
+        {
+            ThemePalette.ThemeChanged -= ThemePalette_ThemeChanged;
+        };
+
+        // Status sources are attached as each session is created.
+    }
+    private void StartAttentionTimer()
+    {
+        // Replaced by per-session ISessionStatusSource implementations. Both bundled
+        // agents report their own turn boundaries, which is the only thing accurate
+        // for a task that runs for minutes.
     }
 
     private void ThemePalette_ThemeChanged(object? sender, EventArgs e)
@@ -334,9 +363,10 @@ public partial class MainWindow : Window
             SetLeftTool(RestoreLeftTool(), persist: false);
             if (_leftHost is null)
                 failures++;
-            // The editor pane starts on Helix's own file picker. Opening a file restarts
-            // this single host rather than adding a second one beside it.
-            if (CreateEditorTab(null) is null)
+            // Restores the editor tabs this workspace had open. A tab whose file has since
+            // been deleted or moved is dropped rather than opened on a path that no
+            // longer resolves.
+            if (RestoreEditorTabs() == 0 && CreateEditorTab(null) is null)
                 failures++;
             // Initialize runner session with startup message, or create default
             InitializeRunnerSessions(project);
@@ -346,9 +376,12 @@ public partial class MainWindow : Window
                 ));
             // Initialize agent session from saved state or create default
             InitializeAgentSessions(project);
-            // Agent session is initialized separately
             if (_agentSessions.Count == 0)
-                CreateAgentSession("opencode", "OpenCode", ToolCommand("opencode.cmd"));
+                CreateAgentSession("opencode", "OpenCode");
+
+            // Requery session ids on a timer while the window is up so a restarted
+            // pane re-registers. The close-time pass reads what the timer already has.
+            StartSessionCaptureTimer();
 
             // Apply saved panel state (default collapsed for fresh launches, expanded if user toggled)
             SetPanelCollapsed(ToolPanel.Agent, _state.Layout.AgentCollapsed);
@@ -656,6 +689,10 @@ public partial class MainWindow : Window
 
         _activeEditorTab = tab;
 
+        // The dot means "not looked at yet", so arriving here clears it. Without
+        // this it would sit there for the rest of the session.
+        tab.ClearAttention();
+
         // A tab that has been sitting in the background has not reported its state
         // since it was last on screen, so repaint the header from the host itself.
         UpdatePaneState(EditorPaneState, tab.Host.State);
@@ -663,6 +700,22 @@ public partial class MainWindow : Window
         // The renderer only exists once WPF has laid the host out at a real size, so
         // the raise has to wait for a pass that has actually happened.
         Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(tab.Host.BringToFront));
+    }
+
+
+    // IsMouseOver only exists in the visual tree, so it is pushed onto the view model
+    // and both visibilities are computed there. That is also what keeps the tab strips
+    // out of FrameworkElement.Triggers, which accepts EventTrigger only.
+    private void Tab_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: IAttentiveTab tab })
+            tab.SetHovered(true);
+    }
+
+    private void Tab_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: IAttentiveTab tab })
+            tab.SetHovered(false);
     }
 
     private void EditorTab_Click(object sender, MouseButtonEventArgs e)
@@ -739,7 +792,7 @@ public partial class MainWindow : Window
         {
             TerminalHostState.Starting => "starting",
             TerminalHostState.Ready => "ready",
-            TerminalHostState.Failed => "attention",
+            TerminalHostState.Failed => "failed",
             _ => "stopped",
         };
         stateText.Foreground = state switch
@@ -1233,20 +1286,55 @@ public partial class MainWindow : Window
     private void NewOpenCodeButton_Click(object sender, RoutedEventArgs e)
     {
         AgentNewSessionFlyout.IsOpen = false;
-        CreateAgentSession("opencode", "OpenCode", ToolCommand("opencode.cmd"));
+        CreateAgentSession("opencode", "OpenCode");
     }
 
     // Create a new Codex session replacing the panel
     private void NewCodexButton_Click(object sender, RoutedEventArgs e)
     {
         AgentNewSessionFlyout.IsOpen = false;
-        CreateAgentSession("codex", "Codex", ToolCommand("codex.cmd"));
+        CreateAgentSession("codex", "Codex");
     }
 
-    private void CreateAgentSession(string type, string typeLabel, string commandLine)
+    private void AttachStatusSource(AgentSessionView session, string type, int port)
+    {
+        if (session.Host is not { } host)
+            return;
+
+        // The OpenCode TUI serves this pane's own server on the pinned port, so the
+        // source can read real turn events. Codex has no HTTP surface, and the
+        // app-server prompts for feature settings, so it stays on the quiet-period
+        // heuristic for now.
+        session.AttachStatusSource(type switch
+        {
+            "opencode" when port > 0 => new OpenCodeStatusSource(port, Dispatcher),
+            _ => new QuietPeriodStatusSource(host),
+        });
+    }
+
+    // The command line and the status source must agree on the port, so both are
+    // built together here rather than by each caller. That is also why this no
+    // longer takes a commandLine: passing one in was how they drifted apart.
+    private void CreateAgentSession(string type, string typeLabel, string? resumeSessionId = null, bool resuming = false)
     {
         if (_currentProject is null)
             return;
+
+        var port = type == "codex" ? 0 : ReserveLocalPort();
+
+        // Resume only happens while restoring. Passing it unconditionally made every
+        // new pane reopen the previous conversation instead of starting its own.
+        //
+        // Codex has no id plumbed, so restoring it leans on --last, which means the
+        // most recent conversation anywhere. Right for one Codex pane, wrong for two.
+        var commandLine = type == "codex"
+            ? resuming
+                ? ToolCommand("codex.cmd", "resume", "--last")
+                : ToolCommand("codex.cmd")
+            : resuming && resumeSessionId is { Length: > 0 } id
+                ? ToolCommand("opencode.cmd", "-s", id, "--port", port.ToString())
+                : ToolCommand("opencode.cmd", "--port", port.ToString());
+
 
         try
         {
@@ -1260,6 +1348,9 @@ public partial class MainWindow : Window
 
             var newSession = new AgentSessionView(type, typeLabel);
             newSession.Host = host;
+            newSession.StatusPort = port;
+            newSession.SessionId = resumeSessionId;
+            AttachStatusSource(newSession, type, port);
             foreach (var s in _agentSessions)
                 s.IsActive = false;
             newSession.IsActive = true;
@@ -1290,6 +1381,7 @@ public partial class MainWindow : Window
                 AgentSlot.Content = session.Host;
                 AgentPaneTitle.Text = session.TypeLabel.ToUpper();
                 _activeAgentSession = session;
+                session.ClearAttention();
                 session.Host.BringToFront();
             }
             UpdateAgentSessionUI();
@@ -1317,8 +1409,7 @@ public partial class MainWindow : Window
                 var sessionName = string.IsNullOrEmpty(saved.Name) ? sessionType.ToUpper() : saved.Name;
                 try
                 {
-                    var command = sessionType == "codex" ? ToolCommand("codex.cmd") : ToolCommand("opencode.cmd");
-                    CreateAgentSession(sessionType, sessionName, command);
+                    CreateAgentSession(sessionType, sessionName, saved.SessionId, resuming: true);
                 }
                 catch
                 {
@@ -1329,7 +1420,48 @@ public partial class MainWindow : Window
         else
         {
             // Default: create an OpenCode session
-            CreateAgentSession("opencode", "OpenCode", ToolCommand("opencode.cmd"));
+            CreateAgentSession("opencode", "OpenCode");
+        }
+
+        // Each newly created session is made active, so without re-asserting this on
+        // restore the last-created one always wins rather than the one you left on.
+        var activeIndex = _state.ActiveAgentIndex;
+        if (activeIndex >= 0 && activeIndex < _agentSessions.Count)
+        {
+            foreach (var s in _agentSessions)
+                s.IsActive = false;
+
+            var target = _agentSessions[activeIndex];
+            target.IsActive = true;
+            _activeAgentSession = target;
+
+            if (target.Host is not null)
+            {
+                AgentSlot.Content = target.Host;
+                AgentPaneTitle.Text = target.TypeLabel.ToUpper();
+            }
+
+            UpdateAgentSessionUI();
+            AgentTabStrip.Items.Refresh();
+        }
+    }
+
+    // Asks the OS for a free loopback port by binding to 0 and immediately releasing
+    // it. There is an unavoidable race here, but the window is small and both sides
+    // bind only to loopback.
+    private static int ReserveLocalPort()
+    {
+        try
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
+        }
+        catch (Exception)
+        {
+            return 0;
         }
     }
 
@@ -1337,6 +1469,24 @@ public partial class MainWindow : Window
     {
         _runnerSessions.Clear();
         // Default runner session with startup message is created in OpenWorkspace
+    }
+
+    private int RestoreEditorTabs()
+    {
+        var restored = 0;
+
+        foreach (var saved in _state.EditorTabs)
+        {
+            // A file that moved or was deleted between sessions opens as a Helix
+            // error pane, so skip it and let the file picker take over.
+            if (saved.Path is not null && !File.Exists(saved.Path))
+                continue;
+
+            if (CreateEditorTab(saved.Path) is not null)
+                restored++;
+        }
+
+        return restored;
     }
 
     private static double ClampRatio(double value, double fallback) =>
@@ -1506,10 +1656,57 @@ public partial class MainWindow : Window
         return quoted.Append('\\', backslashes * 2).Append('"').ToString();
     }
 
+    private void SaveEditorTabs()
+    {
+        _state.EditorTabs.Clear();
+        foreach (var tab in _editorTabs)
+            _state.EditorTabs.Add(new EditorTabState { Path = tab.Path });
+    }
+
+    // Records which conversation each agent pane is on, so the next launch reopens it
+    // instead of starting empty. A pane that cannot answer simply gets no id and starts
+    // fresh, which is the old behaviour rather than a failure.
+    private System.Windows.Threading.DispatcherTimer? _sessionCaptureTimer;
+
+    private void StartSessionCaptureTimer()
+    {
+        _sessionCaptureTimer ??= new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(12),
+        };
+        _sessionCaptureTimer.Tick += (_, _) => CaptureAgentSessionIds();
+        _sessionCaptureTimer.Start();
+
+        CaptureAgentSessionIds();
+    }
+
+    private void CaptureAgentSessionIds()
+    {
+        foreach (var session in _agentSessions)
+        {
+            if (session.Type != "opencode")
+                continue;
+
+            // Live signal wins (it is what the pane is on now); otherwise keep whatever
+            // was saved. No HTTP fallback anymore: a pane that has produced no events
+            // is left id-less, so it restarts fresh instead of adopting some other
+            // thread in the directory.
+            session.SessionId = session.LiveSessionId ?? session.SessionId;
+        }
+    }
+
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
-        // Save agent sessions to AppState
+        CaptureAgentSessionIds();
+
         _state.AgentSessions.Clear();
+        // IsActive is updated on every tab click, so it is the reliable witness of
+        // what the user had selected. _activeAgentSession alone could be null at
+        // close, which is how -1 was being written.
+        var active = _agentSessions.Select((session, index) => (session, index))
+            .FirstOrDefault(x => x.session.IsActive);
+        _state.ActiveAgentIndex = active.session is null ? -1 : active.index;
+
         foreach (var session in _agentSessions)
         {
             _state.AgentSessions.Add(new AgentSessionState
@@ -1518,14 +1715,17 @@ public partial class MainWindow : Window
                 Name = session.Name,
                 CommandLine = session.Host is not null ? session.Host.Label : string.Empty,
                 CreatedUtc = DateTime.UtcNow,
+                SessionId = session.SessionId,
             });
         }
 
+        SaveEditorTabs();
         SaveWorkspaceLayout();
         SaveWindowGeometry();
         _stateStore.Save(_state);
         CloseWorkspace();
 
+        _sessionCaptureTimer?.Stop();
         _openRequestWatcher?.Dispose();
         if (_openRequestPath is not null && File.Exists(_openRequestPath))
         {
@@ -1541,9 +1741,10 @@ public partial class MainWindow : Window
 
     // One tab per Helix process. IsActive drives which renderer is visible, the
     // label colours, and the underline that marks the tab in use.
-    private sealed class EditorTab : INotifyPropertyChanged
+    private sealed class EditorTab : INotifyPropertyChanged, IAttentiveTab
     {
         private bool _isActive;
+        private bool _needsAttention;
 
         public EditorTab(string? path, NativeTerminalHost host)
         {
@@ -1554,6 +1755,12 @@ public partial class MainWindow : Window
         public string? Path { get; }
 
         public NativeTerminalHost Host { get; }
+
+
+        // True once a session has gone quiet after working while this tab was in
+        // the background. Cleared when the tab is looked at, so it always means
+        // "not seen yet" rather than "happened at some point".
+        public bool NeedsAttention => _needsAttention;
 
         public string Name => Path is null ? "files" : System.IO.Path.GetFileName(Path);
 
@@ -1603,6 +1810,59 @@ public partial class MainWindow : Window
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Underline)));
         }
 
+        private ISessionStatusSource? _statusSource;
+
+        public void AttachStatusSource(ISessionStatusSource source)
+        {
+            _statusSource?.Dispose();
+            _statusSource = source;
+
+            // Marking only means anything while the tab is in the background. If the
+            // agent finishes before you ever look away there is nothing to catch up
+            // on, and a dot would just be noise.
+            source.BecameIdle += () =>
+            {
+                if (!IsActive)
+                    MarkAttention();
+            };
+
+            source.Start();
+        }
+
+        private bool _hovered;
+
+        // Hover wins over the mark, so a marked tab still offers its close button.
+        public bool ShowAttentionDot => _needsAttention && !_hovered;
+
+        public bool ShowCloseButton => !_needsAttention || _hovered;
+
+        public void SetHovered(bool hovered)
+        {
+            if (_hovered == hovered)
+                return;
+
+            _hovered = hovered;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAttentionDot)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCloseButton)));
+        }
+
+        public void ClearAttention() => MarkAttention(clear: true);
+
+        private void MarkAttention(bool clear = false)
+        {
+            if (_needsAttention == !clear)
+                return;
+
+            _needsAttention = !clear;
+
+            // All three, not just NeedsAttention: the tab templates bind the two
+            // derived booleans, so notifying only the flag leaves the dot and the
+            // close button showing whatever they were before.
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NeedsAttention)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAttentionDot)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCloseButton)));
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
     }
 
@@ -1623,6 +1883,7 @@ public partial class MainWindow : Window
                 AgentSlot.Content = session.Host;
                 AgentPaneTitle.Text = session.TypeLabel.ToUpper();
                 _activeAgentSession = session;
+                session.ClearAttention();
                 session.Host.BringToFront();
             }
             UpdateAgentSessionUI();
@@ -1677,6 +1938,7 @@ public partial class MainWindow : Window
             {
                 RunnerSlot.Content = session.Host;
                 _activeRunnerSession = session;
+                session.ClearAttention();
                 session.Host.BringToFront();
             }
             RunnerTabStrip.Items.Refresh();
@@ -1728,10 +1990,11 @@ public partial class MainWindow : Window
             RunnerSlot.Content = host;
             _terminalHosts.Add(host);
 
-            var session = new AgentSessionView(type, label);
-            session.Host = host;
-            foreach (var s in _runnerSessions)
-                s.IsActive = false;
+var session = new AgentSessionView(type, label);
+                session.Host = host;
+                session.CommandLine = commandLine;
+                foreach (var s in _runnerSessions)
+                    s.IsActive = false;
             session.IsActive = true;
             _runnerSessions.Add(session);
             _activeRunnerSession = session;
@@ -1746,14 +2009,34 @@ public partial class MainWindow : Window
         }
     }
 
-    private sealed class AgentSessionView : INotifyPropertyChanged
+    private sealed class AgentSessionView : INotifyPropertyChanged, IAttentiveTab
     {
         private bool _isActive;
+        private bool _needsAttention;
+
+        // See the same note on EditorTab: cleared on focus, so the dot always means
+        // "not looked at yet".
+        public bool NeedsAttention => _needsAttention;
 
         public string Type { get; }  // "opencode" or "codex"
         public string TypeLabel => Type == "codex" ? "Codex" : "OpenCode";
         public string Name { get; }
         public NativeTerminalHost? Host { get; set; }
+
+        // Only set for runner sessions, which are a shell running a command line and
+        // can therefore be recreated from it. Agent sessions build their own command
+        // line from Type, since it has to carry the pinned status port.
+        public string CommandLine { get; set; } = string.Empty;
+
+        // The port pinned into that command line, needed again at save time to ask
+        // this pane's server which session it is on.
+        public int StatusPort { get; set; }
+
+        // What the pane's own event stream says it is on.
+        public string? LiveSessionId => (_statusSource as OpenCodeStatusSource)?.SessionId;
+
+        // Filled in at save time so the next launch can reopen this conversation.
+        public string? SessionId { get; set; }
 
         public AgentSessionView(string type, string name)
         {
@@ -1788,6 +2071,59 @@ public partial class MainWindow : Window
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Underline)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Weight)));
             }
+        }
+
+        private ISessionStatusSource? _statusSource;
+
+        public void AttachStatusSource(ISessionStatusSource source)
+        {
+            _statusSource?.Dispose();
+            _statusSource = source;
+
+            // Marking only means anything while the tab is in the background. If the
+            // agent finishes before you ever look away there is nothing to catch up
+            // on, and a dot would just be noise.
+            source.BecameIdle += () =>
+            {
+                if (!IsActive)
+                    MarkAttention();
+            };
+
+            source.Start();
+        }
+
+        private bool _hovered;
+
+        // Hover wins over the mark, so a marked tab still offers its close button.
+        public bool ShowAttentionDot => _needsAttention && !_hovered;
+
+        public bool ShowCloseButton => !_needsAttention || _hovered;
+
+        public void SetHovered(bool hovered)
+        {
+            if (_hovered == hovered)
+                return;
+
+            _hovered = hovered;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAttentionDot)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCloseButton)));
+        }
+
+        public void ClearAttention() => MarkAttention(clear: true);
+
+        private void MarkAttention(bool clear = false)
+        {
+            if (_needsAttention == !clear)
+                return;
+
+            _needsAttention = !clear;
+
+            // All three, not just NeedsAttention: the tab templates bind the two
+            // derived booleans, so notifying only the flag leaves the dot and the
+            // close button showing whatever they were before.
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NeedsAttention)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAttentionDot)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCloseButton)));
         }
 
         public void RefreshTheme()

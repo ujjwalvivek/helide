@@ -8,8 +8,12 @@
             <ResourceDictionary.MergedDictionaries>
                 <!-- Index 0 is theme-independent and never swapped. Index 1 is the
                      active palette, replaced in place by ThemePalette.ApplyTheme. -->
-                <ResourceDictionary Source="pack://application:,,,/src/Theme/Foundation.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/src/Theme/Themes/CatppuccinMocha.xaml" />
+                <ResourceDictionary
+                    Source="pack://application:,,,/src/Theme/Foundation.xaml"
+                />
+                <ResourceDictionary
+                    Source="pack://application:,,,/src/Theme/Themes/CatppuccinMocha.xaml"
+                />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

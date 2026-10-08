@@ -26,6 +26,11 @@
         />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
+        <!-- Built-in, because the two visibilities are computed by the view models rather
+             than combined here. FrameworkElement.Triggers accepts EventTrigger only, so
+             a DataTrigger on the tab Border would throw as soon as a strip renders. -->
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
         <Style x:Key="ChromeButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{DynamicResource TextStrongBrush}" />
@@ -1034,7 +1039,7 @@
                                                     </ItemsControl.ItemsPanel>
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
-<Border
+<Border MouseEnter="Tab_MouseEnter" MouseLeave="Tab_MouseLeave"
                                                                     Background="{Binding Background}"
                                                                     Padding="9,0,4,0"
                                                                     BorderThickness="0,0,0,2"
@@ -1065,10 +1070,25 @@
                                                                     <!-- A real button rather than a glyph to aim
                                                                          at, and a generous one: 16x16 was easy to
                                                                          miss in a header row this short. -->
-                                                                    <Button
+                                                                    <Grid
+                                                                        Width="20"
+                                                                        Height="22"
+                                                                    >
+                                                                        <Ellipse
+                                                                            x:Name="AttentionDot"
+                                                                            Width="7"
+                                                                            Height="7"
+                                                                            Fill="{DynamicResource SuccessBrush}"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                                Visibility="{Binding ShowAttentionDot, Converter={StaticResource BoolToVis}}"
+                                                                        />
+                                                                        <Button
+                                                                            x:Name="TabClose"
                                                                             Width="20"
                                                                             Height="22"
                                                                             Padding="0"
+                                                                                Visibility="{Binding ShowCloseButton, Converter={StaticResource BoolToVis}}"
                                                                             Click="EditorTab_Close"
                                                                             Tag="{Binding}"
                                                                             Content="×"
@@ -1079,7 +1099,7 @@
                                                                             BorderThickness="0"
                                                                             Cursor="Hand"
                                                                             ToolTip="Close this tab"
-                                                                    >
+                                                                        >
                                                                         <Button.Template>
                                                                             <ControlTemplate TargetType="Button">
                                                                                 <Border
@@ -1101,6 +1121,7 @@
                                                                             </ControlTemplate>
                                                                         </Button.Template>
                                                                     </Button>
+                                                                    </Grid>
                                                                 </StackPanel>
                                                             </Border>
                                                         </DataTemplate>
@@ -1217,7 +1238,7 @@
                                                 </ItemsControl.ItemsPanel>
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Border
+<Border MouseEnter="Tab_MouseEnter" MouseLeave="Tab_MouseLeave"
                                                                 Background="{Binding Background}"
                                                                 Padding="9,0,4,0"
                                                                 BorderThickness="0,0,0,2"
@@ -1239,10 +1260,25 @@
                                                                         Tag="{Binding}"
                                                                         MouseLeftButtonUp="RunnerTabStrip_Click"
                                                                     />
-                                                                <Button
+                                                                <Grid
+                                                                        Width="16"
+                                                                        Height="22"
+                                                                    >
+                                                                        <Ellipse
+                                                                            x:Name="AttentionDot"
+                                                                            Width="6"
+                                                                            Height="6"
+                                                                            Fill="{DynamicResource SuccessBrush}"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                                Visibility="{Binding ShowAttentionDot, Converter={StaticResource BoolToVis}}"
+                                                                        />
+                                                                        <Button
+                                                                        x:Name="TabClose"
                                                                         Width="16"
                                                                         Height="22"
                                                                         Padding="0"
+                                                                            Visibility="{Binding ShowCloseButton, Converter={StaticResource BoolToVis}}"
                                                                         Click="RunnerTabClose_Click"
                                                                         Tag="{Binding}"
                                                                         Content="×"
@@ -1274,6 +1310,7 @@
                                                                         </ControlTemplate>
                                                                     </Button.Template>
                                                                 </Button>
+                                                                    </Grid>
                                                             </StackPanel>
                                                         </Border>
                                                     </DataTemplate>
@@ -1397,7 +1434,7 @@
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                        <Border
+<Border MouseEnter="Tab_MouseEnter" MouseLeave="Tab_MouseLeave"
                                                                 Background="{Binding Background}"
                                                                 Padding="9,0,4,0"
                                                                 BorderThickness="0,0,0,2"
@@ -1419,11 +1456,26 @@
                                                                     Tag="{Binding}"
                                                                     MouseLeftButtonUp="AgentTabStrip_Click"
                                                                 />
-                                                            <Button
-                                                                    Width="16"
-                                                                    Height="22"
-                                                                    Padding="0"
-                                                                    Click="AgentTabClose_Click"
+                                                            <Grid
+                                                                        Width="16"
+                                                                        Height="22"
+                                                                    >
+                                                                        <Ellipse
+                                                                            x:Name="AttentionDot"
+                                                                            Width="6"
+                                                                            Height="6"
+                                                                            Fill="{DynamicResource SuccessBrush}"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                                Visibility="{Binding ShowAttentionDot, Converter={StaticResource BoolToVis}}"
+                                                                        />
+                                                                        <Button
+                                                                            x:Name="TabClose"
+                                                                            Width="16"
+                                                                            Height="22"
+                                                                            Padding="0"
+                                                                                Visibility="{Binding ShowCloseButton, Converter={StaticResource BoolToVis}}"
+                                                                            Click="AgentTabClose_Click"
                                                                     Tag="{Binding}"
                                                                     Content="×"
                                                                     FontFamily="{DynamicResource UiMonoFontFamily}"
@@ -1454,6 +1506,7 @@
                                                                     </ControlTemplate>
                                                                 </Button.Template>
                                                             </Button>
+                                                                    </Grid>
                                                         </StackPanel>
                                                     </Border>
                                                 </DataTemplate>
