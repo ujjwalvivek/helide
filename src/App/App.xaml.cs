@@ -10,35 +10,60 @@ namespace Helide;
 
 public partial class App : Application
 {
-    private Mutex? _singleInstanceMutex;
+    private Mutex? _instanceMutex;
+    private EventWaitHandle? _activationEvent;
+    private string? _claimedKey;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
+        // First, before anything that can throw. Startup failures are otherwise
+        // invisible: a WPF app has no console, so an exception during OnStartup just
+        // exits silently and leaves nothing but an APPCRASH event naming KERNELBASE.
+        LogFatalExceptions();
+
         // Before any window exists, so the first layout pass already sees the
         // resolved family rather than swapping under a live renderer.
         ThemePalette.ApplyFonts();
 
-        try
+        // Parsed before the instance guard, because the guard is keyed by project.
+        var projectPath = e.Args.Length == 1 && Directory.Exists(e.Args[0])
+            ? Path.GetFullPath(e.Args[0])
+            : null;
+
+        // Asked for explicitly by the palette's "Open New Window". It skips the guard
+        // entirely rather than claiming the chooser key, because a window that started
+        // with no arguments keeps that claim for its whole life -- including after it has
+        // gone on to open a project -- so claiming it again would just focus that window
+        // and appear to do nothing. A command called "open a new window" should open one.
+        var forceNewWindow = e.Args.Any(argument =>
+            string.Equals(argument, NewWindowFlag, StringComparison.OrdinalIgnoreCase));
+
+        if (!forceNewWindow)
         {
-            _singleInstanceMutex = new Mutex(true, @"Local\Helide", out var createdNew);
-            if (!createdNew)
+            // One window per project. That is what lets two projects sit side by side
+            // without their workspace files fighting, while still refusing a second window
+            // on a project that is already open -- two would race on the same state file,
+            // which is the exact problem the per-project state split just removed.
+            //
+            // The key is joined with a hyphen, not a backslash. Only the namespace prefix
+            // may contain one: a name is treated as a path in the object namespace, so
+            // "Local\Helide\welcome" asks for an object called "welcome" inside a
+            // directory that does not exist, and the mutex constructor throws.
+            var instanceName = InstanceName(AppStateStore.ProjectKey(projectPath));
+
+            if (!TryClaimInstance(instanceName))
             {
-                _singleInstanceMutex.Dispose();
-                _singleInstanceMutex = null;
+                // This project already has a window. Ask it to come forward rather than
+                // exiting silently, which is all this used to do.
+                RequestActivation(instanceName);
                 Shutdown();
                 return;
             }
-        }
-        catch (AbandonedMutexException)
-        {
-            // A previous instance died without releasing the mutex
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // The mutex exists but is not accessible
-            _singleInstanceMutex = null;
+
+            CreateActivationEvent(instanceName);
+            _claimedKey = AppStateStore.ProjectKey(projectPath);
         }
 
         var stateStore = new AppStateStore();
@@ -48,15 +73,163 @@ public partial class App : Application
         // first layout pass paints rather than a flash of the default.
         ThemePalette.ApplyTheme(state.Theme);
 
-        var projectPath = e.Args.Length == 1 && Directory.Exists(e.Args[0])
-            ? Path.GetFullPath(e.Args[0])
-            : null;
-
-        LogFatalExceptions();
-
         var window = new MainWindow(stateStore, state, projectPath);
         MainWindow = window;
         window.Show();
+
+        if (!forceNewWindow)
+            WatchForActivation(window);
+    }
+
+    internal const string NewWindowFlag = "--new-window";
+
+    private static string InstanceName(string projectKey) => @"Local\Helide-" + projectKey;
+
+    // Created before the window so a second launch arriving during startup still finds
+    // it. AutoReset holds the signal until the watcher starts, so nothing is lost in
+    // the gap.
+    private void CreateActivationEvent(string instanceName)
+    {
+        try
+        {
+            _activationEvent = new EventWaitHandle(
+                false, EventResetMode.AutoReset, instanceName + @".activate");
+        }
+        catch
+        {
+            _activationEvent = null;
+        }
+    }
+
+    private bool TryClaimInstance(string instanceName)
+    {
+        try
+        {
+            _instanceMutex = new Mutex(true, instanceName, out var createdNew);
+            if (createdNew)
+                return true;
+
+            _instanceMutex.Dispose();
+            _instanceMutex = null;
+            return false;
+        }
+        catch (AbandonedMutexException)
+        {
+            // The previous owner died without releasing it, so this process now holds it.
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _instanceMutex = null;
+            return true;
+        }
+    }
+
+    private static void RequestActivation(string instanceName)
+    {
+        try
+        {
+            using var signal = EventWaitHandle.OpenExisting(instanceName + @".activate");
+            signal.Set();
+        }
+        catch (WaitHandleCannotBeOpenedException)
+        {
+            // The owning instance has not created its event yet. Nothing to bring forward.
+        }
+    }
+
+    // A second launch has no window of its own to show, so this instance has to be the one
+    // to react. The wait runs off the UI thread and only ever marshals back onto it.
+    private void WatchForActivation(Window window)
+    {
+        if (_activationEvent is null)
+            return;
+
+        var signal = _activationEvent;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                while (signal.WaitOne())
+                {
+                    window.Dispatcher.BeginInvoke(
+                        new Action(() => (window as MainWindow)?.BringToFront()));
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // The claim was released or the app is shutting down.
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "Helide activation watcher",
+        };
+
+        thread.Start();
+    }
+
+    // Moves this window's ownership claim onto a project.
+    //
+    // The claim has to follow the project rather than the launch argument. A window
+    // started from the chooser claims "welcome" and can then open any project, and if it
+    // kept that claim another window would find the project's own key free and open a
+    // second one -- two windows writing the same state file, which is exactly what the
+    // per-project split exists to prevent.
+    //
+    // Returns false when another window already owns the project. The caller must not
+    // open it: the chooser claim is restored first so this window keeps behaving like a
+    // chooser, and the other window is brought forward instead.
+    internal bool ClaimProject(string? projectPath, Window window)
+    {
+        var key = AppStateStore.ProjectKey(projectPath);
+
+        if (string.Equals(key, _claimedKey, StringComparison.Ordinal))
+            return true;
+
+        ReleaseClaim();
+
+        var instanceName = InstanceName(key);
+
+        if (!TryClaimInstance(instanceName))
+        {
+            RequestActivation(instanceName);
+
+            // Back to being a chooser, so this window is still addressable for "Open New
+            // Window" and still forwards rather than duplicating.
+            _claimedKey = AppStateStore.ProjectKey(null);
+            TryClaimInstance(InstanceName(_claimedKey));
+            CreateActivationEvent(InstanceName(_claimedKey));
+            WatchForActivation(window);
+
+            return false;
+        }
+
+        _claimedKey = key;
+        CreateActivationEvent(instanceName);
+        WatchForActivation(window);
+
+        return true;
+    }
+
+    // Drops ownership, which is what returning to the chooser means: a window sitting on
+    // the chooser must not block a second one from opening.
+    internal void ReleaseProjectClaim(Window window)
+    {
+        ReleaseClaim();
+        _claimedKey = AppStateStore.ProjectKey(null);
+        TryClaimInstance(InstanceName(_claimedKey));
+        CreateActivationEvent(InstanceName(_claimedKey));
+        WatchForActivation(window);
+    }
+
+    private void ReleaseClaim()
+    {
+        // Disposing the event is what releases the watcher thread: its wait throws.
+        _activationEvent?.Dispose();
+        _activationEvent = null;
+        _instanceMutex?.Dispose();
+        _instanceMutex = null;
     }
 
     // A WPF app has no console, so a crash on the dispatcher thread is just a
@@ -91,7 +264,10 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _singleInstanceMutex?.Dispose();
+        // Disposed before the mutex so the watcher thread is released first.
+        _activationEvent?.Dispose();
+        _activationEvent = null;
+        _instanceMutex?.Dispose();
         base.OnExit(e);
     }
 }

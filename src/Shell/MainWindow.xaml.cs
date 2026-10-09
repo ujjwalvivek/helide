@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -25,6 +26,7 @@ using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Point = System.Windows.Point;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
+using Application = System.Windows.Application;
 
 namespace Helide;
 
@@ -62,6 +64,12 @@ public partial class MainWindow : Window
 
     private readonly AppStateStore _stateStore;
     private readonly AppState _state;
+
+    // Per-project, and reloaded whenever the workspace switches projects. Kept apart
+    // from _state so two Helide processes on different projects write different files
+    // instead of the second one overwriting the first's sessions and tabs.
+    private WorkspaceState _workspace = new();
+
     private readonly string? _startupProject;
     private readonly List<NativeTerminalHost> _terminalHosts = [];
     private NativeTerminalHost? _runnerHost;
@@ -104,6 +112,13 @@ public partial class MainWindow : Window
         _stateStore = stateStore;
         _state = state;
         _startupProject = startupProject;
+
+        // Loaded here as well as in OpenWorkspace, because the two restores below run in
+        // the constructor -- before any project is opened. Without this they would read an
+        // empty workspace and quietly reset the arrangement and window position on every
+        // launch, which reads as "my layout was ignored" rather than as a bug.
+        if (!string.IsNullOrWhiteSpace(startupProject) && Directory.Exists(startupProject))
+            _workspace = stateStore.LoadWorkspace(startupProject);
 
         InitializeComponent();
 
@@ -228,6 +243,12 @@ public partial class MainWindow : Window
         // focused even while the terminal's HWND is the one receiving keys.
         [DllImport("user32.dll")]
         public static extern IntPtr GetFocus();
+
+        // Undocumented but long-lived and still what shell code uses to force a window
+        // forward. SetForegroundWindow is refused when the request comes from a process
+        // that does not own the foreground, which is exactly our case.
+        [DllImport("user32.dll")]
+        public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
     }
 
     private bool _paletteOpen;
@@ -304,6 +325,40 @@ public partial class MainWindow : Window
                 path));
         }
 
+        // --- Window ---
+        //
+        // A second process, not a second window in this one. The panes are HwndHost-backed
+        // and WPF has no z-order authority over them, and the codex session capture keeps a
+        // single static snapshot, so two live workspaces in one process would fight over
+        // both. Separate processes get their own state file, their own statics and their own
+        // env, which is what makes this cheap.
+
+        // No project argument -- combined with --new-window so it skips the guard
+        // entirely, which is what makes the command actually open a window rather than
+        // focusing whichever one last claimed the chooser.
+        commands.Add(new PaletteCommand(
+            "Open New Window",
+            () => OpenInNewWindow(null),
+            "Window",
+            "project chooser",
+            keywords: "blank empty new instance"));
+
+        foreach (var project in _state.RecentProjects)
+        {
+            // The open project is skipped: a second window on it would find the mutex
+            // taken and focus this one, so the entry could never do anything.
+            if (_currentProject is not null
+                && string.Equals(project.Path, _currentProject, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var path = project.Path;
+            commands.Add(new PaletteCommand(
+                $"Open {project.Name} in New Window",
+                () => OpenInNewWindow(path),
+                "Window",
+                path));
+        }
+
         // --- New ---
         commands.Add(new PaletteCommand("New Editor Tab", () => CreateEditorTab(null), "New", "Ctrl+N", canInvoke: workspace));
         commands.Add(new PaletteCommand("New Runner Session", () => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit")), "New", canInvoke: workspace));
@@ -357,6 +412,39 @@ public partial class MainWindow : Window
     }
 
     private void OpenProjectFolder() => OpenProjectButton_Click(this, new RoutedEventArgs());
+
+// Launches another Helide, optionally on a project. A null path passes no argument, which
+// lands the new process on the project chooser.
+//
+// When a window is already open for the same project, the new process finds that
+// project's mutex taken and asks it to come forward instead. That is what stops a
+// duplicate, and it matters because two windows on one project would both write the same
+// workspace file.
+private void OpenInNewWindow(string? projectPath)
+{
+    var executable = Environment.ProcessPath;
+    if (executable is null)
+        return;
+
+    var arguments = string.IsNullOrWhiteSpace(projectPath)
+        ? App.NewWindowFlag
+        : QuoteArgument(Path.GetFullPath(projectPath));
+
+    try
+    {
+        Process.Start(new ProcessStartInfo(executable, arguments)
+        {
+            UseShellExecute = false,
+        });
+    }
+    catch (Exception exception)
+    {
+        // Failing to spawn is not worth a crash: this window is unaffected either way.
+        MessageBox.Show(this,
+            $"Could not open a new Helide window:\n\n{exception.Message}",
+            "Helide", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+}
 
     // Whether the popup's own window is the one receiving real keystrokes.
     //
@@ -446,6 +534,21 @@ public partial class MainWindow : Window
         ActivateEditorTab(_editorTabs[next]);
     }
 
+    // Raised on this window when another launch asks for a project it already owns. That
+    // process has no window of its own, so this is the only place the request can land.
+    internal void BringToFront()
+    {
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+
+        // SwitchToThisWindow rather than the usual Topmost toggle. Activate alone is
+        // refused when the request came from a different process, and going through
+        // Topmost does work but visibly flashes the window across the screen every time
+        // the second launch repeats.
+        NativeMethods.SwitchToThisWindow(new WindowInteropHelper(this).Handle, true);
+        Activate();
+    }
+
     private void MinimizeCaptionButton_Click(object sender, RoutedEventArgs e) =>
         SystemCommands.MinimizeWindow(this);
 
@@ -469,6 +572,11 @@ public partial class MainWindow : Window
 
     private void ShowWelcome()
     {
+        // Dropped on the way to the chooser: a window sitting here must not stop another
+        // from opening the same project, which is what holding the claim would do.
+        if (_currentProject is not null && Application.Current is App app)
+            app.ReleaseProjectClaim(this);
+
         SaveWorkspaceLayout();
         WorkspaceRoot.Visibility = Visibility.Collapsed;
         WelcomeRoot.Visibility = Visibility.Visible;
@@ -573,12 +681,42 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Ownership is taken before anything below tears the old workspace down. If
+        // another window already has this project, this one hands focus to it and stays
+        // put -- checked afterwards it would have already closed the workspace it was
+        // showing. Two windows on one project would both write the same state file.
+        if (Application.Current is App app && !app.ClaimProject(project, this))
+            return;
+
         try
         {
+            // Flush the workspace being left into its own file before the project
+            // changes, or the layout and tabs just captured would be written against the
+            // project being opened next.
+            if (_currentProject is not null)
+                _stateStore.SaveWorkspace(_workspace, _currentProject);
+
             SaveWorkspaceLayout();
             CloseWorkspace();
 
             _currentProject = project;
+
+            // Loaded before anything reads it: RestoreWorkspaceLayout, RestoreEditorTabs
+            // and InitializeAgentSessions all come further down this method.
+            _workspace = _stateStore.LoadWorkspace(project);
+
+            // The constructor restores these too, but only for the startup project. On a
+            // switch the freshly loaded project's arrangement has to be applied, or the
+            // previous project's layout would carry over and per-project layout would
+            // mean nothing.
+            //
+            // Window geometry is deliberately NOT restored here. Per-project position
+            // means opening a project yanks the window across the screen to wherever it
+            // was left last time, which reads as the app jumping rather than as a
+            // remembered arrangement. Geometry still applies per project when a window
+            // *starts* on one, so two windows on different projects keep their own.
+            RestoreWorkspaceLayout();
+
             _runCommand = ProjectDetector.DetectRunCommand(project);
             var projectName = new DirectoryInfo(project).Name;
             var branch = ProjectDetector.DetectGitBranch(project);
@@ -636,15 +774,15 @@ public partial class MainWindow : Window
             StartSessionCaptureTimer();
 
             // Apply saved panel state (default collapsed for fresh launches, expanded if user toggled)
-            SetPanelCollapsed(ToolPanel.Agent, _state.Layout.AgentCollapsed);
-            SetPanelCollapsed(ToolPanel.Runner, _state.Layout.RunnerCollapsed);
+            SetPanelCollapsed(ToolPanel.Agent, _workspace.Layout.AgentCollapsed);
+            SetPanelCollapsed(ToolPanel.Runner, _workspace.Layout.RunnerCollapsed);
             // Explicit sync so visibility + column/row tracks always match saved collapsed state
-            AgentPane.Visibility = _state.Layout.AgentCollapsed ? Visibility.Collapsed : Visibility.Visible;
-            AgentPanelToggle.IsChecked = !_state.Layout.AgentCollapsed;
-            RunnerPane.Visibility = _state.Layout.RunnerCollapsed ? Visibility.Collapsed : Visibility.Visible;
-            TerminalPanelToggle.IsChecked = !_state.Layout.RunnerCollapsed;
+            AgentPane.Visibility = _workspace.Layout.AgentCollapsed ? Visibility.Collapsed : Visibility.Visible;
+            AgentPanelToggle.IsChecked = !_workspace.Layout.AgentCollapsed;
+            RunnerPane.Visibility = _workspace.Layout.RunnerCollapsed ? Visibility.Collapsed : Visibility.Visible;
+            TerminalPanelToggle.IsChecked = !_workspace.Layout.RunnerCollapsed;
             // Direct column/width sync to eliminate leftover empty space from star redistribution
-            if (_state.Layout.AgentCollapsed)
+            if (_workspace.Layout.AgentCollapsed)
             {
                 RightPaneColumn.Width = new GridLength(0);
                 RightPaneColumn.MinWidth = 0;
@@ -656,7 +794,7 @@ public partial class MainWindow : Window
                 RightPaneColumn.MinWidth = _rightPaneMinWidth;
                 RightSplitterColumn.Width = _rightSplitterWidth;
             }
-            if (_state.Layout.RunnerCollapsed)
+            if (_workspace.Layout.RunnerCollapsed)
             {
                 RunnerPaneRow.Height = new GridLength(0);
                 RunnerPaneRow.MinHeight = 0;
@@ -1247,7 +1385,7 @@ public partial class MainWindow : Window
 
     private void RestoreWorkspaceLayout()
     {
-        var layout = _state.Layout;
+        var layout = _workspace.Layout;
 
         // Absolute sizes win over ratios when we have them: a pane that was
         // manually resized reopens at exactly the width it was left at.
@@ -1318,7 +1456,7 @@ public partial class MainWindow : Window
     }
 
     private LeftTool RestoreLeftTool() =>
-        string.Equals(_state.Layout.LeftTool, "project", StringComparison.OrdinalIgnoreCase)
+        string.Equals(_workspace.Layout.LeftTool, "project", StringComparison.OrdinalIgnoreCase)
             ? LeftTool.Project
             : LeftTool.Git;
 
@@ -1361,7 +1499,7 @@ public partial class MainWindow : Window
 
         if (persist)
         {
-            _state.Layout.LeftTool = showingGit ? "git" : "project";
+            _workspace.Layout.LeftTool = showingGit ? "git" : "project";
             _stateStore.Save(_state);
         }
     }
@@ -1389,9 +1527,9 @@ public partial class MainWindow : Window
 
     private bool IsPanelCollapsed(ToolPanel panel) => panel switch
     {
-        ToolPanel.Left => _state.Layout.LeftCollapsed,
-        ToolPanel.Runner => _state.Layout.RunnerCollapsed,
-        _ => _state.Layout.AgentCollapsed,
+        ToolPanel.Left => _workspace.Layout.LeftCollapsed,
+        ToolPanel.Runner => _workspace.Layout.RunnerCollapsed,
+        _ => _workspace.Layout.AgentCollapsed,
     };
 
     // The track has to be driven to zero explicitly: a collapsed child does not
@@ -1445,13 +1583,13 @@ public partial class MainWindow : Window
         switch (panel)
         {
             case ToolPanel.Left:
-                _state.Layout.LeftCollapsed = collapsed;
+                _workspace.Layout.LeftCollapsed = collapsed;
                 break;
             case ToolPanel.Runner:
-                _state.Layout.RunnerCollapsed = collapsed;
+                _workspace.Layout.RunnerCollapsed = collapsed;
                 break;
             case ToolPanel.Agent:
-                _state.Layout.AgentCollapsed = collapsed;
+                _workspace.Layout.AgentCollapsed = collapsed;
                 break;
         }
 
@@ -1467,18 +1605,18 @@ public partial class MainWindow : Window
     // can never reopen at zero width.
     private double RememberedLeftWidth() => FirstPositive(
         _leftPanePixels,
-        _state.Layout.LeftPixels,
-        ClampRatio(_state.Layout.LeftRatio, 0.21) * Math.Max(LeftPaneColumn.ActualWidth, 400));
+        _workspace.Layout.LeftPixels,
+        ClampRatio(_workspace.Layout.LeftRatio, 0.21) * Math.Max(LeftPaneColumn.ActualWidth, 400));
 
     private double RememberedRightWidth() => FirstPositive(
         _rightPanePixels,
-        _state.Layout.RightPixels,
-        Math.Max(ClampRatio(_state.Layout.RightRatio, 0.21) * Math.Max(ActualWidth > 0 ? ActualWidth : 1500, 1200), 250));
+        _workspace.Layout.RightPixels,
+        Math.Max(ClampRatio(_workspace.Layout.RightRatio, 0.21) * Math.Max(ActualWidth > 0 ? ActualWidth : 1500, 1200), 250));
 
     private double RememberedRunnerHeight() => FirstPositive(
         _runnerPanePixels,
-        _state.Layout.RunnerPixels,
-        Math.Max(ClampRatio(_state.Layout.RunnerRatio, 0.20) * Math.Max(ActualHeight > 0 ? ActualHeight : 900, 600), 150));
+        _workspace.Layout.RunnerPixels,
+        Math.Max(ClampRatio(_workspace.Layout.RunnerRatio, 0.20) * Math.Max(ActualHeight > 0 ? ActualHeight : 900, 600), 150));
 
     private static double FirstPositive(params double[] candidates)
     {
@@ -1688,7 +1826,7 @@ public partial class MainWindow : Window
         _agentSessions.Clear();
 
         // Load saved sessions for this project from AppState
-        var savedSessions = _state.AgentSessions;
+        var savedSessions = _workspace.AgentSessions;
         if (savedSessions.Count > 0)
         {
             foreach (var saved in savedSessions)
@@ -1713,7 +1851,7 @@ public partial class MainWindow : Window
 
         // Each newly created session is made active, so without re-asserting this on
         // restore the last-created one always wins rather than the one you left on.
-        var activeIndex = _state.ActiveAgentIndex;
+        var activeIndex = _workspace.ActiveAgentIndex;
         if (activeIndex >= 0 && activeIndex < _agentSessions.Count)
         {
             foreach (var s in _agentSessions)
@@ -1763,7 +1901,7 @@ public partial class MainWindow : Window
     {
         var restored = 0;
 
-        foreach (var saved in _state.EditorTabs)
+        foreach (var saved in _workspace.EditorTabs)
         {
             // A file that moved or was deleted between sessions opens as a Helix
             // error pane, so skip it and let the file picker take over.
@@ -1782,8 +1920,8 @@ public partial class MainWindow : Window
 
     private void SaveWorkspaceLayout()
     {
-        var frozenWidth = (_state.Layout.LeftCollapsed ? _frozenLeftWeight : 0)
-                        + (_state.Layout.AgentCollapsed ? _frozenRightWeight : 0);
+        var frozenWidth = (_workspace.Layout.LeftCollapsed ? _frozenLeftWeight : 0)
+                        + (_workspace.Layout.AgentCollapsed ? _frozenRightWeight : 0);
         var visibleWidth = LeftPaneColumn.ActualWidth
                          + CenterPaneColumn.ActualWidth
                          + RightPaneColumn.ActualWidth;
@@ -1791,37 +1929,37 @@ public partial class MainWindow : Window
         if (visibleWidth > 0 && widthShare > 0.05)
         {
             var totalWidth = visibleWidth / widthShare;
-            if (!_state.Layout.LeftCollapsed)
+            if (!_workspace.Layout.LeftCollapsed)
             {
-                _state.Layout.LeftRatio = LeftPaneColumn.ActualWidth / totalWidth;
-                _state.Layout.LeftPixels = LeftPaneColumn.ActualWidth;
+                _workspace.Layout.LeftRatio = LeftPaneColumn.ActualWidth / totalWidth;
+                _workspace.Layout.LeftPixels = LeftPaneColumn.ActualWidth;
             }
-            _state.Layout.CenterRatio = CenterPaneColumn.ActualWidth / totalWidth;
-            if (!_state.Layout.AgentCollapsed)
+            _workspace.Layout.CenterRatio = CenterPaneColumn.ActualWidth / totalWidth;
+            if (!_workspace.Layout.AgentCollapsed)
             {
-                _state.Layout.RightRatio = RightPaneColumn.ActualWidth / totalWidth;
-                _state.Layout.RightPixels = RightPaneColumn.ActualWidth;
+                _workspace.Layout.RightRatio = RightPaneColumn.ActualWidth / totalWidth;
+                _workspace.Layout.RightPixels = RightPaneColumn.ActualWidth;
             }
         }
 
-        var frozenHeight = _state.Layout.RunnerCollapsed ? _frozenRunnerWeight : 0;
+        var frozenHeight = _workspace.Layout.RunnerCollapsed ? _frozenRunnerWeight : 0;
         var visibleHeight = EditorPaneRow.ActualHeight + RunnerPaneRow.ActualHeight;
         var heightShare = 1 - frozenHeight;
         if (visibleHeight > 0 && heightShare > 0.05)
         {
             var totalHeight = visibleHeight / heightShare;
-            _state.Layout.EditorRatio = EditorPaneRow.ActualHeight / totalHeight;
-            if (!_state.Layout.RunnerCollapsed)
+            _workspace.Layout.EditorRatio = EditorPaneRow.ActualHeight / totalHeight;
+            if (!_workspace.Layout.RunnerCollapsed)
             {
-                _state.Layout.RunnerRatio = RunnerPaneRow.ActualHeight / totalHeight;
-                _state.Layout.RunnerPixels = RunnerPaneRow.ActualHeight;
+                _workspace.Layout.RunnerRatio = RunnerPaneRow.ActualHeight / totalHeight;
+                _workspace.Layout.RunnerPixels = RunnerPaneRow.ActualHeight;
             }
         }
     }
 
     private void RestoreWindowGeometry()
     {
-        var geometry = _state.Window;
+        var geometry = _workspace.Window;
         if (geometry.Width < MinWidth || geometry.Height < MinHeight)
             return;
 
@@ -1844,12 +1982,12 @@ public partial class MainWindow : Window
         var bounds = WindowState == WindowState.Normal
             ? new Rect(Left, Top, ActualWidth, ActualHeight)
             : RestoreBounds;
-        _state.Window.Left = bounds.Left;
-        _state.Window.Top = bounds.Top;
-        _state.Window.Width = bounds.Width;
-        _state.Window.Height = bounds.Height;
+        _workspace.Window.Left = bounds.Left;
+        _workspace.Window.Top = bounds.Top;
+        _workspace.Window.Width = bounds.Width;
+        _workspace.Window.Height = bounds.Height;
         // Always reopen restored
-        _state.Window.IsMaximized = false;
+        _workspace.Window.IsMaximized = false;
     }
 
     private void CloseWorkspace()
@@ -1946,9 +2084,9 @@ public partial class MainWindow : Window
 
     private void SaveEditorTabs()
     {
-        _state.EditorTabs.Clear();
+        _workspace.EditorTabs.Clear();
         foreach (var tab in _editorTabs)
-            _state.EditorTabs.Add(new EditorTabState { Path = tab.Path });
+            _workspace.EditorTabs.Add(new EditorTabState { Path = tab.Path });
     }
 
     // Records which conversation each agent pane is on, so the next launch reopens it
@@ -2025,17 +2163,17 @@ public partial class MainWindow : Window
     {
         CaptureAgentSessionIds();
 
-        _state.AgentSessions.Clear();
+        _workspace.AgentSessions.Clear();
         // IsActive is updated on every tab click, so it is the reliable witness of
         // what the user had selected. _activeAgentSession alone could be null at
         // close, which is how -1 was being written.
         var active = _agentSessions.Select((session, index) => (session, index))
             .FirstOrDefault(x => x.session.IsActive);
-        _state.ActiveAgentIndex = active.session is null ? -1 : active.index;
+        _workspace.ActiveAgentIndex = active.session is null ? -1 : active.index;
 
         foreach (var session in _agentSessions)
         {
-            _state.AgentSessions.Add(new AgentSessionState
+            _workspace.AgentSessions.Add(new AgentSessionState
             {
                 Type = session.Type,
                 Name = session.Name,
@@ -2048,6 +2186,13 @@ public partial class MainWindow : Window
         SaveEditorTabs();
         SaveWorkspaceLayout();
         SaveWindowGeometry();
+
+        // Only when a project is open: with no project there is nothing to key a
+        // workspace file against, and writing one would create an orphan per launch
+        // from the welcome screen.
+        if (_currentProject is not null)
+            _stateStore.SaveWorkspace(_workspace, _currentProject);
+
         _stateStore.Save(_state);
         CloseWorkspace();
 

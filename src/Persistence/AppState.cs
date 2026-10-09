@@ -1,10 +1,28 @@
 namespace Helide.Persistence;
 
+/// <summary>
+/// State that belongs to the application rather than to any one project: the theme and
+/// the recent-project list.
+/// </summary>
+/// <remarks>
+/// Deliberately small. Everything describing a workspace -- layout, window geometry,
+/// editor tabs, agent sessions -- lives in <see cref="WorkspaceState"/> and is stored in
+/// a file of its own keyed by project path, so two projects open at the same time cannot
+/// overwrite each other's sessions. This file is the only one they still share, and the
+/// only thing that can be lost by two windows writing it at once is one recent-project
+/// entry.
+/// </remarks>
 internal sealed class AppState
 {
     public int Version { get; set; } = 1;
     public string? LastProjectPath { get; set; }
     public List<RecentProjectState> RecentProjects { get; set; } = [];
+    public string Theme { get; set; } = "mocha";  // "mocha" or "oled"
+}
+
+/// <summary>Everything describing one project's workspace, persisted per project path.</summary>
+internal sealed class WorkspaceState
+{
     public WindowGeometryState Window { get; set; } = new();
     public WorkspaceLayoutState Layout { get; set; } = new();
     public List<AgentSessionState> AgentSessions { get; set; } = [];
@@ -12,10 +30,7 @@ internal sealed class AppState
     // Which agent tab was selected when the window closed. Every new session is made
     // active on creation, so without this it is always the last one.
     public int ActiveAgentIndex { get; set; } = -1;
-    public string Theme { get; set; } = "mocha";  // "mocha" or "oled"
 
-    // The rest of the workspace. AgentSessions alone left a relaunch restoring half
-    // a workspace, which reads as deliberate rather than as a bug.
     public List<EditorTabState> EditorTabs { get; set; } = [];
 }
 
