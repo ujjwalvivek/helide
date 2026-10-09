@@ -2,22 +2,14 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
-using System.Reflection;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Helide;
 
-/// <summary>
-/// Helide Auto-Updater - checks remote server, downloads, installs, restarts.
-/// Used by AboutWindow (manual check) and by app startup (auto check).
-/// </summary>
 public class HelideUpdater
 {
     private static readonly HttpClient Client = new();
-
-    // Real GitHub releases - no placeholders
     private const string ReleasesApi = "https://api.github.com/repos/ujjwalvivek/helide/releases/latest";
     private const string DownloadBaseUrl = "https://github.com/ujjwalvivek/helide/releases/latest/download";
     private readonly string _currentVer;
@@ -27,141 +19,152 @@ public class HelideUpdater
 
     public HelideUpdater()
     {
-        _currentVer = GetCurrentVersion();
-        _exePath = Process.GetCurrentProcess().MainModule.FileName;
+        _exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+        _currentVer = ReadInstalledVersion();
         Client.DefaultRequestHeaders.UserAgent.ParseAdd("Helide-Updater/1.0");
         var token = System.Environment.GetEnvironmentVariable("GITHUB_TOKEN");
         if (!string.IsNullOrEmpty(token))
             Client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
     }
 
-    private static string GetCurrentVersion()
+    private string ReadInstalledVersion()
     {
         try
         {
-            var attr = typeof(HelideUpdater).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>();
-            var info = attr?.InformationalVersion ?? "1.0.0";
-            var idx = info.IndexOf('+');
-            return idx >= 0 ? info[..idx] : info;
+            if (File.Exists(_exePath))
+            {
+                var v = System.Diagnostics.FileVersionInfo.GetVersionInfo(_exePath);
+                var s = v.FileVersion ?? v.ProductVersion ?? "1.0.0";
+                var p = s.IndexOf('+');
+                return p >= 0 ? s[..p] : s;
+            }
         }
-        catch { return "1.0.0"; }
+        catch { }
+        return "1.0.0";
     }
 
-    /// <summary>Returns true if a newer version exists on GitHub releases.</summary>
     public async Task<bool> CheckAsync(Action<string>? status = null)
     {
-        status?.Invoke("Checking GitHub releases...");
+        status?.Invoke("downloading");
         try
         {
-            Client.DefaultRequestHeaders.UserAgent.ParseAdd("Helide-Updater/1.0");
             var json = await Client.GetStringAsync(ReleasesApi);
             using var doc = System.Text.Json.JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var tagName = root.GetProperty("tag_name").GetString();
-            if (!string.IsNullOrEmpty(tagName))
+            var tag = doc.RootElement.GetProperty("tag_name").GetString();
+            if (!string.IsNullOrEmpty(tag))
             {
-                var tagStr = tagName.StartsWith("v", System.StringComparison.OrdinalIgnoreCase)
-                    ? tagName.Substring(1) : tagName;
-
-                var remote = new Version(tagStr);
+                var remoteStr = tag.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? tag.Substring(1) : tag;
+                var remote = new Version(remoteStr);
                 var current = new Version(_currentVer);
-
                 if (remote > current)
                 {
-                    LatestAvailable = tagStr;
-                    status?.Invoke($"Update available: v{tagStr}");
+                    LatestAvailable = remoteStr;
+                    status?.Invoke($"Update available: v{remoteStr}");
                     return true;
                 }
             }
         }
-        catch (Exception ex)
-        {
-            status?.Invoke($"Check failed: {ex.Message}");
-        }
-        status?.Invoke($"Up to date (v{_currentVer}).");
+        catch { }
+        status?.Invoke("restart to update");
         return false;
     }
 
-    /// <summary>Download and install the update from GitHub releases, then restart Helide.</summary>
     public async Task DownloadAndApplyAsync(Action<int>? progress = null)
     {
         try
         {
-            // Fetch release info to find the actual asset URL
-            Client.DefaultRequestHeaders.UserAgent.ParseAdd("Helide-Updater/1.0");
             var releaseJson = await Client.GetStringAsync(ReleasesApi);
             using var doc = System.Text.Json.JsonDocument.Parse(releaseJson);
-            var root = doc.RootElement;
-            var assets = root.GetProperty("assets").EnumerateArray();
+            var assets = doc.RootElement.GetProperty("assets").EnumerateArray();
             string? downloadUrl = null;
-
-            // Look for zip or exe asset
-            foreach (var asset in assets)
+            foreach (var a in assets)
             {
-                var name = asset.GetProperty("name").GetString() ?? "";
-                if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
-                    name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                var n = a.GetProperty("name").GetString() ?? "";
+                if (n.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                 {
-                    downloadUrl = asset.GetProperty("browser_download_url").GetString();
+                    downloadUrl = a.GetProperty("browser_download_url").GetString();
                     break;
                 }
             }
-
-            // Fallback pattern if no asset found
             if (string.IsNullOrEmpty(downloadUrl))
                 downloadUrl = $"{DownloadBaseUrl}/Helide-win-x64.exe";
+            if (string.IsNullOrEmpty(downloadUrl))
+                throw new Exception("No download URL.");
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "helide-update");
-        Directory.CreateDirectory(tempDir);
-        var tempFile = Path.Combine(tempDir, $"helide-{LatestAvailable}.exe");
+            var tempDir = Path.Combine(Path.GetTempPath(), "helide-update");
+            Directory.CreateDirectory(tempDir);
+            var tempFile = Path.Combine(tempDir, $"helide.{LatestAvailable}.tmp");
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(downloadUrl));
-        using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
+            using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(downloadUrl));
+            using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
 
-        var total = response.Content.Headers.ContentLength ?? -1L;
-        long downloaded = 0;
+            var total = response.Content.Headers.ContentLength ?? -1L;
+            long downloaded = 0;
 
-        using var stream = await response.Content.ReadAsStreamAsync();
-        using var fileStream = File.Create(tempFile);
-        var buffer = new byte[8192];
-        int read;
-        while ((read = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-        {
-            await fileStream.WriteAsync(buffer.AsMemory(0, read));
-            downloaded += read;
-            if (total > 0) progress?.Invoke((int)(downloaded * 100 / total));
-        }
-
-        progress?.Invoke(100);
-
-        // Handle zip download: extract .exe, then install
-        if (downloadUrl != null && downloadUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-        {
-            var extractDir = Path.Combine(tempDir, "extract");
-            Directory.CreateDirectory(extractDir);
-            System.IO.Compression.ZipFile.ExtractToDirectory(tempFile, extractDir);
-            var files = Directory.GetFiles(extractDir, "*.exe", SearchOption.AllDirectories);
-            if (files.Length > 0)
+            using (var stream = await response.Content.ReadAsStreamAsync())
+            using (var fileStream = File.Create(tempFile))
             {
-                File.Copy(files[0], _exePath, overwrite: true);
+                var buffer = new byte[8192];
+                int read;
+                while ((read = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, read));
+                    downloaded += read;
+                    if (total > 0) progress?.Invoke((int)(downloaded * 100 / total));
+                }
             }
-        }
-        else if (downloadUrl != null && downloadUrl.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-        {
-            File.Copy(tempFile, _exePath, overwrite: true);
-        }
 
-        // Replace current exe and restart
-        Process.Start(new ProcessStartInfo(_exePath)
-        { UseShellExecute = true });
-        Environment.Exit(0);
+            progress?.Invoke(100);
+
+            // Extract zip or copy exe
+            string installedFile = tempFile;
+            if (downloadUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                var extractDir = Path.Combine(tempDir, "extract");
+                Directory.CreateDirectory(extractDir);
+                System.IO.Compression.ZipFile.ExtractToDirectory(tempFile, extractDir);
+                var files = Directory.GetFiles(extractDir, "*.exe", SearchOption.AllDirectories);
+                if (files.Length == 0)
+                    throw new Exception("Update zip missing .exe.");
+                installedFile = files[0];
+            }
+
+            // Rename running .exe first (Windows allows), then move new file in
+            var oldPath = _exePath + ".old." + Guid.NewGuid().ToString("N")[..6];
+            try { if (File.Exists(oldPath)) File.Delete(oldPath); } catch { }
+            File.Move(_exePath, oldPath);
+            File.Copy(installedFile, _exePath, overwrite: true);
+            try { File.Delete(installedFile); } catch { }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Update failed: {ex.Message}");
+            throw new Exception($"Update failed: {ex.Message}");
+        }
+    }
+
+    public void RestartApp()
+    {
+        if (!File.Exists(_exePath))
+        {
+            throw new Exception("Helide executable not found at: " + _exePath);
+        }
+        try
+        {
+            var dir = Path.GetDirectoryName(_exePath) ?? ".";
+            var psi = new System.Diagnostics.ProcessStartInfo(_exePath)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = dir
+            };
+            System.Diagnostics.Process.Start(psi);
+            System.Threading.Thread.Sleep(800);
+            System.Environment.Exit(0);
+        }
+        catch (Exception ex)
+        {
+            // Re-throw so AboutWindow can show the error
+            throw new Exception($"Failed to restart Helide: {ex.Message}. Path: {_exePath}", ex);
         }
     }
 }

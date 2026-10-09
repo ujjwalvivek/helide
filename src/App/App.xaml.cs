@@ -278,15 +278,25 @@ public partial class App : Application
 
             if (hasUpdate)
             {
-                // Popup notification: user hasn't visited About yet, so show it here.
-                Dispatcher?.BeginInvoke(new Action(() =>
+                // Auto-start download when app opens with update available.
+                Dispatcher?.BeginInvoke(new Action(async () =>
                 {
-                    System.Windows.MessageBox.Show(
-                        $"A new version of Helide (v{updater.LatestAvailable}) is available.\n\n" +
-                        "Open About to download and install the update.",
-                        "Helide Update Available",
-                        System.Windows.MessageBoxButton.OK,
-                        System.Windows.MessageBoxImage.Information);
+                    if (Application.Current?.MainWindow is MainWindow mw)
+                    {
+                        try
+                        {
+                            mw.UpdatePill.Visibility = System.Windows.Visibility.Visible;
+                            mw.UpdatePillText.Text = "downloading";
+                            var updater = new HelideUpdater();
+                            await updater.DownloadAndApplyAsync(pct =>
+                                Dispatcher.Invoke(() => mw.UpdatePillText.Text = $"installing ... {pct}%"));
+                            mw.UpdatePillText.Text = "restart to update";
+                        }
+                        catch (Exception ex)
+                        {
+                            mw.UpdatePillText.Text = $"failed: {ex.Message}";
+                        }
+                    }
                 }));
             }
         }

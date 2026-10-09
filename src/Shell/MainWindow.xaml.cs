@@ -683,6 +683,22 @@ private void OpenInNewWindow(string? projectPath)
         about.ShowDialog();
     }
 
+    private void UpdatePill_Click(object sender, RoutedEventArgs e)
+    {
+        // Non-clickable until restart state
+        if (UpdatePillText.Text != "restart to update") return;
+        try
+        {
+            UpdatePillText.Text = "Restarting...";
+            var updater = new HelideUpdater();
+            updater.RestartApp();
+        }
+        catch (Exception ex)
+        {
+            UpdatePillText.Text = $"failed: {ex.Message}";
+        }
+    }
+
     private void RunProjectCommand()
     {
         if (_runnerHost is null)

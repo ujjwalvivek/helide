@@ -366,6 +366,9 @@
                         Margin="8,0,0,0"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"
                     >
+                    <Border x:Name="UpdatePill" Style="{DynamicResource TitlePillStyle}" Visibility="Collapsed" MouseLeftButtonUp="UpdatePill_Click" Cursor="Hand" ToolTip="Update available — click to install">
+                        <TextBlock x:Name="UpdatePillText" Style="{DynamicResource TitlePillTextStyle}" Text="Update available" />
+                    </Border>
                     <Button
                             Click="MinimizeCaptionButton_Click"
                             Style="{DynamicResource CaptionButtonStyle}"

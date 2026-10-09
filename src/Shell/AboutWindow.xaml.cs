@@ -20,47 +20,40 @@ public partial class AboutWindow : Window
 
     private async void UpdateButton_Click(object sender, RoutedEventArgs e)
     {
-        UpdateButton.IsEnabled = false;
-        UpdateButton.Content = "Checking...";
-
-        try
+        if (UpdateButton.Content.ToString() == "Check for Updates")
         {
-            var updater = new HelideUpdater();
-            bool hasUpdate = await updater.CheckAsync(s =>
-                Dispatcher.Invoke(() => UpdateButton.Content = s));
-
-            if (hasUpdate)
+            UpdateButton.IsEnabled = false;
+            UpdateButton.Content = "downloading";
+            try
             {
-                var msg = $"New version v{updater.LatestAvailable} is available.\n\nDownload and install now?\nApp will restart after install.";
-                var result = System.Windows.MessageBox.Show(msg, "Update Available", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Information);
-                if (result == MessageBoxResult.Yes)
+                var updater = new HelideUpdater();
+                bool hasUpdate = await updater.CheckAsync();
+                if (hasUpdate)
                 {
+                    UpdateButton.Content = "installing";
                     await updater.DownloadAndApplyAsync(pct =>
-                    {
-                        Dispatcher.Invoke(() => UpdateButton.Content = $"Installing... {pct}%");
-                    });
-                }
-                else
-                {
-                    Dispatcher.Invoke(() => UpdateButton.Content = $"Update: v{updater.LatestAvailable}");
+                        Dispatcher.Invoke(() => UpdateButton.Content = $"installing ... {pct}%"));
+                    UpdateButton.Content = "restart to update";
+                    UpdateButton.IsEnabled = true;
+                    return;
                 }
             }
-            else
+            catch (Exception ex)
             {
-                Dispatcher.Invoke(() => UpdateButton.Content = "Up to date");
+                UpdateButton.Content = $"failed: {ex.Message}";
+                await System.Threading.Tasks.Task.Delay(3000);
             }
-        }
-        catch (Exception ex)
-        {
-            Dispatcher.Invoke(() => UpdateButton.Content = "Check failed");
-        }
-
-        await System.Threading.Tasks.Task.Delay(2500);
-        Dispatcher.Invoke(() =>
-        {
             UpdateButton.IsEnabled = true;
             UpdateButton.Content = "Check for Updates";
-        });
+        }
+        else if (UpdateButton.Content.ToString() == "restart to update")
+        {
+            try { new HelideUpdater().RestartApp(); }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Failed to restart Helide: {ex.Message}", "Restart Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
     }
 
     private static string DescribeVersion()
