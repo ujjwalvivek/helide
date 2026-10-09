@@ -365,6 +365,31 @@ public partial class MainWindow : Window
         commands.Add(new PaletteCommand("New OpenCode Session", () => CreateAgentSession("opencode", "OpenCode"), "New", canInvoke: workspace));
         commands.Add(new PaletteCommand("New Codex Session", () => CreateAgentSession("codex", "Codex"), "New", canInvoke: workspace));
 
+        // Open in a chosen folder rather than the project root. Each picks a folder and
+        // opens the session there, focused -- the creation methods already activate what
+        // they make. This is the per-pane working directory: an agent scoped to a
+        // subdirectory, a yazi on a folder outside the project.
+        commands.Add(new PaletteCommand(
+            "Open Editor Tab in Folder…",
+            () => OpenInFolder(path => CreateEditorTab(null, path)),
+            "New",
+            canInvoke: workspace));
+        commands.Add(new PaletteCommand(
+            "Open OpenCode in Folder…",
+            () => OpenInFolder(path => CreateAgentSession("opencode", "OpenCode", workingDirectory: path)),
+            "New",
+            canInvoke: workspace));
+        commands.Add(new PaletteCommand(
+            "Open Codex in Folder…",
+            () => OpenInFolder(path => CreateAgentSession("codex", "Codex", workingDirectory: path)),
+            "New",
+            canInvoke: workspace));
+        commands.Add(new PaletteCommand(
+            "Open Runner in Folder…",
+            () => OpenInFolder(path => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"), workingDirectory: path)),
+            "New",
+            canInvoke: workspace));
+
         // --- Close ---
         commands.Add(new PaletteCommand(
             "Close Current Editor Tab",
@@ -412,6 +437,22 @@ public partial class MainWindow : Window
     }
 
     private void OpenProjectFolder() => OpenProjectButton_Click(this, new RoutedEventArgs());
+
+// Picks a folder and runs the action with it. Backs the "in Folder" palette entries,
+// which open a session rooted somewhere other than the project root.
+private void OpenInFolder(Action<string> open)
+{
+    using var dialog = new System.Windows.Forms.FolderBrowserDialog
+    {
+        Description = "Select a folder to open in",
+        ShowNewFolderButton = true,
+        UseDescriptionForTitle = true,
+        SelectedPath = _currentProject ?? ResolveInitialFolder(),
+    };
+
+    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        open(dialog.SelectedPath);
+}
 
 // Launches another Helide, optionally on a project. A null path passes no argument, which
 // lands the new process on the project chooser.
@@ -1075,7 +1116,11 @@ private void OpenInNewWindow(string? projectPath)
             new Action(() => viewer.ScrollToRightEnd()));
     }
 
-    private EditorTab? CreateEditorTab(string? path)
+    // The working directory defaults to the project, which is what every pane has always
+    // used. It is a parameter so the palette can open a session rooted somewhere else --
+    // an agent scoped to a subdirectory, a yazi on a folder outside the project -- without
+    // pretending the project itself has moved.
+    private EditorTab? CreateEditorTab(string? path, string? workingDirectory = null)
     {
         if (_currentProject is null)
             return null;
@@ -1084,7 +1129,7 @@ private void OpenInNewWindow(string? projectPath)
         var command = path is null ? ToolCommand("hx.exe", ".") : ToolCommand("hx.exe", path);
         try
         {
-            var host = new NativeTerminalHost("helix", command, _currentProject, path);
+            var host = new NativeTerminalHost("helix", command, workingDirectory ?? _currentProject, path);
             var tab = new EditorTab(path, host);
 
             EditorSlot.Children.Add(host);
@@ -1721,7 +1766,7 @@ private void OpenInNewWindow(string? projectPath)
     // The command line and the status source must agree on the port, so both are
     // built together here rather than by each caller. That is also why this no
     // longer takes a commandLine: passing one in was how they drifted apart.
-    private void CreateAgentSession(string type, string typeLabel, string? resumeSessionId = null, bool resuming = false)
+    private void CreateAgentSession(string type, string typeLabel, string? resumeSessionId = null, bool resuming = false, string? workingDirectory = null)
     {
         if (_currentProject is null)
             return;
@@ -1765,7 +1810,7 @@ private void OpenInNewWindow(string? projectPath)
         try
         {
             // Create the new session host
-            var host = new NativeTerminalHost(type, commandLine, _currentProject!);
+            var host = new NativeTerminalHost(type, commandLine, workingDirectory ?? _currentProject!);
 
             // Replace the agent panel content
             AgentSlot.Content = host;
@@ -2456,12 +2501,12 @@ private void OpenInNewWindow(string? projectPath)
         CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"));
     }
 
-    private void CreateRunnerSession(string type, string label, string commandLine)
+    private void CreateRunnerSession(string type, string label, string commandLine, string? workingDirectory = null)
     {
         if (_currentProject is null) return;
         try
         {
-            var host = new NativeTerminalHost(type, commandLine, _currentProject!);
+            var host = new NativeTerminalHost(type, commandLine, workingDirectory ?? _currentProject!);
             RunnerSlot.Content = host;
             _terminalHosts.Add(host);
 
