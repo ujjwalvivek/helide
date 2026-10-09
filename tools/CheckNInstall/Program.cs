@@ -551,11 +551,20 @@ internal static class Program
         }
     }
 
-    /// Walks up from the build output until it finds the repo root, so the tool works
-    /// whether it was run from bin, from tools\, or from the project folder.
+    /// Walks up from the executable until it finds the repo root, so the tool works
+    /// whether it was run from bin, from tools\, or from the publish folder.
+    ///
+    /// The starting point is the real exe rather than the app base directory: a
+    /// single-file build unpacks its assemblies into a temp folder and points
+    /// AppContext.BaseDirectory there, so walking up from that never leaves %TEMP% and
+    /// every phase then reports a missing Helide.csproj.
     private static string FindRepoRoot()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var start = Environment.ProcessPath
+            ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
+            ?? AppContext.BaseDirectory;
+
+        var directory = new DirectoryInfo(Path.GetDirectoryName(start)!);
 
         while (directory is not null)
         {
@@ -565,7 +574,7 @@ internal static class Program
             directory = directory.Parent;
         }
 
-        return AppContext.BaseDirectory;
+        return Path.GetDirectoryName(start) ?? AppContext.BaseDirectory;
     }
 
     /// Reads the theme the app is currently on, so the TUI opens matching it rather
