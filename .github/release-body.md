@@ -1,4 +1,4 @@
-## Helide v1.4.0
+## Helide v1.5.0
 
 A WPF terminal workspace for Windows: git status, the Helix editor, a command runner, and an opencode chat session in one dark window.
 
