@@ -107,7 +107,7 @@ internal static class Program
 
     private static int RunCheck()
     {
-        Banner();
+        Banner(showLogo: false);
         var missing = Check();
         Ok(missing ? "one or more tools are missing" : "ready to install");
         return missing ? ExitFailed : ExitOk;
@@ -1111,15 +1111,20 @@ internal static class Program
 
     private static void Note(string message) => Emit("·", message);
 
-    private static void Banner()
+    private static void Banner(bool showLogo = true)
     {
         if (_tui) return;
 
-        var logo = EmbeddedLogo();
-        if (!string.IsNullOrEmpty(logo))
+        // --check is the one mode a build script reads, and 27 rows of art ahead of the
+        // answer is noise in a log. Everything else keeps it.
+        if (showLogo)
         {
-            Console.WriteLine(logo);
-            Console.WriteLine();
+            var logo = EmbeddedLogo();
+            if (!string.IsNullOrEmpty(logo))
+            {
+                Console.WriteLine(logo);
+                Console.WriteLine();
+            }
         }
 
         Console.WriteLine($"check & install   repo: {_repoRoot}");
