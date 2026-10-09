@@ -1,6 +1,6 @@
 # Helide
 
-Start at a calm welcome screen, choose a project folder, and Helide opens four working surfaces:
+Start at a calm welcome screen, choose a project folder, and Helide opens four working surfaces right where you think they should be:
 
 - lazygit or yazi on the left (swappable from the status bar)
 - Helix in the dominant center pane
