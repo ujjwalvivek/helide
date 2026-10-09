@@ -6,11 +6,12 @@ namespace Helide.Sessions;
 /// </summary>
 /// <remarks>
 /// Both bundled agents can answer this properly, which is why this exists rather
-/// than a single heuristic. OpenCode serves it over HTTP and Codex over JSON-RPC,
-/// so the two implementations share nothing but this shape. A pane whose tool
-/// cannot answer falls back to <see cref="QuietPeriodStatusSource"/>, which is a
-/// guess, and the difference matters: a minute-long build and a finished reply look
-/// identical to a timer.
+/// than a single heuristic. OpenCode serves it over HTTP and Codex writes turn
+/// markers into its rollout file, so the two implementations share nothing but this
+/// shape. A pane whose tool cannot answer falls back to
+/// <see cref="QuietPeriodStatusSource"/>, which is a guess, and the difference
+/// matters: a minute-long build and a finished reply look identical to a timer.
+/// That fallback is only reached while there is no first-party signal to read.
 /// </remarks>
 internal interface ISessionStatusSource : IDisposable
 {

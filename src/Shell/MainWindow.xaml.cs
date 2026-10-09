@@ -1309,12 +1309,23 @@ public partial class MainWindow : Window
             return;
 
         // The OpenCode TUI serves this pane's own server on the pinned port, so the
-        // source can read real turn events. Codex has no HTTP surface, and the
-        // app-server prompts for feature settings, so it stays on the quiet-period
-        // heuristic for now.
+        // source can read real turn events. Codex has no HTTP surface, but it writes
+        // task_started/task_complete into the rollout file it already maintains, which
+        // is the same kind of first-party signal rather than an inference.
+        //
+        // The rollout is looked up by session id, which resolves for a pane that resumed
+        // a known thread and for one whose id was just captured, and stays null until
+        // the pane has been used at all. Only then is there genuinely nothing to read,
+        // and the quiet-period source covers that window instead of guessing once a real
+        // signal exists.
         session.AttachStatusSource(type switch
         {
             "opencode" when port > 0 => new OpenCodeStatusSource(port, Dispatcher),
+            "codex" => new RolloutStatusSource(
+                () => session.SessionId is { Length: > 0 } id
+                    ? CodexSessions.FindRolloutPath(id)
+                    : null,
+                Dispatcher),
             _ => new QuietPeriodStatusSource(host),
         });
     }

@@ -96,6 +96,37 @@ internal static class CodexSessions
     /// <summary>Records that a pane has taken this rollout, so it is not offered again.</summary>
     public static void MarkConsumed(Rollout rollout) => _consumed.Add(rollout.Path);
 
+    /// <summary>
+    /// The rollout file backing a session id, for panes that resumed a known thread
+    /// and so never claimed one. Null when no file carries that id, which is the
+    /// normal state for a pane that has not been used yet.
+    /// </summary>
+    public static string? FindRolloutPath(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId) || !Directory.Exists(SessionsDir))
+            return null;
+
+        string[] files;
+        try
+        {
+            files = Directory.GetFiles(SessionsDir, "rollout-*.jsonl", SearchOption.AllDirectories);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        // Newest first: resuming can leave several files carrying one id, and the
+        // live conversation is the most recent of them.
+        foreach (var file in files.OrderByDescending(File.GetCreationTimeUtc))
+        {
+            if (string.Equals(ReadSessionId(file), sessionId, StringComparison.OrdinalIgnoreCase))
+                return file;
+        }
+
+        return null;
+    }
+
     // The session_meta record is the authority on the id. A file whose first line is
     // missing or unparseable is skipped rather than guessed at, because the two
     // outcomes are not equivalent: no id starts a fresh conversation, whereas a
