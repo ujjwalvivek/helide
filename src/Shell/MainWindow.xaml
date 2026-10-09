@@ -1478,5 +1478,20 @@
                PopupAnimation="None">
             <ui:CommandPalette x:Name="CommandPaletteControl" />
         </Popup>
+
+        <!-- The same overlay pattern for the folder picker. A separate popup rather
+             than a mode inside the palette: the palette's keyboard model is about
+             running commands, and this one is about walking a tree. -->
+        <Popup x:Name="FolderPickerPopup"
+               Placement="Center"
+               AllowsTransparency="True"
+               Focusable="True"
+               StaysOpen="False"
+               Opened="FolderPickerPopup_Opened"
+               PopupAnimation="None">
+            <ui:FolderPicker x:Name="FolderPickerControl"
+                             Picked="FolderPicker_Picked"
+                             Dismissed="CloseFolderPicker" />
+        </Popup>
     </Grid>
 </Window>

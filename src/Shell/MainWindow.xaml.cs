@@ -155,6 +155,15 @@ public partial class MainWindow : Window
         // the panes swallow the event before the window ever sees it.
         CommandPalettePopup.Closed += (_, _) => _paletteOpen = false;
 
+        // The folder picker is opened by a palette command rather than by a key of its
+        // own, and closes on picking as well as on dismiss -- so the closed flag is
+        // maintained in one place here rather than by each of those paths.
+        FolderPickerPopup.Closed += (_, _) =>
+        {
+            _folderPickerOpen = false;
+            _pendingFolderAction = null;
+        };
+
         // Minimising leaves the popup behind, because it is a separate top-level window
         // that does not follow the owner's minimised state.
         StateChanged += (_, _) =>
@@ -252,6 +261,8 @@ public partial class MainWindow : Window
     }
 
     private bool _paletteOpen;
+    private bool _folderPickerOpen;
+    private Action<string>? _pendingFolderAction;
 
     private void OpenCommandPalette()
     {
@@ -303,6 +314,60 @@ public partial class MainWindow : Window
         // a dialog or tear down the workspace, and doing that underneath a still-open
         // popup strands focus on a window that no longer exists.
         Dispatcher.BeginInvoke(DispatcherPriority.Input, command.Invoke);
+    }
+
+    // ---- Folder picker ---------------------------------------------------------
+
+    // Opens the in-project picker and remembers what the folder is for. The action is
+    // deferred to the pick rather than wrapped into each command, so the picker has to
+    // know nothing about editor tabs, agents or sessions.
+    private void OpenFolderPicker(Action<string> open)
+    {
+        if (_currentProject is null || _folderPickerOpen)
+            return;
+
+        _folderPickerOpen = true;
+        _pendingFolderAction = open;
+
+        FolderPickerPopup.PlacementTarget = RootGrid;
+        FolderPickerPopup.IsOpen = true;
+        FolderPickerControl.Load(_currentProject);
+
+        // Focus comes from the popup's own Opened event, for the same reason the
+        // palette's does: it is the first moment the HwndSource exists.
+    }
+
+    private void FolderPickerPopup_Opened(object sender, EventArgs e)
+    {
+        FolderPickerControl.FocusQuery();
+
+        if (PresentationSource.FromVisual(FolderPickerControl) is HwndSource source)
+            NativeMethods.SetFocus(source.Handle);
+    }
+
+    private void CloseFolderPicker()
+    {
+        if (!_folderPickerOpen)
+            return;
+
+        _folderPickerOpen = false;
+        _pendingFolderAction = null;
+        FolderPickerPopup.IsOpen = false;
+    }
+
+    private void FolderPicker_Picked(string path)
+    {
+        // Captured before the close: the popup's Closed handler clears the pending
+        // action, which this must not read after the fact.
+        var open = _pendingFolderAction;
+        CloseFolderPicker();
+
+        if (open is null)
+            return;
+
+        // Deferred for the palette's reason -- the overlay goes first, the terminal
+        // that is about to take the folder is created with the desktop settled.
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () => open(path));
     }
 
     private List<PaletteCommand> BuildPaletteCommands()
@@ -369,25 +434,60 @@ public partial class MainWindow : Window
         // opens the session there, focused -- the creation methods already activate what
         // they make. This is the per-pane working directory: an agent scoped to a
         // subdirectory, a yazi on a folder outside the project.
+        //
+        // Two paths per entry, split on where the folder can be. The picker lists the
+        // project's own folders, project-relative and fuzzy-filtered, which is the usual
+        // case and the one worth making fast to read. The dialog entry covers everything
+        // the picker deliberately does not offer: a folder outside the project is a
+        // different workspace, not a session root in this one, so it is not in the list.
         commands.Add(new PaletteCommand(
             "Open Editor Tab in Folder…",
-            () => OpenInFolder(path => CreateEditorTab(null, path)),
+            () => OpenFolderPicker(path => CreateEditorTab(null, path)),
             "New",
+            "project folders",
             canInvoke: workspace));
         commands.Add(new PaletteCommand(
             "Open OpenCode in Folder…",
-            () => OpenInFolder(path => CreateAgentSession("opencode", "OpenCode", workingDirectory: path)),
+            () => OpenFolderPicker(path => CreateAgentSession("opencode", "OpenCode", workingDirectory: path)),
             "New",
+            "project folders",
             canInvoke: workspace));
         commands.Add(new PaletteCommand(
             "Open Codex in Folder…",
-            () => OpenInFolder(path => CreateAgentSession("codex", "Codex", workingDirectory: path)),
+            () => OpenFolderPicker(path => CreateAgentSession("codex", "Codex", workingDirectory: path)),
             "New",
+            "project folders",
             canInvoke: workspace));
         commands.Add(new PaletteCommand(
             "Open Runner in Folder…",
+            () => OpenFolderPicker(path => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"), workingDirectory: path)),
+            "New",
+            "project folders",
+            canInvoke: workspace));
+
+        commands.Add(new PaletteCommand(
+            "Open Editor Tab Outside Project…",
+            () => OpenInFolder(path => CreateEditorTab(null, path)),
+            "New",
+            "any folder",
+            canInvoke: workspace));
+        commands.Add(new PaletteCommand(
+            "Open OpenCode Outside Project…",
+            () => OpenInFolder(path => CreateAgentSession("opencode", "OpenCode", workingDirectory: path)),
+            "New",
+            "any folder",
+            canInvoke: workspace));
+        commands.Add(new PaletteCommand(
+            "Open Codex Outside Project…",
+            () => OpenInFolder(path => CreateAgentSession("codex", "Codex", workingDirectory: path)),
+            "New",
+            "any folder",
+            canInvoke: workspace));
+        commands.Add(new PaletteCommand(
+            "Open Runner Outside Project…",
             () => OpenInFolder(path => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"), workingDirectory: path)),
             "New",
+            "any folder",
             canInvoke: workspace));
 
         // --- Close ---
@@ -438,8 +538,9 @@ public partial class MainWindow : Window
 
     private void OpenProjectFolder() => OpenProjectButton_Click(this, new RoutedEventArgs());
 
-// Picks a folder and runs the action with it. Backs the "in Folder" palette entries,
-// which open a session rooted somewhere other than the project root.
+// Picks a folder with the native dialog and runs the action with it. Backs the
+// "Outside Project" palette entries: the in-app picker covers the project's own
+// folders, and this covers everywhere else, which is the one thing it cannot reach.
 private void OpenInFolder(Action<string> open)
 {
     using var dialog = new System.Windows.Forms.FolderBrowserDialog
@@ -496,6 +597,17 @@ private void OpenInNewWindow(string? projectPath)
     private bool PaletteHasOsFocus()
     {
         if (PresentationSource.FromVisual(CommandPaletteControl) is not HwndSource source)
+            return false;
+
+        return NativeMethods.GetFocus() == source.Handle;
+    }
+
+    // The same question for the folder picker's popup, asked separately because the
+    // two are distinct HwndSources and each would report the other's window as not
+    // focused.
+    private bool FolderPickerHasOsFocus()
+    {
+        if (PresentationSource.FromVisual(FolderPickerControl) is not HwndSource source)
             return false;
 
         return NativeMethods.GetFocus() == source.Handle;
@@ -1345,6 +1457,46 @@ private void OpenInNewWindow(string? projectPath)
             {
                 if (PrintableText(e.Key) is { } text)
                     CommandPaletteControl.AppendText(text);
+
+                e.Handled = true;
+                return;
+            }
+
+            return;
+        }
+
+        // The picker's navigation lives here for the palette's reason: opened by a
+        // palette command, it can come up while a pane still holds the OS-level
+        // keyboard, and its own handlers would never run.
+        if (_folderPickerOpen)
+        {
+            switch (e.Key)
+            {
+                case Key.Escape:
+                    CloseFolderPicker();
+                    e.Handled = true;
+                    return;
+
+                case Key.Down:
+                    FolderPickerControl.MoveSelection(1);
+                    e.Handled = true;
+                    return;
+
+                case Key.Up:
+                    FolderPickerControl.MoveSelection(-1);
+                    e.Handled = true;
+                    return;
+
+                case Key.Enter:
+                    FolderPickerControl.InvokeCurrent();
+                    e.Handled = true;
+                    return;
+            }
+
+            if (!FolderPickerHasOsFocus())
+            {
+                if (PrintableText(e.Key) is { } folderText)
+                    FolderPickerControl.AppendText(folderText);
 
                 e.Handled = true;
                 return;
