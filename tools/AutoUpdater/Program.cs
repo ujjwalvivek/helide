@@ -21,6 +21,10 @@ internal class Program
 
         try
         {
+            // Deletes the .old exes the previous update displaced. This process is not
+            // the one holding them open, so the locks are gone and they can go.
+            AutoUpdater.DeleteStaleOldExecutables();
+
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
             var updater = new AutoUpdater(cts);
 
@@ -66,10 +70,19 @@ internal class Program
                 WriteLine($"{Color.Cyan}\u27fa Starting download...{Color.Reset}\n");
             }
 
-            await updater.DownloadAndInstallUpdateAsync(
+            // The installer reports whether it actually finished. Claiming success on a
+            // failure is what restarted Helide over and over, because every launch then
+            // found the same "new" version and tried again.
+            bool installed = await updater.DownloadAndInstallUpdateAsync(
                 (percent, status) => DrawProgress(percent, status),
                 (msg) => WriteLine($"{Color.Yellow}{msg}{Color.Reset}")
             );
+
+            if (!installed)
+            {
+                WriteLine($"\n{Color.Red}\u2717 Update was not installed. {AppName} left running.{Color.Reset}\n");
+                return 1;
+            }
 
             WriteLine($"\n{Color.Green}\u2713 Update installed. Restarting {AppName}...{Color.Reset}\n");
             updater.RestartApp();
@@ -243,7 +256,7 @@ public class AutoUpdater : IDisposable
         return false;
     }
 
-    public async Task DownloadAndInstallUpdateAsync(Action<int, string> progressCallback, Action<string> logCallback)
+    public async Task<bool> DownloadAndInstallUpdateAsync(Action<int, string> progressCallback, Action<string> logCallback)
     {
         try
         {
@@ -270,10 +283,10 @@ public class AutoUpdater : IDisposable
             if (string.IsNullOrEmpty(downloadUrl))
             {
                 logCallback?.Invoke("Could not find update download URL.");
-                return;
+                return false;
             }
 
-            var tempFile = System.IO.Path.Combine(_exeDir, $"helide.{LatestVersion}.{System.Guid.NewGuid():N[..8]}.tmp");
+            var tempFile = System.IO.Path.Combine(_exeDir, $"helide.{LatestVersion}.{System.Guid.NewGuid().ToString("N")[..8]}.tmp");
 
             using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(downloadUrl));
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, _cts.Token);
@@ -304,19 +317,24 @@ public class AutoUpdater : IDisposable
             progressCallback?.Invoke(100, "Installing...");
 
             // Extract if it's a zip file
+            string downloadedFile = tempFile;
             if (downloadUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
                 System.IO.Path.GetExtension(tempFile).Equals(".zip", StringComparison.OrdinalIgnoreCase))
             {
-                var extractDir = System.IO.Path.Combine(_exeDir, $"helide.extract.{System.Guid.NewGuid():N[..6]}");
+                var extractDir = System.IO.Path.Combine(_exeDir, $"helide.extract.{System.Guid.NewGuid().ToString("N")[..6]}");
                 System.IO.Directory.CreateDirectory(extractDir);
                 ZipFile.ExtractToDirectory(tempFile, extractDir);
 
-                // Find the .exe inside the zip (usually Helide-win-x64.exe or Helide.exe)
                 var files = System.IO.Directory.GetFiles(extractDir, "*.exe", System.IO.SearchOption.AllDirectories);
-                string installedFile = files.Length > 0 ? files[0] : tempFile;
+                if (files.Length == 0)
+                    throw new Exception("Update zip contains no .exe.");
 
-                // Copy to install location (same as current exe path for standalone updater)
-                System.IO.File.Copy(installedFile, _exePath, overwrite: true);
+                // The release archive now ships this updater alongside the app, so the
+                // first match is AutoUpdater.exe and not Helide.exe -- installing that
+                // over Helide.exe left the app launching the updater in an endless
+                // terminal loop, since the copy it restarted was itself.
+                downloadedFile = PickAppExecutable(files);
+                ReplaceRunningExecutable(downloadedFile);
 
                 // Clean up temp
                 System.IO.File.Delete(tempFile);
@@ -325,15 +343,79 @@ public class AutoUpdater : IDisposable
             else
             {
                 // Direct .exe download
-                System.IO.File.Move(tempFile, _exePath);
+                ReplaceRunningExecutable(downloadedFile);
             }
 
-            logCallback?.Invoke("Update installed. Restarting...");
+            logCallback?.Invoke("Update installed.");
+            return true;
         }
         catch (Exception ex)
         {
             logCallback?.Invoke($"Download failed: {ex.Message}");
+            return false;
         }
+    }
+
+    // Windows refuses to overwrite an executable that is currently running, and Helide
+    // always is while this updater is open. Renaming the running file out of the way
+    // works because the OS keeps the open handle alive on the old name, then the new
+    // file lands at the expected path. Same trick the in-app updater uses.
+    //
+    // The displaced file cannot be deleted here -- the process still executing it owns
+    // that handle. DeleteStaleOldExecutables() removes it on the next run, once Helide
+    // has shut down and the lock is gone.
+    private void ReplaceRunningExecutable(string newFile)
+    {
+        var oldPath = _exePath + ".old." + System.Guid.NewGuid().ToString("N")[..6];
+        try { if (System.IO.File.Exists(oldPath)) System.IO.File.Delete(oldPath); } catch { }
+
+        if (System.IO.File.Exists(_exePath))
+            System.IO.File.Move(_exePath, oldPath);
+
+        System.IO.File.Copy(newFile, _exePath, overwrite: true);
+    }
+
+    /// <summary>
+    /// Deletes the Helide executables earlier updates renamed out of the way. The
+    /// process that was executing one held it open, so nothing could remove it while it
+    /// ran; this updater is a different process, so by now the lock is gone.
+    /// </summary>
+    internal static void DeleteStaleOldExecutables()
+    {
+        try
+        {
+            var exe = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            var dir = string.IsNullOrEmpty(exe)
+                ? null
+                : System.IO.Path.GetDirectoryName(exe);
+            if (dir is null) return;
+
+            foreach (var stale in System.IO.Directory.EnumerateFiles(dir, "Helide.exe.old.*"))
+            {
+                try { System.IO.File.Delete(stale); } catch { /* still in use elsewhere */ }
+            }
+        }
+        catch { /* housekeeping must never stop the update */ }
+    }
+
+    // Chooses which extracted file is the app. The archive deliberately contains more
+    // than one executable once this updater is bundled in, so "the first .exe" is not
+    // a usable rule. Prefer the known app name, fall back to its flattened release
+    // name, and only then anything that is not this updater.
+    private static string PickAppExecutable(IReadOnlyList<string> candidates)
+    {
+        foreach (var want in new[] { "Helide.exe", "Helide-win-x64.exe" })
+        {
+            var exact = candidates.FirstOrDefault(f =>
+                string.Equals(System.IO.Path.GetFileName(f), want, StringComparison.OrdinalIgnoreCase));
+            if (exact is not null) return exact;
+        }
+
+        var notSelf = candidates.FirstOrDefault(f =>
+            !string.Equals(System.IO.Path.GetFileName(f), "AutoUpdater.exe", StringComparison.OrdinalIgnoreCase));
+
+        if (notSelf is not null) return notSelf;
+        throw new Exception("Update zip contains the updater but no Helide executable.");
     }
 
     public void RestartApp()

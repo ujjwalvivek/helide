@@ -23,6 +23,11 @@ public partial class App : Application
         // exits silently and leaves nothing but an APPCRASH event naming KERNELBASE.
         LogFatalExceptions();
 
+        // Sweeps the .old executables left by the previous update. This is the first
+        // process that starts after the one holding them exited, so it is the first
+        // that can actually delete them.
+        HelideUpdater.DeleteStaleOldExecutables();
+
         // Before any window exists, so the first layout pass already sees the
         // resolved family rather than swapping under a live renderer.
         ThemePalette.ApplyFonts();

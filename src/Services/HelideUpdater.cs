@@ -127,7 +127,7 @@ public class HelideUpdater
                 var files = Directory.GetFiles(extractDir, "*.exe", SearchOption.AllDirectories);
                 if (files.Length == 0)
                     throw new Exception("Update zip missing .exe.");
-                installedFile = files[0];
+                installedFile = PickAppExecutable(files);
             }
 
             // Rename running .exe first (Windows allows), then move new file in
@@ -141,6 +141,49 @@ public class HelideUpdater
         {
             throw new Exception($"Update failed: {ex.Message}");
         }
+    }
+
+    // Chooses which extracted file is the app. The release archive ships this app's
+    // updater alongside it, so the first match is AutoUpdater.exe -- installing that
+    // over Helide.exe left the app launching the updater in an endless loop.
+    private static string PickAppExecutable(string[] candidates)
+    {
+        foreach (var want in new[] { HelideExeName, HelideExeName + "-win-x64" })
+        {
+            var exact = candidates.FirstOrDefault(f =>
+                string.Equals(Path.GetFileName(f), want + ".exe", StringComparison.OrdinalIgnoreCase));
+            if (exact is not null) return exact;
+        }
+
+        var notSelf = candidates.FirstOrDefault(f =>
+            !string.Equals(Path.GetFileName(f), "AutoUpdater.exe", StringComparison.OrdinalIgnoreCase));
+        if (notSelf is not null) return notSelf;
+        throw new Exception("Update zip contains the updater but no Helide executable.");
+    }
+
+    private const string HelideExeName = "Helide";
+
+    /// <summary>
+    /// Deletes the executables earlier updates renamed out of the way. A running
+    /// process holds its own image open, so the exe it was replaced cannot be removed
+    /// during the run that moved it; the next launch is the first moment it is free.
+    /// Without this the install directory collects one .old file per update.
+    /// </summary>
+    public static void DeleteStaleOldExecutables()
+    {
+        try
+        {
+            var exe = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrEmpty(exe)) return;
+            var dir = Path.GetDirectoryName(exe);
+            if (dir is null) return;
+
+            foreach (var stale in Directory.EnumerateFiles(dir, Path.GetFileName(exe) + ".old.*"))
+            {
+                try { File.Delete(stale); } catch { /* still held by a live process */ }
+            }
+        }
+        catch { /* housekeeping must never block startup */ }
     }
 
     // Starts the freshly downloaded exe and hands off the workspace to it.
