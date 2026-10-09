@@ -164,6 +164,9 @@ public partial class MainWindow : Window
             _pendingFolderAction = null;
         };
 
+        FolderPickerControl.BrowseRequested += FolderPicker_BrowseRequested;
+        FolderPickerControl.BackRequested += FolderPicker_BackRequested;
+
         // Minimising leaves the popup behind, because it is a separate top-level window
         // that does not follow the owner's minimised state.
         StateChanged += (_, _) =>
@@ -370,6 +373,82 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Input, () => open(path));
     }
 
+    // The palette this picker was opened from, brought back over it. The pending folder
+    // action is dropped with the picker: the user changed their mind about the command,
+    // so returning means choosing a command again rather than committing to the one they
+    // abandoned. Nothing else needs doing -- the palette rebuilds its commands on every
+    // open, so it comes back exactly as it was.
+    private void FolderPicker_BackRequested()
+    {
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            CloseFolderPicker();
+            OpenCommandPalette();
+        });
+    }
+
+    // The native browser, for the one folder the picker's tree cannot show: one outside
+    // the project.
+    //
+    // The picker is closed BEFORE the dialog opens, not after it is cancelled. A
+    // parentless WinForms dialog adopts whatever window is active when it opens, and
+    // under an open popup that is the popup's own HWND -- so the deactivation that
+    // closes a StaysOpen popup destroys the dialog's owner, and the dialog with it.
+    // That is the flicker, the instant close, and the window left minimised with
+    // nothing to activate back to.
+    private void FolderPicker_BrowseRequested()
+    {
+        var open = _pendingFolderAction;
+        if (open is null)
+            return;
+
+        // Deferred for the palette's reason: a modal loop started inside a mouse
+        // handler re-enters WPF input from under that handler.
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () => BrowseHandoff(open));
+    }
+
+    private void BrowseHandoff(Action<string> open)
+    {
+        CloseFolderPicker();
+
+        if (PickFolderWithDialog() is not { } path)
+        {
+            // Cancelled. The pick comes back rather than dropping the user out of the
+            // command they asked for -- closing the picker was a means to an end, not
+            // the thing they did.
+            OpenFolderPicker(open);
+            return;
+        }
+
+        // Deferred again so the dialog is gone before the terminal appears.
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () => open(path));
+    }
+
+    private string? PickFolderWithDialog()
+    {
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "Select a folder to open in",
+            ShowNewFolderButton = true,
+            UseDescriptionForTitle = true,
+            SelectedPath = _currentProject ?? ResolveInitialFolder(),
+        };
+
+        return dialog.ShowDialog(DialogOwner) == System.Windows.Forms.DialogResult.OK
+            ? dialog.SelectedPath
+            : null;
+    }
+
+    // This window as an IWin32Window, so the dialog is owned by it: without an owner
+    // the dialog lands on whichever monitor is active and is parented to a popup.
+    private System.Windows.Forms.IWin32Window DialogOwner =>
+        new DialogOwnerWindow(new WindowInteropHelper(this).Handle);
+
+    private sealed class DialogOwnerWindow(IntPtr handle) : System.Windows.Forms.IWin32Window
+    {
+        public IntPtr Handle { get; } = handle;
+    }
+
     private List<PaletteCommand> BuildPaletteCommands()
     {
         var workspace = () => WorkspaceRoot.Visibility == Visibility.Visible;
@@ -435,11 +514,11 @@ public partial class MainWindow : Window
         // they make. This is the per-pane working directory: an agent scoped to a
         // subdirectory, a yazi on a folder outside the project.
         //
-        // Two paths per entry, split on where the folder can be. The picker lists the
-        // project's own folders, project-relative and fuzzy-filtered, which is the usual
-        // case and the one worth making fast to read. The dialog entry covers everything
-        // the picker deliberately does not offer: a folder outside the project is a
-        // different workspace, not a session root in this one, so it is not in the list.
+        // The picker lists the project's own folders, project-relative and
+        // fuzzy-filtered. A folder outside the project is not in that list -- it is a
+        // different workspace, not a session root in this one -- so the picker pins an
+        // "Open another folder" row at the bottom that opens the native dialog. One
+        // entry, not four: the dialog is the same whatever the pane.
         commands.Add(new PaletteCommand(
             "Open Editor Tab in Folder…",
             () => OpenFolderPicker(path => CreateEditorTab(null, path)),
@@ -463,31 +542,6 @@ public partial class MainWindow : Window
             () => OpenFolderPicker(path => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"), workingDirectory: path)),
             "New",
             "project folders",
-            canInvoke: workspace));
-
-        commands.Add(new PaletteCommand(
-            "Open Editor Tab Outside Project…",
-            () => OpenInFolder(path => CreateEditorTab(null, path)),
-            "New",
-            "any folder",
-            canInvoke: workspace));
-        commands.Add(new PaletteCommand(
-            "Open OpenCode Outside Project…",
-            () => OpenInFolder(path => CreateAgentSession("opencode", "OpenCode", workingDirectory: path)),
-            "New",
-            "any folder",
-            canInvoke: workspace));
-        commands.Add(new PaletteCommand(
-            "Open Codex Outside Project…",
-            () => OpenInFolder(path => CreateAgentSession("codex", "Codex", workingDirectory: path)),
-            "New",
-            "any folder",
-            canInvoke: workspace));
-        commands.Add(new PaletteCommand(
-            "Open Runner Outside Project…",
-            () => OpenInFolder(path => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"), workingDirectory: path)),
-            "New",
-            "any folder",
             canInvoke: workspace));
 
         // --- Close ---
@@ -538,24 +592,7 @@ public partial class MainWindow : Window
 
     private void OpenProjectFolder() => OpenProjectButton_Click(this, new RoutedEventArgs());
 
-// Picks a folder with the native dialog and runs the action with it. Backs the
-// "Outside Project" palette entries: the in-app picker covers the project's own
-// folders, and this covers everywhere else, which is the one thing it cannot reach.
-private void OpenInFolder(Action<string> open)
-{
-    using var dialog = new System.Windows.Forms.FolderBrowserDialog
-    {
-        Description = "Select a folder to open in",
-        ShowNewFolderButton = true,
-        UseDescriptionForTitle = true,
-        SelectedPath = _currentProject ?? ResolveInitialFolder(),
-    };
-
-    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-        open(dialog.SelectedPath);
-}
-
-// Launches another Helide, optionally on a project. A null path passes no argument, which
+    // Launches another Helide, optionally on a project. A null path passes no argument, which
 // lands the new process on the project chooser.
 //
 // When a window is already open for the same project, the new process finds that

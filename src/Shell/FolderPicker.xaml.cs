@@ -47,6 +47,19 @@ public partial class FolderPicker : UserControl
     /// <summary>Raised with the picked folder's full path, before the picker closes.</summary>
     public event Action<string>? Picked;
 
+    /// <summary>Raised when the pinned "Open another folder" row is chosen. The window owns the
+    /// native dialog from there -- including closing this picker before showing it,
+    /// which is the whole reason this is an event rather than the picker calling the
+    /// dialog itself.
+    /// </summary>
+    public event Action? BrowseRequested;
+
+    /// <summary>
+    /// Raised when the pinned "Back to command palette" row is chosen. The window owns
+    /// the palette this picker was opened from.
+    /// </summary>
+    public event Action? BackRequested;
+
     /// <summary>
     /// Scans the project and shows every folder under it, root first. Called on every
     /// open, so the tree reflects the project as it is right now -- a directory created
@@ -130,25 +143,42 @@ public partial class FolderPicker : UserControl
                 .ThenBy(pair => pair.Entry.Depth);
 
         _visible.Clear();
+
+        // Pinned first, whatever the query: it reads as where you came from rather than
+        // as part of the tree, and keeping it pinned means Esc is never the only way
+        // out of a picker that fills the screen.
+        _visible.Add(FolderRow.Back());
+
         foreach (var (entry, _) in matched)
             _visible.Add(new FolderRow(entry));
 
-        ResultsList.Visibility = _visible.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        EmptyText.Visibility = _visible.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+        var folders = _visible.Count - 1;
+
+        // Pinned last whatever the query: the one folder the tree cannot show is one
+        // outside the project, and that row is also the escape hatch when the query
+        // matches nothing. With both rows the list is never empty, never collapsed.
+        _visible.Add(FolderRow.Browse());
+
+        EmptyText.Visibility = folders == 0 ? Visibility.Visible : Visibility.Collapsed;
 
         SelectFirst();
     }
 
+    // The first folder, not the first row: the pinned rows are destinations, not defaults,
+    // and Enter on a freshly opened picker should still pick the project root.
     private void SelectFirst()
     {
-        if (_visible.Count == 0)
+        for (var i = 0; i < _visible.Count; i++)
         {
-            ResultsList.SelectedIndex = -1;
+            if (_visible[i].Kind != FolderRowKind.Folder)
+                continue;
+
+            ResultsList.SelectedIndex = i;
+            ResultsList.ScrollIntoView(_visible[i]);
             return;
         }
 
-        ResultsList.SelectedIndex = 0;
-        ResultsList.ScrollIntoView(_visible[0]);
+        ResultsList.SelectedIndex = -1;
     }
 
     private void QueryBox_TextChanged(object sender, TextChangedEventArgs e) => Refilter();
@@ -236,7 +266,28 @@ public partial class FolderPicker : UserControl
 
     private void InvokeSelected()
     {
-        if (ResultsList.SelectedItem is not FolderRow { Entry: { } entry })
+        if (ResultsList.SelectedItem is not FolderRow row)
+            return;
+
+        // The pinned row hands off to the window for the native browser. It stays open
+        // until the window decides what to do: it is the one that has to close first,
+        // since showing a parentless dialog under an open popup lets the dialog adopt
+        // the popup's HWND as its owner, and the deactivation that closes the popup
+        // then destroys its owner with it.
+        if (row.IsBrowse)
+        {
+            BrowseRequested?.Invoke();
+            return;
+        }
+
+        // The other pinned row goes back where the picker came from.
+        if (row.IsBack)
+        {
+            BackRequested?.Invoke();
+            return;
+        }
+
+        if (row.Entry is not { } entry)
             return;
 
         Picked?.Invoke(entry.FullPath);
@@ -271,21 +322,67 @@ public partial class FolderPicker : UserControl
     private void FolderPicker_Unloaded(object sender, RoutedEventArgs e) => CancelWalk();
 }
 
+/// <summary>What a rendered line is: part of the tree, or one of the two pinned rows.</summary>
+internal enum FolderRowKind
+{
+    Folder,
+    Back,
+    Browse,
+}
+
 /// <summary>One rendered line: a folder, with its display text and indent.</summary>
 internal sealed class FolderRow
 {
-    public FolderRow(FolderEntry entry) => Entry = entry;
+    private FolderRow(FolderRowKind kind)
+    {
+        Kind = kind;
+    }
 
-    public FolderEntry Entry { get; }
+    public FolderRow(FolderEntry entry)
+    {
+        Entry = entry;
+        Kind = FolderRowKind.Folder;
+    }
+
+    public FolderRowKind Kind { get; }
+
+    public FolderEntry? Entry { get; }
+
+    /// <summary>True for the "Back to command palette" row, pinned above the tree.</summary>
+    public bool IsBack => Kind == FolderRowKind.Back;
+
+    /// <summary>True for the "Open another folder" row, pinned below the tree.</summary>
+    public bool IsBrowse => Kind == FolderRowKind.Browse;
 
     /// <summary>The folder's own name -- the indent shows where it sits.</summary>
-    public string Title => Entry.Name;
+    public string Title => Kind switch
+    {
+        FolderRowKind.Back => "Back to command palette",
+        FolderRowKind.Browse => "Open another folder",
+        _ => Entry?.Name ?? string.Empty,
+    };
 
     /// <summary>
     /// Project-relative path, shown as a tooltip: two folders in a large tree share a
     /// name more often than a glance at the indent can tell apart.
     /// </summary>
-    public string Path => Entry.RelativePath;
+    public string Path => Entry?.RelativePath ?? Kind switch
+    {
+        FolderRowKind.Back => "Return to the command palette",
+        FolderRowKind.Browse => "Browse for a folder outside this project",
+        _ => string.Empty,
+    };
 
-    public Thickness Indent => new(Entry.Depth * 12, 0, 0, 0);
+    // The pinned rows get air instead of a divider, so they read as outside the tree
+    // without a second kind of row in the list.
+    public Thickness Indent => Kind switch
+    {
+        FolderRowKind.Back => new Thickness(0, 0, 0, 5),
+        FolderRowKind.Browse => new Thickness(0, 7, 0, 3),
+        _ => new Thickness(Entry!.Depth * 12, 0, 0, 0),
+    };
+
+    public static FolderRow Back() => new(FolderRowKind.Back);
+
+    public static FolderRow Browse() => new(FolderRowKind.Browse);
 }

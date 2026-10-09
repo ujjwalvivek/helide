@@ -220,27 +220,66 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
+                            <!-- Glyph lives in the style, not in attributes: a local value
+                                 would outrank every trigger below it, and the pinned rows
+                                 would all carry the folder icon whatever they triggered. -->
                             <TextBlock Grid.Column="0"
-                                       Text="&#xE8B7;"
-                                       FontFamily="Segoe Fluent Icons"
-                                       FontSize="{DynamicResource FontSizeSmall}"
-                                       Foreground="{DynamicResource AccentBrush}"
                                        VerticalAlignment="Center"
-                                       Margin="0,0,8,0" />
+                                       Margin="0,0,8,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="&#xE8B7;" />
+                                        <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+                                        <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                        <Style.Triggers>
+                                            <!-- The pinned rows are not folders: a back arrow
+                                                 above the tree and a "go elsewhere" arrow below
+                                                 it, the latter dimmed to match its label. -->
+                                            <DataTrigger Binding="{Binding IsBack}" Value="True">
+                                                <Setter Property="Text" Value="&#xE72B;" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsBrowse}" Value="True">
+                                                <Setter Property="Text" Value="&#x2197;" />
+                                                <Setter Property="FontFamily" Value="{DynamicResource UiFontFamily}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                             <TextBlock Grid.Column="1"
                                        Text="{Binding Title}"
                                        FontFamily="{DynamicResource UiMonoFontFamily}"
                                        FontSize="{DynamicResource FontSizeBody}"
                                        Foreground="{DynamicResource TextBrush}"
                                        VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis" />
+                                       TextTrimming="CharacterEllipsis">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontFamily" Value="{DynamicResource UiMonoFontFamily}" />
+                                        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsBrowse}" Value="True">
+                                                <Setter Property="FontFamily" Value="{DynamicResource UiFontFamily}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsBack}" Value="True">
+                                                <Setter Property="FontFamily" Value="{DynamicResource UiFontFamily}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <!-- Shown instead of the list when a query matches nothing, so a blank
-                 panel reads as an empty result rather than a broken picker. -->
+            <!-- Shown when a query matches no folder, alongside the pinned row below it
+                 that still can. A blank panel reads as a broken picker; a note saying
+                 the tree is empty leaves the way out visible. -->
             <TextBlock x:Name="EmptyText"
                        Grid.Row="2"
                        Text="No matching folders"
