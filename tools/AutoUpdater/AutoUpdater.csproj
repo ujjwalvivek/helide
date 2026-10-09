@@ -5,7 +5,75 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AssemblyName>AutoUpdater</AssemblyName>
+    <RootNamespace>AutoUpdater</RootNamespace>
+    <Product>Helide AutoUpdater</Product>
+    <Version>1.5.0</Version>
+    <PublishSingleFile>true</PublishSingleFile>
+    <DebugType>none</DebugType>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <ApplicationIcon>..\..\src\Assets\helide.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <_AutoUpdaterArtifactName>AutoUpdater-$(RuntimeIdentifier).exe</_AutoUpdaterArtifactName>
+    <_AutoUpdaterArtifactName Condition="'$(RuntimeIdentifier)' == ''">AutoUpdater.exe</_AutoUpdaterArtifactName>
+  </PropertyGroup>
+
+  <UsingTask TaskName="FlattenPublishOutput" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <OutDir ParameterType="System.String" Required="true" />
+      <PublishName ParameterType="System.String" Required="true" />
+      <FinalName ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+          var loose = Path.GetFullPath(OutDir);
+          var root = Path.GetDirectoryName(loose.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+          var publish = Path.GetFullPath(Path.Combine(loose, PublishName));
+
+          if (Directory.Exists(publish))
+          {
+              Directory.CreateDirectory(root);
+
+              var bundled = Directory.EnumerateFiles(publish).ToList();
+              foreach (var file in bundled)
+              {
+                  var name = bundled.Count == 1 ? FinalName : Path.GetFileName(file);
+                  var target = Path.Combine(root, name);
+                  if (File.Exists(target))
+                      File.Delete(target);
+                  File.Move(file, target);
+              }
+
+              Directory.Delete(publish, true);
+          }
+
+          foreach (var file in Directory.EnumerateFiles(loose))
+              File.Delete(file);
+
+          foreach (var dir in Directory.EnumerateDirectories(loose))
+              Directory.Delete(dir, true);
+
+          Directory.Delete(loose, true);
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="DropNativeDebugSymbols" AfterTargets="Publish">
+    <ItemGroup>
+      <_SymbolJunk Include="$(PublishDir)*.pdb" />
+    </ItemGroup>
+    <Delete Files="@(_SymbolJunk)" />
+  </Target>
+
+  <Target Name="FlattenPublishIntoArtifact" AfterTargets="Publish">
+    <FlattenPublishOutput OutDir="$(OutDir)" PublishName="publish" FinalName="$(_AutoUpdaterArtifactName)" />
+  </Target>
 
 </Project>
