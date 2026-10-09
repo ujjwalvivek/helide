@@ -374,6 +374,13 @@ public partial class MainWindow : Window
                 CreateRunnerSession("runner", "pwsh", PowerShellCommand(
                     $"Write-Host {PowerShellLiteral($" Try {_runCommand}")} -ForegroundColor DarkCyan"
                 ));
+            // Take the rollout snapshot before any pane exists. A codex pane writes its
+            // rollout file a moment after the process starts, so snapshotting after the
+            // launches below would place the cutoff past the files those panes had
+            // already written, and they would be discarded for the whole session --
+            // leaving every codex tab to come back empty on the next launch.
+            CodexSessions.Initialize();
+
             // Initialize agent session from saved state or create default
             InitializeAgentSessions(project);
             if (_agentSessions.Count == 0)
@@ -1322,14 +1329,34 @@ public partial class MainWindow : Window
 
         var port = type == "codex" ? 0 : ReserveLocalPort();
 
-        // Resume only happens while restoring. Passing it unconditionally made every
-        // new pane reopen the previous conversation instead of starting its own.
+        // A codex pane only has a session id left to learn when its launch carries no
+        // resume argument, and that is decided by the id we were handed, not by whether
+        // this is a restore. A pane being restored with no saved id starts empty and
+        // still goes on to write a rollout file, so it has to stay a candidate for one,
+        // otherwise its conversation is dropped again on every launch.
         //
-        // Codex has no id plumbed, so restoring it leans on --last, which means the
-        // most recent conversation anywhere. Right for one Codex pane, wrong for two.
+        // A pane launched with `resume <id>` already knows its thread, so it is never a
+        // candidate: that is what stops a rollout produced by one pane being handed to
+        // another and moving it onto a different conversation.
+        //
+        // `--last` used to be the fallback for a codex pane with no saved id, but it
+        // resumes the newest conversation in the directory rather than this pane's
+        // own, so two id-less panes both landed on the same thread and a pane could
+        // reopen a conversation it had never been in. Starting empty is recoverable
+        // -- the thread is still offered by `codex resume --all` -- whereas silently
+        // opening the wrong conversation is not.
+        var codexResumeId = type == "codex" && resuming && resumeSessionId is { Length: > 0 } savedCodexId
+            ? savedCodexId
+            : null;
+        var startsFreshCodex = type == "codex" && codexResumeId is null;
+
+        // Taken before the host is built, so it always precedes the rollout file the
+        // process is about to write.
+        var launchedUtc = DateTime.UtcNow;
+
         var commandLine = type == "codex"
-            ? resuming
-                ? ToolCommand("codex.cmd", "resume", "--last")
+            ? codexResumeId is { } codexId
+                ? ToolCommand("codex.cmd", "resume", codexId)
                 : ToolCommand("codex.cmd")
             : resuming && resumeSessionId is { Length: > 0 } id
                 ? ToolCommand("opencode.cmd", "-s", id, "--port", port.ToString())
@@ -1350,6 +1377,8 @@ public partial class MainWindow : Window
             newSession.Host = host;
             newSession.StatusPort = port;
             newSession.SessionId = resumeSessionId;
+            if (startsFreshCodex)
+                newSession.AwaitingSessionSince = launchedUtc;
             AttachStatusSource(newSession, type, port);
             foreach (var s in _agentSessions)
                 s.IsActive = false;
@@ -1672,7 +1701,7 @@ public partial class MainWindow : Window
     {
         _sessionCaptureTimer ??= new System.Windows.Threading.DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(12),
+            Interval = TimeSpan.FromSeconds(2),
         };
         _sessionCaptureTimer.Tick += (_, _) => CaptureAgentSessionIds();
         _sessionCaptureTimer.Start();
@@ -1684,14 +1713,52 @@ public partial class MainWindow : Window
     {
         foreach (var session in _agentSessions)
         {
-            if (session.Type != "opencode")
-                continue;
+            if (session.Type == "opencode")
+            {
+                // Live signal wins (it is what the pane is on now); otherwise keep
+                // whatever was saved. No HTTP fallback: a pane that has produced no
+                // events is left id-less, so it restarts fresh instead of adopting
+                // some other thread in the directory.
+                session.SessionId = session.LiveSessionId ?? session.SessionId;
+            }
+        }
 
-            // Live signal wins (it is what the pane is on now); otherwise keep whatever
-            // was saved. No HTTP fallback anymore: a pane that has produced no events
-            // is left id-less, so it restarts fresh instead of adopting some other
-            // thread in the directory.
-            session.SessionId = session.LiveSessionId ?? session.SessionId;
+        // Codex: a pane started with no resume argument is on a thread that does not
+        // exist yet, and the rollout file it writes is the first place that thread's
+        // id appears. Pair each rollout with the pane that had been waiting longest --
+        // and that was already running when the file appeared -- instead of walking
+        // the tab list. Tab order and file order are not the same order once panes
+        // start together, and a mismatch is a pane that resumes somebody else's
+        // conversation. The started-before check also stops a stale rollout from an
+        // earlier launch being claimed by a pane that had not started yet.
+        foreach (var rollout in CodexSessions.NewRollouts())
+        {
+            // Resuming a session can make codex write a rollout whose session id is the
+            // one being resumed, so this file belongs to a pane that already has its id
+            // and not to a pane still waiting for one. Left unguarded, a tab opened later
+            // would claim it and reopen the conversation the resumed pane is sitting in.
+            if (_agentSessions.Any(s => s.SessionId == rollout.SessionId))
+            {
+                CodexSessions.MarkConsumed(rollout);
+                continue;
+            }
+
+            var pane = _agentSessions
+                .Where(s => s.Type == "codex"
+                    && s.SessionId is null
+                    && s.AwaitingSessionSince is { } since
+                    && since <= rollout.CreatedUtc)
+                .OrderBy(s => s.AwaitingSessionSince)
+                .FirstOrDefault();
+
+            // Nothing is waiting, so no later rollout can be claimed either. Leaving
+            // them unconsumed keeps them available to a pane opened in a moment.
+            if (pane is null)
+                break;
+
+            pane.SessionId = rollout.SessionId;
+            pane.AwaitingSessionSince = null;
+            CodexSessions.MarkConsumed(rollout);
         }
     }
 
@@ -2037,6 +2104,13 @@ var session = new AgentSessionView(type, label);
 
         // Filled in at save time so the next launch can reopen this conversation.
         public string? SessionId { get; set; }
+
+        // Set when this pane was launched as a brand new codex conversation, i.e.
+        // with no resume argument, and holds the moment the process was started.
+        // Only such a pane has a session id still to learn; a pane launched with
+        // `resume <id>` was already told which thread to open. The timestamp is what
+        // decides which rollout file belongs to which pane when several start at once.
+        public DateTime? AwaitingSessionSince { get; set; }
 
         public AgentSessionView(string type, string name)
         {
