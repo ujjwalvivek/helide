@@ -339,11 +339,15 @@ public class AutoUpdater : IDisposable
                 // Both exes travel together in the archive, so this updater has to move
                 // itself too or it is left reporting a version the app already passed.
                 // It is running, hence the same rename-out-of-the-way the app needs.
+                //
+                // The target is the canonical name, not this process's file name: when
+                // Helide.exe has already been overwritten by this updater, the running
+                // module *is* Helide.exe, and naming the target after it installs the
+                // updater over the app again -- which is the loop this replaces.
                 var newSelf = files.FirstOrDefault(f =>
                     string.Equals(System.IO.Path.GetFileName(f), "AutoUpdater.exe", StringComparison.OrdinalIgnoreCase));
                 if (newSelf is not null)
-                    ReplaceRunningExecutable(newSelf, System.IO.Path.GetFileNameWithoutExtension(
-                        System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName) + ".exe");
+                    ReplaceRunningExecutable(newSelf, "AutoUpdater.exe");
 
                 // Both copies outlived their purpose; the extracted folder would
                 // otherwise leave the updater exe behind on every update.
