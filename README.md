@@ -66,6 +66,12 @@ Four constraints this code depends on:
 - The cutoff marks rollout files created after app start. Taken afterwards, terminal startup is enough for panes to have written theirs, and they get discarded for the whole session.
 - Codex writes no rollout until a conversation starts, so a pane you never message reopens empty every time and never accumulates history.
 
+## Multiple Processes
+
+Two projects can sit side by side, and a second launch of an already-open project asks that window to come forward instead of opening a **duplicate**.
+
+**`SwitchToThisWindow` is undocumented.** It is the reliable way to force a window to the foreground when the request comes from a different process, which is exactly this case. `SetForegroundWindow` is refused in that situation. The usual alternative, toggling `Topmost`, works but visibly flashes/jumps the window. Undocumented does not mean unstable, so if activation ever misbehaves this is the first thing to look at.
+
 ## License
 
 Helide is released under the MIT License. See [LICENSE](LICENSE).
