@@ -648,8 +648,29 @@ internal static class Program
         _logo = EmbeddedLogo().Split('\n');
         _tui = true;
 
+        // Ctrl-C is delivered as a console event rather than a key, and the default
+        // behaviour tears the process down on the spot -- so the cursor stays hidden, the
+        // palette stays set, and the frame is still on screen when the next prompt draws
+        // over it. Taking the event and cleaning up on the way out is what keeps the
+        // shell usable.
+        _cancelHandler = OnCancelKeyPress;
+        Console.CancelKeyPress += _cancelHandler;
+
         Console.CursorVisible = false;
         return true;
+    }
+
+    // Held only so it can be unsubscribed on the way out.
+    private static ConsoleCancelEventHandler? _cancelHandler;
+
+    private static void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
+    {
+        // Cancelled so this handler gets to finish; the process is exited by hand a line
+        // later rather than being allowed to die in the middle of a frame.
+        e.Cancel = true;
+
+        LeaveTui();
+        Environment.Exit(ExitOk);
     }
 
     private static void LeaveTui()
@@ -657,6 +678,16 @@ internal static class Program
         if (!_tui) return;
         _tui = false;
 
+        if (_cancelHandler is not null)
+        {
+            Console.CancelKeyPress -= _cancelHandler;
+            _cancelHandler = null;
+        }
+
+        // The pane background was set with a raw escape sequence, which ResetColor knows
+        // nothing about, so it is undone before the screen is repainted with whatever the
+        // terminal was using before.
+        Console.Write(Ansi.Reset);
         Console.ResetColor();
         Console.Clear();
         Console.CursorVisible = true;
