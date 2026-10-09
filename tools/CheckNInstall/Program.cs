@@ -31,10 +31,40 @@ internal static class Program
         "Build Helide + AutoUpdater",
         "Install Helide + AutoUpdater",
         "Full run  (all of the above)",
+        "Manual",
         "Exit",
     ];
 
-    private const int ExitItem = 6;
+    private const int ExitItem = 7;
+
+    // Shorter than the shell manual it replaces, because the pane it renders into is a
+    // fixed height and only the tail of anything longer would be visible.
+    private const string Manual = """
+        Helide check & install
+
+        Checks the CLIs Helide shells out to, installs what is missing, repairs the user PATH, publishes the single-file builds, and installs them.
+
+        USAGE
+            CheckNInstall            interactive menu (this one)
+            CheckNInstall --check    report only, exit 0 when ready
+            CheckNInstall --full     every phase, no prompts
+            CheckNInstall --help     this text
+
+        CONTROLS
+            up / down  move        1 - 7  jump to an item
+            Enter      select      T      switch theme, mocha / oled
+            Esc        quit
+
+        PHASES
+            1  Check          lazygit, hx, yazi, opencode, codex.
+            2  Install        winget install each missing one.
+            3  Repair PATH    The real directory under WinGet\Packages is added to the user PATH, and refused past 2000 characters.
+            4  Build          dotnet publish, Helide then AutoUpdater, excluded from Helide.csproj. PublishSingleFile is -time only, so a plain build cannot make it.
+            5  Install        %LOCALAPPDATA%\Programs\Helide\Helide.exe, on the user PATH, with a Start Menu entry. AutoUpdater.exe beside it.
+
+        NOTES
+            Restart the shell after any phase that touched PATH. Helide.exe and AutoUpdater.exe are the only files installed. This tool is for building and installing; it is never copied anywhere.
+        """;
 
     private static string _repoRoot = AppContext.BaseDirectory;
     private static bool _selfContained = true;
@@ -69,6 +99,9 @@ internal static class Program
         if (args.Contains("--full", StringComparer.OrdinalIgnoreCase))
             return RunAllPhases();
 
+        if (args.Contains("--help", StringComparer.OrdinalIgnoreCase) || args.Contains("-h"))
+            return ShowManual();
+
         return RunInteractive();
     }
 
@@ -78,6 +111,26 @@ internal static class Program
         var missing = Check();
         Ok(missing ? "one or more tools are missing" : "ready to install");
         return missing ? ExitFailed : ExitOk;
+    }
+
+    private static int ShowManual()
+    {
+        if (_tui)
+        {
+            // Rendered through the pane rather than printed, so opening it in the
+            // interactive window does not push the frame off the top.
+            ClearLog();
+            Emit("·", "manual");
+        }
+        else
+        {
+            Banner();
+        }
+
+        foreach (var line in Manual.Split('\n'))
+            Emit("·", line.TrimEnd('\r'));
+
+        return ExitOk;
     }
 
     // ------------------------------------------------------------------ interactive
@@ -118,6 +171,7 @@ internal static class Program
                 case 3: Build(); break;
                 case 4: InstallApp(); InstallUpdater(); break;
                 case 5: RunAllPhases(); break;
+                case 6: ShowManual(); break;
             }
 
             WaitForMenuKey();
@@ -553,6 +607,9 @@ internal static class Program
     private static Mode _mode = Mode.Menu;
     private static Theme _theme = Theme.Mocha;
 
+    // Rows the log has been scrolled up from its tail. Zero pins it to the bottom.
+    private static int _scroll;
+
     private static int _width;
     private static int _height;
     private static int _selected;
@@ -683,40 +740,51 @@ internal static class Program
 
     
 
-    // Wrapped to the pane rather than truncated. Paths in a build log are the thing that
-    // gets cut, and a path missing its tail is worse than one that moves down a row.
+    // Wraps to the pane and keeps indentation, because the manual is laid out with it and
+    // a wrapping that drops it leaves each row flush against the border. A token with no
+    // space in it -- a path in a build log -- is broken across rows rather than clipped
+    // at the edge, where its tail would be lost completely.
     private static string[] Wrap(string text, int width)
     {
         if (string.IsNullOrEmpty(text)) return [];
-        if (width < 8) return [text];
+        if (width < 4) return [text];
 
         var lines = new List<string>();
 
+        // Room for the indent on every row, including the first.
+        var budget = Math.Max(8, width - 8);
+
         foreach (var raw in text.Split('\n'))
         {
+            var line = raw.TrimEnd('\r');
+            if (line.Trim().Length == 0) { lines.Add(string.Empty); continue; }
+
+            var trimmed = line.TrimStart(' ');
+            var indent = line[..^trimmed.Length];
             var current = string.Empty;
 
-            foreach (var word in raw.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            foreach (var word in trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             {
-                if (current.Length == 0)
+                foreach (var piece in Chunk(word, budget))
                 {
-                    current = word;
-                }
-                else if (current.Length + 1 + word.Length <= width)
-                {
-                    current += " " + word;
-                }
-                else
-                {
-                    lines.Add(current);
-                    current = word;
+                    if (current.Length == 0) current = indent + piece;
+                    else if (current.Length + 1 + piece.Length <= width) current += " " + piece;
+                    else { lines.Add(current); current = indent + piece; }
                 }
             }
 
-            lines.Add(current);
+            if (current.Length > 0) lines.Add(current);
         }
 
         return [.. lines];
+    }
+
+    private static IEnumerable<string> Chunk(string text, int size)
+    {
+        if (size <= 0) { yield return text; yield break; }
+
+        for (var start = 0; start < text.Length; start += size)
+            yield return text.Substring(start, Math.Min(size, text.Length - start));
     }
 
     // The two panes are built first and then drawn row by row, so a pane's contents can
@@ -779,11 +847,16 @@ internal static class Program
                     entries.Add((wrapped, colour));
             }
 
-            // Only the tail that fits. A publish prints far more than the pane can show,
-            // and the window must not grow to accommodate it.
+            // The pane is a fixed height and the log is not, so it scrolls: zero is the
+            // tail, where a build log is always wanted, and anything higher has been
+            // moved up. Without this nothing longer than the pane is reachable at all --
+            // the top of the manual simply cannot be seen.
             var available = PaneRows;
-            var visible = entries.Count <= available ? entries : entries.Skip(entries.Count - available).ToList();
-            lines.AddRange(visible);
+            var maxScroll = Math.Max(0, entries.Count - available);
+            _scroll = Math.Clamp(_scroll, 0, maxScroll);
+
+            var start = Math.Max(0, entries.Count - available - _scroll);
+            lines.AddRange(entries.Skip(start).Take(available));
         }
 
         return lines;
@@ -844,8 +917,12 @@ internal static class Program
 
     private static void ClearLog()
     {
-        lock (_renderLock) _log.Clear();
-        Render();
+        lock (_renderLock)
+        {
+            _log.Clear();
+            _scroll = 0;
+            Render();
+        }
     }
 
     // ------------------------------------------------------------------ input
@@ -853,7 +930,7 @@ internal static class Program
     private static int Menu()
     {
         _mode = Mode.Menu;
-        _footer = "↑↓ move · Enter select · 1-6 jump · T theme · Esc quit";
+        _footer = "↑↓ move · Enter select · 1-7 jump · T theme · Esc quit";
         Render();
 
         Console.CursorVisible = false;
@@ -904,6 +981,10 @@ internal static class Program
                     break;
                 case ConsoleKey.D7:
                 case ConsoleKey.NumPad7:
+                    if (_selected != 6) return 6;
+                    break;
+                case ConsoleKey.D8:
+                case ConsoleKey.NumPad8:
                     return ExitItem;
                 default:
                     continue;
@@ -915,11 +996,51 @@ internal static class Program
 
     private static void WaitForMenuKey()
     {
-        _footer = _mode == Mode.Log ? "any key → menu" : string.Empty;
-        if (string.IsNullOrEmpty(_footer)) _footer = "any key → menu";
+        SetFooter();
         Render();
 
-        Console.ReadKey(intercept: true);
+        while (true)
+        {
+            var key = Console.ReadKey(intercept: true).Key;
+            var step = Math.Max(1, PaneRows / 2);
+
+            switch (key)
+            {
+                case ConsoleKey.UpArrow:
+                    _scroll++;
+                    break;
+                case ConsoleKey.DownArrow:
+                    _scroll--;
+                    break;
+                case ConsoleKey.PageUp:
+                    _scroll += step;
+                    break;
+                case ConsoleKey.PageDown:
+                case ConsoleKey.Spacebar:
+                    _scroll -= step;
+                    break;
+                case ConsoleKey.Home:
+                    _scroll = int.MaxValue;
+                    break;
+                case ConsoleKey.End:
+                    _scroll = 0;
+                    break;
+                default:
+                    return;
+            }
+
+            SetFooter();
+            Render();
+        }
+    }
+
+    private static void SetFooter()
+    {
+        var hints = "↑↓ scroll · PgUp/PgDn page · Home/End · any key → menu";
+
+        // Stating the offset without saying how many rows are above is a number that
+        // means nothing.
+        _footer = _scroll > 0 ? $"{hints}   [ {_scroll} more above ]" : hints;
     }
 
     // ------------------------------------------------------------------ output
