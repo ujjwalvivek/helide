@@ -71,6 +71,9 @@ public class HelideUpdater
 
     public async Task DownloadAndApplyAsync(Action<int>? progress = null)
     {
+        var tempDir = Path.Combine(Path.GetTempPath(), "helide-update");
+        string? extractDir = null;
+
         try
         {
             var releaseJson = await Client.GetStringAsync(ReleasesApi);
@@ -91,7 +94,6 @@ public class HelideUpdater
             if (string.IsNullOrEmpty(downloadUrl))
                 throw new Exception("No download URL.");
 
-            var tempDir = Path.Combine(Path.GetTempPath(), "helide-update");
             Directory.CreateDirectory(tempDir);
             var tempFile = Path.Combine(tempDir, $"helide.{LatestAvailable}.tmp");
 
@@ -121,26 +123,69 @@ public class HelideUpdater
             string installedFile = tempFile;
             if (downloadUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
-                var extractDir = Path.Combine(tempDir, "extract");
+                extractDir = Path.Combine(tempDir, "extract");
                 Directory.CreateDirectory(extractDir);
                 System.IO.Compression.ZipFile.ExtractToDirectory(tempFile, extractDir);
                 var files = Directory.GetFiles(extractDir, "*.exe", SearchOption.AllDirectories);
                 if (files.Length == 0)
                     throw new Exception("Update zip missing .exe.");
                 installedFile = PickAppExecutable(files);
+
+                // The archive ships the updater beside the app, so it has to move too.
+                // Without this the two drift apart: the app reports the new version and
+                // the tool meant to keep it current is still the old one.
+                var newUpdater = files.FirstOrDefault(f =>
+                    string.Equals(Path.GetFileName(f), "AutoUpdater.exe", StringComparison.OrdinalIgnoreCase));
+                if (newUpdater is not null)
+                {
+                    var target = Path.Combine(Path.GetDirectoryName(_exePath)!, "AutoUpdater.exe");
+                    // Not this process's image, so no rename dance is needed -- nothing
+                    // is holding it open, unless the user launched it by hand.
+                    ReplaceExecutable(newUpdater, target, isRunning: false);
+                }
             }
 
             // Rename running .exe first (Windows allows), then move new file in
-            var oldPath = _exePath + ".old." + Guid.NewGuid().ToString("N")[..6];
-            try { if (File.Exists(oldPath)) File.Delete(oldPath); } catch { }
-            File.Move(_exePath, oldPath);
-            File.Copy(installedFile, _exePath, overwrite: true);
-            try { File.Delete(installedFile); } catch { }
+            ReplaceExecutable(installedFile, _exePath, isRunning: true);
         }
         catch (Exception ex)
         {
             throw new Exception($"Update failed: {ex.Message}");
         }
+        finally
+        {
+            // The archive held the updater as well as the app, so the extracted copy
+            // has to go or every update leaves two stale exes behind in temp.
+            TryDeleteTree(tempDir);
+        }
+    }
+
+    // Puts newFile at targetPath. A file this process is executing cannot be overwritten
+    // -- Windows holds its image open -- so it is first renamed out of the way; the OS
+    // keeps the old handle alive on the old name and the new file lands cleanly.
+    private static void ReplaceExecutable(string newFile, string targetPath, bool isRunning)
+    {
+        if (!isRunning)
+        {
+            File.Copy(newFile, targetPath, overwrite: true);
+            try { File.Delete(newFile); } catch { }
+            return;
+        }
+
+        var oldPath = targetPath + ".old." + Guid.NewGuid().ToString("N")[..6];
+        try { if (File.Exists(oldPath)) File.Delete(oldPath); } catch { }
+        File.Move(targetPath, oldPath);
+        File.Copy(newFile, targetPath, overwrite: true);
+        try { File.Delete(newFile); } catch { }
+    }
+
+    private static void TryDeleteTree(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        }
+        catch { /* a file still in use is deleted by the next launch's sweep */ }
     }
 
     // Chooses which extracted file is the app. The release archive ships this app's
@@ -178,10 +223,13 @@ public class HelideUpdater
             var dir = Path.GetDirectoryName(exe);
             if (dir is null) return;
 
-            foreach (var stale in Directory.EnumerateFiles(dir, Path.GetFileName(exe) + ".old.*"))
-            {
-                try { File.Delete(stale); } catch { /* still held by a live process */ }
-            }
+            // The app and the updater sit beside each other, and both get replaced by
+            // an update, so both leave a displaced file behind.
+            foreach (var name in new[] { Path.GetFileName(exe), "AutoUpdater.exe" })
+                foreach (var stale in Directory.EnumerateFiles(dir, name + ".old.*"))
+                {
+                    try { File.Delete(stale); } catch { /* still held by a live process */ }
+                }
         }
         catch { /* housekeeping must never block startup */ }
     }

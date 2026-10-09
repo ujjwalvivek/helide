@@ -20,10 +20,14 @@
                     publish runs the build as its first step anyway. The csproj
                     then flattens the result: the bundle moves up to
                     bin\Release\net8.0-windows\Helide-win-x64.exe and the loose
-                    build output and publish folder are deleted.
+                    build output and publish folder are deleted. The updater project
+                    publishes the same way, into its own bin folder.
       5. Install   copy that exe to %LOCALAPPDATA%\Programs\Helide as Helide.exe,
                     add it to the user PATH, and create a Start Menu entry, so it
-                    is found everywhere an installed app is looked for.
+                    is found everywhere an installed app is looked for. The updater
+                    is copied beside it as AutoUpdater.exe -- no PATH entry and no
+                    Start Menu entry, because it is an internal tool that locates
+                    the app by looking next to itself.
 
     With no flags it is read-only: it checks and reports, then exits.
 
@@ -67,6 +71,13 @@ $ProjectFile  = Join-Path $ProjectRoot 'Helide.csproj'
 $Artifact     = Join-Path $ProjectRoot 'bin\Release\net8.0-windows\Helide-win-x64.exe'
 $InstallDir   = Join-Path $env:LOCALAPPDATA 'Programs\Helide'
 $ExeName      = 'Helide.exe'
+
+# The updater is a project of its own and is excluded from Helide.csproj, so it has
+# to be published and installed separately. It lands beside Helide.exe because that
+# is where it looks for the app.
+$UpdaterProject  = Join-Path $ProjectRoot 'tools\AutoUpdater\AutoUpdater.csproj'
+$UpdaterArtifact = Join-Path $ProjectRoot 'tools\AutoUpdater\bin\Release\net8.0-windows\AutoUpdater-win-x64.exe'
+$UpdaterExeName  = 'AutoUpdater.exe'
 
 # Label -> executable name on PATH, and winget package id.
 $Requirements = [ordered]@{
@@ -214,7 +225,25 @@ function Invoke-Build {
     Push-Location $ProjectRoot
     try {
         & dotnet @publishArgs
-        return ($LASTEXITCODE -eq 0)
+        if ($LASTEXITCODE -ne 0) { return $false }
+
+        # Helide.csproj excludes the updater from its own compile, so nothing above
+        # built it. Same single-file flatten applies, so it lands in its own bin
+        # folder rather than next to the app's.
+        if (-not (Test-Path $UpdaterProject)) {
+            Write-Host "  no AutoUpdater.csproj under tools\" -ForegroundColor DarkGray
+            return $true
+        }
+
+        $updaterSelfContained = if ($NoSelfContained) { '--self-contained:false' } else { '--self-contained' }
+        & dotnet publish $UpdaterProject -c Release -r win-x64 $updaterSelfContained
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host '  updater publish failed' -ForegroundColor Red
+            return $false
+        }
+
+        Write-Host '  updater publish succeeded' -ForegroundColor DarkGreen
+        return $true
     } finally {
         Pop-Location
     }
@@ -260,6 +289,27 @@ function Invoke-InstallApp {
     return $true
 }
 
+function Invoke-InstallUpdater {
+    if (-not (Test-Path $UpdaterArtifact)) {
+        Write-Host "  no published updater at $UpdaterArtifact" -ForegroundColor Yellow
+        Write-Host '  skipping - Helide itself is still installed' -ForegroundColor DarkGray
+        return $false
+    }
+
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+
+    $exe = Join-Path $InstallDir $UpdaterExeName
+    Copy-Item -Path $UpdaterArtifact -Destination $exe -Force
+
+    $exeMb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+    Write-Host ("  copied {0} ({1} MB) -> {2}" -f $UpdaterExeName, $exeMb, $InstallDir) -ForegroundColor DarkGray
+
+    # Deliberately no PATH entry and no Start Menu shortcut. It is an internal tool:
+    # nothing points the user at it, and it needs nothing but sitting next to
+    # Helide.exe, which is exactly where it goes looking for the app.
+    return $true
+}
+
 # ---------------------------------------------------------------- run
 
 Write-Phase 'Check'
@@ -302,6 +352,13 @@ if ($InstallApp) {
     Write-Phase 'Install Helide'
     if (-not (Invoke-InstallApp)) {
         $exitCode = 1
+    }
+
+    # Kept separate from Invoke-InstallApp so a missing updater is reported on its
+    # own line instead of being hidden as "the install failed".
+    Write-Phase 'Install updater'
+    if (-not (Invoke-InstallUpdater)) {
+        Write-Host '  helide will update itself through its own pill instead' -ForegroundColor DarkGray
     }
 }
 

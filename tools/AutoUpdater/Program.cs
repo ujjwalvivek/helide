@@ -329,22 +329,36 @@ public class AutoUpdater : IDisposable
                 if (files.Length == 0)
                     throw new Exception("Update zip contains no .exe.");
 
-                // The release archive now ships this updater alongside the app, so the
+                // The release archive ships this updater alongside the app, so the
                 // first match is AutoUpdater.exe and not Helide.exe -- installing that
                 // over Helide.exe left the app launching the updater in an endless
                 // terminal loop, since the copy it restarted was itself.
                 downloadedFile = PickAppExecutable(files);
                 ReplaceRunningExecutable(downloadedFile);
 
-                // Clean up temp
-                System.IO.File.Delete(tempFile);
-                System.IO.Directory.Delete(extractDir, recursive: true);
+                // Both exes travel together in the archive, so this updater has to move
+                // itself too or it is left reporting a version the app already passed.
+                // It is running, hence the same rename-out-of-the-way the app needs.
+                var newSelf = files.FirstOrDefault(f =>
+                    string.Equals(System.IO.Path.GetFileName(f), "AutoUpdater.exe", StringComparison.OrdinalIgnoreCase));
+                if (newSelf is not null)
+                    ReplaceRunningExecutable(newSelf, System.IO.Path.GetFileNameWithoutExtension(
+                        System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName) + ".exe");
+
+                // Both copies outlived their purpose; the extracted folder would
+                // otherwise leave the updater exe behind on every update.
+                if (System.IO.Directory.Exists(extractDir))
+                    System.IO.Directory.Delete(extractDir, recursive: true);
             }
             else
             {
                 // Direct .exe download
                 ReplaceRunningExecutable(downloadedFile);
             }
+
+            // The archive held the updater as well as the app, so its extracted copy
+            // has to go or every update leaves a stale exe behind on disk.
+            try { if (System.IO.File.Exists(tempFile)) System.IO.File.Delete(tempFile); } catch { }
 
             logCallback?.Invoke("Update installed.");
             return true;
@@ -356,29 +370,30 @@ public class AutoUpdater : IDisposable
         }
     }
 
-    // Windows refuses to overwrite an executable that is currently running, and Helide
-    // always is while this updater is open. Renaming the running file out of the way
-    // works because the OS keeps the open handle alive on the old name, then the new
+    // Windows refuses to overwrite an executable that is currently running, and both
+    // Helide and this updater are while it is open. Renaming the running file out of the
+    // way works because the OS keeps the open handle alive on the old name, then the new
     // file lands at the expected path. Same trick the in-app updater uses.
     //
     // The displaced file cannot be deleted here -- the process still executing it owns
-    // that handle. DeleteStaleOldExecutables() removes it on the next run, once Helide
-    // has shut down and the lock is gone.
-    private void ReplaceRunningExecutable(string newFile)
+    // that handle. DeleteStaleOldExecutables() removes it on the next run, once the
+    // process has shut down and the lock is gone.
+    private void ReplaceRunningExecutable(string newFile, string targetName = "Helide.exe")
     {
-        var oldPath = _exePath + ".old." + System.Guid.NewGuid().ToString("N")[..6];
+        var target = System.IO.Path.Combine(_exeDir, targetName);
+        var oldPath = target + ".old." + System.Guid.NewGuid().ToString("N")[..6];
         try { if (System.IO.File.Exists(oldPath)) System.IO.File.Delete(oldPath); } catch { }
 
-        if (System.IO.File.Exists(_exePath))
-            System.IO.File.Move(_exePath, oldPath);
+        if (System.IO.File.Exists(target))
+            System.IO.File.Move(target, oldPath);
 
-        System.IO.File.Copy(newFile, _exePath, overwrite: true);
+        System.IO.File.Copy(newFile, target, overwrite: true);
     }
 
     /// <summary>
-    /// Deletes the Helide executables earlier updates renamed out of the way. The
-    /// process that was executing one held it open, so nothing could remove it while it
-    /// ran; this updater is a different process, so by now the lock is gone.
+    /// Deletes the executables earlier updates renamed out of the way. The process that
+    /// was executing one held it open, so nothing could remove it while it ran; this
+    /// updater is a different process, so by now the lock is gone.
     /// </summary>
     internal static void DeleteStaleOldExecutables()
     {
@@ -390,9 +405,14 @@ public class AutoUpdater : IDisposable
                 : System.IO.Path.GetDirectoryName(exe);
             if (dir is null) return;
 
-            foreach (var stale in System.IO.Directory.EnumerateFiles(dir, "Helide.exe.old.*"))
+            // The app and this updater are installed beside one another and both get
+            // replaced by an update, so both leave a displaced file behind.
+            foreach (var name in new[] { "Helide.exe", "AutoUpdater.exe" })
             {
-                try { System.IO.File.Delete(stale); } catch { /* still in use elsewhere */ }
+                foreach (var stale in System.IO.Directory.EnumerateFiles(dir, name + ".old.*"))
+                {
+                    try { System.IO.File.Delete(stale); } catch { /* still in use elsewhere */ }
+                }
             }
         }
         catch { /* housekeeping must never stop the update */ }
