@@ -704,8 +704,10 @@ private void OpenInNewWindow(string? projectPath)
         try
         {
             UpdatePillText.Text = "Restarting...";
-            // Same restart path as the About window, so the two cannot diverge and
-            // the project recorded is the one that was loaded when the update applied.
+            // Broadcast first: Helide is one process per project, so the other windows
+            // will not notice this one leaving otherwise. Each restores its own
+            // workspace from its own watcher.
+            HelideUpdateBroadcast.RequestRestart();
             HelideUpdateState.Restart();
         }
         catch (Exception ex)

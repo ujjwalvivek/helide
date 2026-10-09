@@ -265,6 +265,7 @@ public static class HelideUpdateState
     {
         IsReadyToRestart = false;
         Status = "downloading";
+        HelideUpdateBroadcast.WriteStatus(Status);
         Changed?.Invoke();
     }
 
@@ -272,6 +273,7 @@ public static class HelideUpdateState
     {
         IsReadyToRestart = false;
         Status = $"installing ... {percent}%";
+        HelideUpdateBroadcast.WriteStatus(Status);
         Changed?.Invoke();
     }
 
@@ -281,6 +283,7 @@ public static class HelideUpdateState
         IsReadyToRestart = true;
         PendingProjectPath = projectPath;
         Status = "restart to update";
+        HelideUpdateBroadcast.WriteStatus(Status);
         Changed?.Invoke();
     }
 
@@ -289,13 +292,196 @@ public static class HelideUpdateState
     {
         IsReadyToRestart = false;
         Status = null;
+        HelideUpdateBroadcast.WriteStatus(string.Empty);
         Changed?.Invoke();
+    }
+
+    // Adopts a label another process published. Deliberately does not write back, or
+    // the two processes would take turns overwriting each other's status.
+    internal static void MirrorStatus(string status)
+    {
+        status ??= string.Empty;
+        if (Status == status) return;
+
+        Status = string.IsNullOrEmpty(status) ? null : status;
+        IsReadyToRestart = Status == "restart to update";
+        Changed?.Invoke();
+    }
+
+    // Re-reads the shared label on demand, for a surface that was opened while an
+    // update was already in flight.
+    internal static void RefreshFromShared()
+    {
+        MirrorStatus(HelideUpdateBroadcast.ReadStatus());
     }
 
     /// The single restart path. The pill and the About window both go through it.
     public static void Restart()
     {
         new HelideUpdater().RestartApp(PendingProjectPath);
+    }
+
+    // ---------------------------------------------------------------- cross-process
+
+    // One project per window means one process per window, and every process runs the
+    // startup update check on its own. A static field is invisible between them, so
+    // without this gate two open windows each download the same exe and each rename
+    // Helide.exe out from under the other.
+    private const string UpdateGateName = @"Local\Helide-Updater-Gate";
+    private static readonly TimeSpan GateTimeout = TimeSpan.FromMinutes(10);
+
+    // Held for exactly one download-and-install. Null means another window already has
+    // it, so the caller must not download.
+    public static UpdateGate? TryAcquireUpdateGate()
+    {
+        var gate = new Mutex(false, UpdateGateName);
+        try
+        {
+            if (!gate.WaitOne(0)) { gate.Dispose(); return null; }
+            return new UpdateGate(gate);
+        }
+        catch (AbandonedMutexException)
+        {
+            // The previous owner died mid-install, so we now own it.
+            return new UpdateGate(gate);
+        }
+        catch
+        {
+            gate.Dispose();
+            return null;
+        }
+    }
+
+    /// Waits for whichever process is mid-install, then reports whether the new exe
+    /// landed on disk. Callers that lost the gate use this to reach the same
+    /// "restart to update" state as the installer instead of downloading again.
+    public static bool WaitForOtherInstaller()
+    {
+        Mutex gate;
+        try
+        {
+            gate = new Mutex(false, UpdateGateName);
+            try { gate.WaitOne(GateTimeout); }
+            catch (AbandonedMutexException) { /* owner died; we own it now */ }
+        }
+        catch { return false; }
+
+        try { return NewerVersionOnDisk(); }
+        finally { gate.Dispose(); }
+    }
+
+    /// True when the exe on disk is newer than the image this process is running --
+    /// which is how a window learns that another one installed the update for it.
+    public static bool NewerVersionOnDisk()
+    {
+        try
+        {
+            var exe = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrEmpty(exe) || !File.Exists(exe)) return false;
+
+            var text = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe).FileVersion;
+            if (string.IsNullOrEmpty(text)) return false;
+            var plus = text.IndexOf('+');
+            if (plus >= 0) text = text[..plus];
+
+            if (Version.TryParse(text, out var disk))
+                return disk > typeof(HelideUpdateState).Assembly.GetName().Version;
+        }
+        catch { }
+        return false;
+    }
+}
+
+/// <summary>Ownership of the update gate. Dispose releases it.</summary>
+public sealed class UpdateGate : IDisposable
+{
+    private readonly Mutex _gate;
+    private bool _released;
+
+    internal UpdateGate(Mutex gate) => _gate = gate;
+
+    public void Dispose()
+    {
+        if (_released) return;
+        _released = true;
+        try { _gate.ReleaseMutex(); } catch { }
+        _gate.Dispose();
+    }
+}
+
+/// <summary>
+/// The channel an update travels down between processes. Helide runs one process per
+/// project, so a restart in one window has to reach the others, and a window that was
+/// never the installer still has to learn the exe on disk moved past the copy it is
+/// running. A named kernel object would not do: it disappears when the last handle
+/// closes, which is exactly what a restarting process does.
+/// </summary>
+internal static class HelideUpdateBroadcast
+{
+    private static readonly string Folder = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Helide");
+
+    private static readonly string TicketPath = Path.Combine(Folder, "update-restart.txt");
+    private static readonly string StatusPath = Path.Combine(Folder, "update-status.txt");
+
+    // Sentinel so the first write of an empty status still happens.
+    private static string _written = "\0";
+
+    /// The value only moves forward, so a process never reacts twice to one request.
+    public static long ReadTicket()
+    {
+        try { return long.Parse(File.ReadAllText(TicketPath).Trim()); }
+        catch { return 0; }
+    }
+
+    /// Asks every Helide process to restart, each restoring its own workspace.
+    public static void RequestRestart()
+    {
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            var temporary = TicketPath + ".tmp";
+            File.WriteAllText(temporary, DateTime.UtcNow.Ticks.ToString());
+            File.Move(temporary, TicketPath, true);
+        }
+        catch { /* a failed request only means this window restarts alone */ }
+    }
+
+    // Publishes the label every window shows. Without it, the window that is not
+    // installing has nothing to render -- its own state is empty because it lost the
+    // gate -- so its pill stays hidden and its About button still offers a download.
+    public static void WriteStatus(string status)
+    {
+        status ??= string.Empty;
+        if (status == _written) return;
+        _written = status;
+
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            var temporary = StatusPath + ".tmp";
+            File.WriteAllText(temporary, status);
+            File.Move(temporary, StatusPath, true);
+        }
+        catch { /* a missing label only costs one 700ms poll of progress */ }
+    }
+
+    public static string ReadStatus()
+    {
+        try { return File.ReadAllText(StatusPath).Trim(); }
+        catch { return string.Empty; }
+    }
+
+    /// Drops a stale label left by a previous session so a fresh launch starts clean.
+    public static void ClearStatusForSession()
+    {
+        try
+        {
+            if (File.Exists(StatusPath)) File.Delete(StatusPath);
+        }
+        catch { }
+        _written = string.Empty;
     }
 }
 

@@ -94,6 +94,83 @@ public partial class App : Application
 
         if (!forceNewWindow)
             WatchForActivation(window);
+
+        StartUpdateBroadcastWatcher(window);
+    }
+
+    // Watches for two things a single window cannot see on its own.
+    //
+    // First, the exe on disk moving past the copy this process is running: the startup
+    // check compares the remote version against the disk, so once another window has
+    // already installed, this window is told "up to date" and never learns it must
+    // restart.
+    //
+    // Second, a restart asked for by any other window. Helide is one process per
+    // project, so a restart does not travel between them by itself -- it has to be
+    // carried, which is what the ticket file does.
+    private void StartUpdateBroadcastWatcher(MainWindow window)
+    {
+        var seenTicket = HelideUpdateBroadcast.ReadTicket();
+
+        var thread = new Thread(() =>
+        {
+            while (true)
+            {
+                Thread.Sleep(700);
+
+                if (IsShuttingDown) return;
+
+                try
+                {
+                    var ticket = HelideUpdateBroadcast.ReadTicket();
+                    if (ticket != seenTicket)
+                    {
+                        seenTicket = ticket;
+                        Dispatcher?.Invoke(new Action(() => RestartForUpdate(window)));
+                        return;
+                    }
+
+                    // Adopt whatever the installing window published. This window lost
+                    // the gate, so on its own it would render nothing -- hidden pill,
+                    // About offering a download -- for as long as the other installs.
+                    var shared = HelideUpdateBroadcast.ReadStatus();
+                    if (shared != HelideUpdateState.Status)
+                        HelideUpdateState.MirrorStatus(shared);
+
+                    // Guarded so a window that already knows does not re-announce it.
+                    if (!HelideUpdateState.IsReadyToRestart && HelideUpdateState.NewerVersionOnDisk())
+                    {
+                        Dispatcher?.Invoke(new Action(() =>
+                            HelideUpdateState.MarkUpdateApplied(window.CurrentProject)));
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The app is on its way out; the watcher is not needed.
+                    return;
+                }
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "Helide update broadcaster",
+        };
+
+        thread.Start();
+    }
+
+    private bool IsShuttingDown { get; set; }
+
+    // Every process restarts itself, so every workspace comes back on its own project
+    // rather than only the window whose button was pressed.
+    private void RestartForUpdate(MainWindow window)
+    {
+        HelideUpdateState.MarkUpdateApplied(window.CurrentProject);
+        try { HelideUpdateState.Restart(); }
+        catch (Exception ex)
+        {
+            window.UpdatePillText.Text = $"failed: {ex.Message}";
+        }
     }
 
     internal const string NewWindowFlag = "--new-window";
@@ -288,6 +365,32 @@ public partial class App : Application
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             var hasUpdate = await updater.CheckAsync(_ => { });
 
+            // Neither condition means "nothing pending", so the label from a previous
+            // session is stale and can go. Checked before clearing, because another
+            // window may be mid-install or already done -- wiping its label then would
+            // leave this window showing nothing while an update really is pending.
+            var diskIsNewer = HelideUpdateState.NewerVersionOnDisk();
+            if (!hasUpdate && !diskIsNewer)
+            {
+                HelideUpdateBroadcast.ClearStatusForSession();
+                return;
+            }
+
+            // A false here means "nothing newer than what is on disk", which is not the
+            // same as "nothing to do" -- another window may have installed already, in
+            // which case this process is running an older image and must restart too.
+            if (diskIsNewer)
+            {
+                string? project = null;
+                Dispatcher?.Invoke(new Action(() =>
+                {
+                    if (Application.Current?.MainWindow is MainWindow mw) project = mw.CurrentProject;
+                }));
+                if (string.IsNullOrEmpty(project)) project = new AppStateStore().Load().LastProjectPath;
+                HelideUpdateState.MarkUpdateApplied(project);
+                return;
+            }
+
             if (hasUpdate)
             {
                 // Auto-start download when app opens with update available.
@@ -295,30 +398,53 @@ public partial class App : Application
                 {
                     if (Application.Current?.MainWindow is MainWindow mw)
                     {
-                        try
+                        // Every window runs this check on its own, so without the gate
+                        // two windows open on two projects download the same exe and
+                        // each rename Helide.exe out from under the other.
+                        var gate = HelideUpdateState.TryAcquireUpdateGate();
+                        if (gate is null)
                         {
-                            HelideUpdateState.SetDownloading();
-                            var updater = new HelideUpdater();
-                            // Reported through the shared state so a window opened midway
-                            // sees the same labels rather than its own stale button.
-                            await updater.DownloadAndApplyAsync(pct => HelideUpdateState.SetProgress(pct));
-
-                            // The project to resume once the user agrees to restart. The
-                            // window may still be on the welcome screen here, in which
-                            // case the persisted path is the best answer available.
-                            var projectPathArg = mw.CurrentProject;
-                            if (string.IsNullOrEmpty(projectPathArg))
+                            // Another window is installing it. Follow along rather than
+                            // starting a second download.
+                            await Task.Run(HelideUpdateState.WaitForOtherInstaller);
+                            if (HelideUpdateState.NewerVersionOnDisk())
                             {
-                                var stateStore = new AppStateStore();
-                                projectPathArg = stateStore.Load().LastProjectPath;
+                                var project = mw.CurrentProject;
+                                if (string.IsNullOrEmpty(project))
+                                    project = new AppStateStore().Load().LastProjectPath;
+                                HelideUpdateState.MarkUpdateApplied(project);
                             }
-
-                            HelideUpdateState.MarkUpdateApplied(projectPathArg);
+                            return;
                         }
-                        catch (Exception ex)
+
+                        using (gate)
                         {
-                            HelideUpdateState.Clear();
-                            mw.UpdatePillText.Text = $"failed: {ex.Message}";
+                            try
+                            {
+                                HelideUpdateState.SetDownloading();
+                                var updater = new HelideUpdater();
+                                // Reported through the shared state so a window opened
+                                // midway sees the same labels rather than its own stale
+                                // button.
+                                await updater.DownloadAndApplyAsync(pct => HelideUpdateState.SetProgress(pct));
+
+                                // The project to resume once the user agrees to restart.
+                                // The window may still be on the welcome screen here, in
+                                // which case the persisted path is the best answer.
+                                var projectPathArg = mw.CurrentProject;
+                                if (string.IsNullOrEmpty(projectPathArg))
+                                {
+                                    var stateStore = new AppStateStore();
+                                    projectPathArg = stateStore.Load().LastProjectPath;
+                                }
+
+                                HelideUpdateState.MarkUpdateApplied(projectPathArg);
+                            }
+                            catch (Exception ex)
+                            {
+                                HelideUpdateState.Clear();
+                                mw.UpdatePillText.Text = $"failed: {ex.Message}";
+                            }
                         }
                     }
                 }));
@@ -332,6 +458,9 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // Stops the watcher before it observes the half-closed dispatcher and throws.
+        IsShuttingDown = true;
+
         // Disposed before the mutex so the watcher thread is released first.
         _activationEvent?.Dispose();
         _activationEvent = null;
