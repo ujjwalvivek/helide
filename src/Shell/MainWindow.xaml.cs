@@ -5,12 +5,14 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Helide.Interop;
 using Helide.Persistence;
 using Helide.Sessions;
+using Helide.Shell;
 using Helide.Theme;
 using Helide.Projects;
 using Helide.Terminal;
@@ -18,6 +20,8 @@ using Button = System.Windows.Controls.Button;
 using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
 using MessageBox = System.Windows.MessageBox;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using Point = System.Windows.Point;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
 
@@ -126,6 +130,23 @@ public partial class MainWindow : Window
             ThemePalette.ThemeChanged -= ThemePalette_ThemeChanged;
         };
 
+        CommandPaletteControl.Chosen += CommandPalette_Chosen;
+        CommandPaletteControl.Dismissed += CloseCommandPalette;
+
+        // Outside click dismissal is the popup's own job, via StaysOpen="False": it
+        // captures the mouse while open, so a click that lands on a terminal's HWND
+        // still reaches the popup. A window-level mouse handler could not do that --
+        // the panes swallow the event before the window ever sees it.
+        CommandPalettePopup.Closed += (_, _) => _paletteOpen = false;
+
+        // Minimising leaves the popup behind, because it is a separate top-level window
+        // that does not follow the owner's minimised state.
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized)
+                CloseCommandPalette();
+        };
+
         // Status sources are attached as each session is created.
     }
     private void StartAttentionTimer()
@@ -187,18 +208,233 @@ public partial class MainWindow : Window
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
-    private void HomeButton_Click(object sender, RoutedEventArgs e)
+    private void HomeButton_Click(object sender, RoutedEventArgs e) => OpenCommandPalette();
+
+    // ---- Command palette -------------------------------------------------------
+    //
+    // Replaces the app-menu ContextMenu that used to hang off the logo button. Every
+    // one of its items is here, plus the session and navigation commands that only
+    // make sense once there is somewhere to put them. Built fresh on each open because
+    // most of it depends on what is currently open.
+
+    private bool _paletteOpen;
+
+    private void OpenCommandPalette()
     {
-        // A ContextMenu anchored to the button and opened by hand rather than
-        // through ContextMenuService, which would anchor it to the pointer and
-        // lose the caption-button hit test.
-        if (HomeButton.ContextMenu is not { } menu)
+        if (_paletteOpen)
             return;
 
-        menu.PlacementTarget = HomeButton;
-        menu.Placement = PlacementMode.Bottom;
-        menu.HorizontalOffset = -8;
-        menu.IsOpen = true;
+        _paletteOpen = true;
+
+        // Anchored to the root grid rather than left to default. A Popup placed with no
+        // target centres on the pointer, which puts the overlay wherever the mouse
+        // happens to be instead of in the window.
+        CommandPalettePopup.PlacementTarget = RootGrid;
+        CommandPalettePopup.IsOpen = true;
+        CommandPaletteControl.Load(BuildPaletteCommands());
+
+        // Focus comes from the popup's own Opened event, which is the first moment its
+        // HwndSource exists. Asking earlier just queues focus against a window that is
+        // not there yet, which is why Escape and typing used to do nothing.
+    }
+
+    private void CommandPalettePopup_Opened(object sender, EventArgs e)
+    {
+        // Focusable popup: WPF activates the child's HwndSource itself, so this only has
+        // to put the caret in the query box.
+        CommandPaletteControl.FocusQuery();
+    }
+
+    private void CloseCommandPalette()
+    {
+        if (!_paletteOpen)
+            return;
+
+        _paletteOpen = false;
+        CommandPalettePopup.IsOpen = false;
+    }
+
+    private void CommandPalette_Chosen(PaletteCommand command)
+    {
+        CloseCommandPalette();
+
+        // Deferred so the overlay is gone before the command runs. Several of them open
+        // a dialog or tear down the workspace, and doing that underneath a still-open
+        // popup strands focus on a window that no longer exists.
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, command.Invoke);
+    }
+
+    private List<PaletteCommand> BuildPaletteCommands()
+    {
+        var workspace = () => WorkspaceRoot.Visibility == Visibility.Visible;
+        var commands = new List<PaletteCommand>();
+
+        // --- File ---
+        commands.Add(new PaletteCommand("Open Folder", OpenProjectFolder, "File", PaletteCommand.Gesture(Key.O)));
+        commands.Add(new PaletteCommand("Close Workspace", ShowWelcome, "File", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Exit", Close, "File"));
+
+        foreach (var project in _state.RecentProjects)
+        {
+            var path = project.Path;
+            commands.Add(new PaletteCommand(
+                $"Open {project.Name}",
+                () => OpenRecentProject(path),
+                "Recent",
+                path));
+        }
+
+        // --- New ---
+        commands.Add(new PaletteCommand("New Editor Tab", () => CreateEditorTab(null), "New", "Ctrl+N", canInvoke: workspace));
+        commands.Add(new PaletteCommand("New Runner Session", () => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit")), "New", canInvoke: workspace));
+        commands.Add(new PaletteCommand("New OpenCode Session", () => CreateAgentSession("opencode", "OpenCode"), "New", canInvoke: workspace));
+        commands.Add(new PaletteCommand("New Codex Session", () => CreateAgentSession("codex", "Codex"), "New", canInvoke: workspace));
+
+        // --- Close ---
+        commands.Add(new PaletteCommand(
+            "Close Current Editor Tab",
+            () => { if (_activeEditorTab is { } tab) CloseEditorTab(tab); },
+            "Close",
+            canInvoke: () => workspace() && _editorTabs.Count > 0));
+
+        commands.Add(new PaletteCommand(
+            "Close Current Agent Session",
+            () => { if (_activeAgentSession is { } session) CloseAgentSession(session); },
+            "Close",
+            canInvoke: () => workspace() && _agentSessions.Count > 1));
+
+        // --- Focus ---
+        commands.Add(new PaletteCommand("Focus Left Panel", () => FocusPanel(ToolPanel.Left, ActiveLeftHost()), "Focus", PaletteCommand.Gesture(Key.D1), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Focus Editor", () => FocusPanel(null, ActiveEditorHost()), "Focus", PaletteCommand.Gesture(Key.D2), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Focus Runner", () => FocusPanel(ToolPanel.Runner, _runnerHost), "Focus", PaletteCommand.Gesture(Key.D3), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Focus Agent", () => FocusPanel(ToolPanel.Agent, _activeAgentSession?.Host), "Focus", PaletteCommand.Gesture(Key.D4), canInvoke: workspace));
+
+        // --- Navigate ---
+        commands.Add(new PaletteCommand("Show Lazygit Panel", () => ToggleLeftTool(LeftTool.Git), "View", keywords: "git left", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Show Project Browser", () => ToggleLeftTool(LeftTool.Project), "View", keywords: "yazi files left", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanel(ToolPanel.Runner), "View", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanel(ToolPanel.Agent), "View", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
+        commands.Add(new PaletteCommand("Previous Editor Tab", () => CycleEditorTab(-1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
+        commands.Add(new PaletteCommand("Run Project Command", RunProjectCommand, "Run", canInvoke: workspace));
+
+        // --- Theme ---
+        // Driven off the theme table rather than a hand-maintained list, so a theme
+        // added to ThemePalette shows up here without a second edit.
+        foreach (var (key, name, _) in ThemePalette.AvailableThemes)
+        {
+            commands.Add(new PaletteCommand(
+                $"Theme: {name}",
+                () => ApplyTheme(key),
+                "Theme",
+                key == ThemePalette.ActiveTheme ? "active" : null,
+                keywords: key));
+        }
+
+        commands.Add(new PaletteCommand("About Helide", ShowAbout, "Help"));
+
+        return commands;
+    }
+
+    private void OpenProjectFolder() => OpenProjectButton_Click(this, new RoutedEventArgs());
+
+    // Every pane needs the palette shortcut, and each one has to be told about it at
+    // construction: the hook lives on that pane's renderer HWND, which does not exist
+    // until the terminal loads. Routing all five creation sites through here keeps that
+    // from being forgotten when a new kind of pane is added.
+    private NativeTerminalHost PaletteAwareHost(NativeTerminalHost host)
+    {
+        host.PaletteRequested += OnRendererPaletteRequested;
+        return host;
+    }
+
+    // A pane's HWND hook and the window's key handler both see the same physical
+    // Ctrl+P. Opening the palette moves focus into it, so the press continues into WPF
+    // and the overlay was toggled a second time on the same keypress -- opening and
+    // shutting on one press, then again on the next, which is the loop. Synthesising
+    // the key event routes both paths through the one handler that owns the decision.
+    private void OnRendererPaletteRequested()
+    {
+        if (PresentationSource.FromVisual(this) is not PresentationSource source)
+            return;
+
+        // Raised on the window because that is where PreviewKeyDown is handled.
+        RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.P)
+        {
+            RoutedEvent = Keyboard.PreviewKeyDownEvent,
+        });
+    }
+
+    // True when WPF's keyboard focus is inside the palette, in which case the palette's
+    // own controls must be the ones to see the key.
+    private bool PaletteOwnsKeyboard()
+    {
+        DependencyObject? current = Keyboard.FocusedElement as DependencyObject;
+
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, CommandPaletteControl))
+                return true;
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return false;
+    }
+
+    private void ToggleCommandPalette()
+    {
+        if (_paletteOpen)
+            CloseCommandPalette();
+        else
+            OpenCommandPalette();
+    }
+
+    private void ShowAbout()
+    {
+        var about = new AboutWindow { Owner = this };
+        about.ShowDialog();
+    }
+
+    private void RunProjectCommand()
+    {
+        if (_runnerHost is null)
+            return;
+
+        _runnerHost.FocusTerminal();
+        if (_runCommand != "pwsh")
+            _runnerHost.WriteLine(_runCommand);
+    }
+
+    private void ApplyTheme(string key)
+    {
+        ThemePalette.ApplyTheme(key);
+
+        _state.Theme = ThemePalette.ActiveTheme;
+        _stateStore.Save(_state);
+    }
+
+    // A null reveal means "do not un-collapse anything": the editor is always visible,
+    // so focusing it must not toggle a panel that happens to be collapsed.
+    private void FocusPanel(ToolPanel? reveal, NativeTerminalHost? host)
+    {
+        if (host is null)
+            return;
+
+        if (reveal is { } panel && IsPanelCollapsed(panel))
+            TogglePanel(panel);
+
+        host.FocusTerminal();
+    }
+
+    private void CycleEditorTab(int delta)
+    {
+        if (_editorTabs.Count == 0 || _activeEditorTab is null)
+            return;
+
+        var index = _editorTabs.IndexOf(_activeEditorTab);
+        var next = (index + delta + _editorTabs.Count) % _editorTabs.Count;
+        ActivateEditorTab(_editorTabs[next]);
     }
 
     private void MinimizeCaptionButton_Click(object sender, RoutedEventArgs e) =>
@@ -446,7 +682,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var host = new NativeTerminalHost(label, commandLine, workingDirectory);
+            var host = PaletteAwareHost(new NativeTerminalHost(label, commandLine, workingDirectory));
             host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
             slot.Content = host;
             _terminalHosts.Add(host);
@@ -471,7 +707,7 @@ public partial class MainWindow : Window
     {
         var label = tool == LeftTool.Project ? "yazi" : "lazygit";
         var stateText = tool == LeftTool.Project ? ProjectPaneState : GitPaneState;
-        var host = new NativeTerminalHost(label, ToolCommand($"{label}.exe"), _currentProject!);
+        var host = PaletteAwareHost(new NativeTerminalHost(label, ToolCommand($"{label}.exe"), _currentProject!));
         host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
         LeftToolStack.Children.Add(host);
         _terminalHosts.Add(host);
@@ -701,7 +937,7 @@ public partial class MainWindow : Window
         var command = path is null ? ToolCommand("hx.exe", ".") : ToolCommand("hx.exe", path);
         try
         {
-            var host = new NativeTerminalHost("helix", command, _currentProject, path);
+            var host = PaletteAwareHost(new NativeTerminalHost("helix", command, _currentProject, path));
             var tab = new EditorTab(path, host);
 
             EditorSlot.Children.Add(host);
@@ -861,92 +1097,42 @@ public partial class MainWindow : Window
         },
     };
 
-    private void MenuOpenFolder_Click(object sender, RoutedEventArgs e)
-    {
-        OpenProjectButton_Click(this, new RoutedEventArgs());
-    }
-
-    private void MenuCloseWorkspace_Click(object sender, RoutedEventArgs e)
-    {
-        ShowWelcome();
-    }
-
-    private void MenuExit_Click(object sender, RoutedEventArgs e)
-    {
-        Close();
-    }
-
-    private void MenuThemeChoice_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuItem { Tag: string key })
-            return;
-
-        ThemePalette.ApplyTheme(key);
-
-        _state.Theme = ThemePalette.ActiveTheme;
-        _stateStore.Save(_state);
-    }
-
-    private void MenuFocusLeft_Click(object sender, RoutedEventArgs e)
-    {
-        if (ActiveLeftHost() is { } host)
-        {
-            if (IsPanelCollapsed(ToolPanel.Left))
-                TogglePanel(ToolPanel.Left);
-            host.FocusTerminal();
-        }
-    }
-
-    private void MenuFocusEditor_Click(object sender, RoutedEventArgs e)
-    {
-        if (ActiveEditorHost() is { } host)
-            host.FocusTerminal();
-    }
-
-    private void MenuFocusRunner_Click(object sender, RoutedEventArgs e)
-    {
-        if (_runnerHost is { } host)
-        {
-            if (IsPanelCollapsed(ToolPanel.Runner))
-                TogglePanel(ToolPanel.Runner);
-            host.FocusTerminal();
-        }
-    }
-
-    private void MenuFocusAgent_Click(object sender, RoutedEventArgs e)
-    {
-        if (_activeAgentSession?.Host is { } host)
-        {
-            if (IsPanelCollapsed(ToolPanel.Agent))
-                TogglePanel(ToolPanel.Agent);
-            host.FocusTerminal();
-        }
-    }
-
-    private void MenuFocusProject_Click(object sender, RoutedEventArgs e)
-    {
-        ToggleLeftTool(LeftTool.Project);
-    }
-
-    private void MenuRunCommand_Click(object sender, RoutedEventArgs e)
-    {
-        if (_runnerHost is null)
-            return;
-
-        _runnerHost.FocusTerminal();
-        if (_runCommand != "pwsh")
-            _runnerHost.WriteLine(_runCommand);
-    }
-
-    private void MenuAbout_Click(object sender, RoutedEventArgs e)
-    {
-        var about = new AboutWindow { Owner = this };
-        about.ShowDialog();
-    }
 
     private void MainWindow_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
         var modifiers = Keyboard.Modifiers;
+
+        if (_paletteOpen)
+        {
+            // The closing chord is handled here even though focus is in the query box,
+            // because that box only knows about Escape.
+            if (modifiers == ModifierKeys.Control && e.Key == Key.P)
+            {
+                CloseCommandPalette();
+                e.Handled = true;
+                return;
+            }
+
+            // Everything else belongs to the palette. This handler is Preview, which
+            // tunnels from the root down, so it runs *before* the focused element: any
+            // key swallowed here never reaches the query box. That is what made Escape
+            // and typing do nothing while the overlay was up.
+            if (PaletteOwnsKeyboard())
+                return;
+
+            // Focus is still on a pane underneath, so this key is aimed at a terminal
+            // hidden behind the overlay and must not reach it.
+            e.Handled = true;
+            return;
+        }
+
+        if (modifiers == ModifierKeys.Control && e.Key == Key.P)
+        {
+            ToggleCommandPalette();
+            e.Handled = true;
+            return;
+        }
+
         if (modifiers == ModifierKeys.Control && e.Key == Key.O)
         {
             OpenProjectButton_Click(this, new RoutedEventArgs());
@@ -1404,7 +1590,7 @@ public partial class MainWindow : Window
         try
         {
             // Create the new session host
-            var host = new NativeTerminalHost(type, commandLine, _currentProject!);
+            var host = PaletteAwareHost(new NativeTerminalHost(type, commandLine, _currentProject!));
 
             // Replace the agent panel content
             AgentSlot.Content = host;
@@ -1997,38 +2183,43 @@ public partial class MainWindow : Window
     // Close agent session tab
     private void AgentTabClose_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.Tag is AgentSessionView session)
+        if (sender is Button { Tag: AgentSessionView session })
+            CloseAgentSession(session);
+    }
+
+    // Split out from the click handler so the command palette can close a session too.
+    // It reads the session off the button, and a palette entry has no button to hand
+    // it; this keeps the one place that knows how to dispose a host and drop the
+    // session from both the list and the status sources.
+    private void CloseAgentSession(AgentSessionView session)
+    {
+        session.Host?.Dispose();
+
+        _agentSessions.Remove(session);
+        if (session.Host is not null && _terminalHosts.Contains(session.Host))
+            _terminalHosts.Remove(session.Host);
+
+        // If this was the active session, switch to another one or create default
+        if (ReferenceEquals(_activeAgentSession, session))
         {
-            // Dispose the session host
-            session.Host?.Dispose();
-
-            // Remove from tracking collections
-            _agentSessions.Remove(session);
-            if (session.Host is not null && _terminalHosts.Contains(session.Host))
-                _terminalHosts.Remove(session.Host);
-
-            // If this was the active session, switch to another one or create default
-            if (ReferenceEquals(_activeAgentSession, session))
+            if (_agentSessions.Count > 0)
             {
-                if (_agentSessions.Count > 0)
-                {
-                    var nextSession = _agentSessions.Last();
-                    nextSession.IsActive = true;
-                    AgentSlot.Content = nextSession.Host;
-                    AgentPaneTitle.Text = nextSession.TypeLabel.ToUpper();
-                    _activeAgentSession = nextSession;
-                    nextSession.Host?.BringToFront();
-                }
-                else
-                {
-                    AgentSlot.Content = null;
-                    AgentPaneTitle.Text = "OPENCODE";
-                    _activeAgentSession = null;
-                }
+                var nextSession = _agentSessions.Last();
+                nextSession.IsActive = true;
+                AgentSlot.Content = nextSession.Host;
+                AgentPaneTitle.Text = nextSession.TypeLabel.ToUpper();
+                _activeAgentSession = nextSession;
+                nextSession.Host?.BringToFront();
             }
-
-            UpdateAgentSessionUI();
+            else
+            {
+                AgentSlot.Content = null;
+                AgentPaneTitle.Text = "OPENCODE";
+                _activeAgentSession = null;
+            }
         }
+
+        UpdateAgentSessionUI();
     }
     private void RunnerTabStrip_Click(object sender, MouseButtonEventArgs e)
     {
@@ -2088,7 +2279,7 @@ public partial class MainWindow : Window
         if (_currentProject is null) return;
         try
         {
-            var host = new NativeTerminalHost(type, commandLine, _currentProject!);
+            var host = PaletteAwareHost(new NativeTerminalHost(type, commandLine, _currentProject!));
             RunnerSlot.Content = host;
             _terminalHosts.Add(host);
 

@@ -1,0 +1,192 @@
+<UserControl x:Class="Helide.Shell.CommandPalette"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="Transparent"
+             Focusable="False"
+             Width="640">
+    <Border Background="{DynamicResource PopoverBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+            CornerRadius="9"
+            SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="30"
+                              ShadowDepth="6"
+                              Opacity="0.6"
+                              Color="Black" />
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Query strip. Full width and on its own background so it reads as a
+                 header, matching the pane headers, rather than as a text box floating
+                 on the list. -->
+            <Border Grid.Row="0"
+                    Background="{DynamicResource PaneHeaderBrush}"
+                    CornerRadius="8,8,0,0"
+                    Padding="14,0">
+                <Grid Height="44">
+                    <TextBlock Text="&#xE721;"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="{DynamicResource FontSizeMedium}"
+                               Foreground="{DynamicResource AccentBrush}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0" />
+                    <TextBox x:Name="QueryBox"
+                             TextChanged="QueryBox_TextChanged"
+                             PreviewKeyDown="QueryBox_PreviewKeyDown"
+                             FontFamily="{DynamicResource UiFontFamily}"
+                             FontSize="{DynamicResource FontSizeBody}"
+                             Foreground="{DynamicResource TextBrush}"
+                             CaretBrush="{DynamicResource AccentBrush}"
+                             SelectionBrush="{DynamicResource AccentBrush}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Padding="0"
+                             VerticalContentAlignment="Center" />
+                    <!-- Placeholder, so an empty palette is not a blank bar. -->
+                    <TextBlock Text="Type a command"
+                               FontFamily="{DynamicResource UiFontFamily}"
+                               FontSize="{DynamicResource FontSizeBody}"
+                               Foreground="{DynamicResource TextSubtleBrush}"
+                               VerticalAlignment="Center"
+                               IsHitTestVisible="False">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=QueryBox}"
+                                                 Value="">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="1"
+                    Height="1"
+                    Background="{DynamicResource BorderBrush}" />
+
+            <ListBox x:Name="ResultsList"
+                     Grid.Row="2"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     MaxHeight="380"
+                     MinHeight="90"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     Padding="6,6"
+                     HorizontalContentAlignment="Stretch"
+                     MouseDoubleClick="Results_MouseDoubleClick"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,1" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="Cursor" Value="Hand" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="Row"
+                                            Background="{TemplateBinding Background}"
+                                            CornerRadius="6"
+                                            Padding="12,9">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Row" Property="Background"
+                                                    Value="{DynamicResource InteractiveBrush}" />
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Row" Property="Background"
+                                                    Value="{DynamicResource InteractiveBrush}" />
+                                            <Setter Property="Cursor" Value="Hand" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <!-- Group is a coloured label rather than a heading row: a
+                                 heading per group would spend more vertical space on
+                                 structure than on the commands themselves. -->
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Group}"
+                                       FontFamily="{DynamicResource UiFontFamily}"
+                                       FontSize="{DynamicResource FontSizeSmall}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       MinWidth="52"
+                                       Margin="0,0,14,0" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Title}"
+                                       FontFamily="{DynamicResource UiFontFamily}"
+                                       FontSize="{DynamicResource FontSizeBody}"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding Detail}"
+                                       FontFamily="{DynamicResource UiMonoFontFamily}"
+                                       FontSize="{DynamicResource FontSizeSmall}"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       VerticalAlignment="Center"
+                                       Margin="16,0,2,0" />
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- Shown instead of the list when a query matches nothing. A blank panel
+                 reads as a broken palette rather than an empty result. -->
+            <TextBlock x:Name="EmptyText"
+                       Grid.Row="2"
+                       Text="No matching commands"
+                       FontFamily="{DynamicResource UiFontFamily}"
+                       FontSize="{DynamicResource FontSizeSmall}"
+                       Foreground="{DynamicResource TextSubtleBrush}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Margin="0,28"
+                       Visibility="Collapsed" />
+
+            <Border Grid.Row="3"
+                    Height="1"
+                    Background="{DynamicResource BorderBrush}" />
+
+            <!-- Hint strip. Its own row and its own background, so it cannot sit on top
+                 of the separator above it. -->
+            <Border Grid.Row="4"
+                    Background="{DynamicResource PaneHeaderBrush}"
+                    CornerRadius="0,0,8,8"
+                    Padding="14,7">
+                <TextBlock Text="Enter run    ·    ↑ ↓ move    ·    Esc close"
+                           FontFamily="{DynamicResource UiFontFamily}"
+                           FontSize="{DynamicResource FontSizeSmall}"
+                           Foreground="{DynamicResource TextMutedBrush}" />
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>
