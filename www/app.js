@@ -35,7 +35,7 @@ async function loadRelease() {
         "Download for Windows" + (size ? " - " + size : "");
     }
   } catch (err) {
-    versionEls.forEach(el => el.textContent = "v1.3.1");
+    versionEls.forEach(el => el.textContent = "v1.3.2");
     if (downloadEl) downloadEl.href = FALLBACK;
     if (btnLabel) btnLabel.textContent = "Download for Windows";
   }
