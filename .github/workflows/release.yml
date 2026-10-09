@@ -25,11 +25,20 @@ jobs:
       - name: build
         run: dotnet build -c Release --no-restore
 
-      - name: publish
+      # The updater is a project of its own rather than a part of the app build,
+      # so it publishes separately. It lands next to nothing else, which is why
+      # it needs its own output folder.
+      - name: publish app
         run: dotnet publish -c Release -r win-x64 --self-contained -p:DebugType=None -p:DebugSymbols=false -p:AllowedReferenceRelatedFileExtensions= -o publish
 
+      - name: publish autoupdater
+        run: dotnet publish tools/AutoUpdater/AutoUpdater.csproj -c Release -r win-x64 --self-contained -p:DebugType=None -p:DebugSymbols=false -p:AllowedReferenceRelatedFileExtensions= -o publish-updater
+
+      # Both exes end up at the root of the archive rather than under their build
+      # folders, so the updater sits beside Helide.exe and can find it by path
+      # without any install step.
       - name: package
-        run: Compress-Archive -Path publish/Helide.exe -DestinationPath helide-win-x64.zip
+        run: Compress-Archive -Path publish/Helide.exe, publish-updater/AutoUpdater.exe -DestinationPath helide-win-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
