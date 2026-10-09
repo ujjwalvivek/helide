@@ -29,6 +29,10 @@ public class HelideUpdater
     {
         _currentVer = GetCurrentVersion();
         _exePath = Process.GetCurrentProcess().MainModule.FileName;
+        Client.DefaultRequestHeaders.UserAgent.ParseAdd("Helide-Updater/1.0");
+        var token = System.Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+        if (!string.IsNullOrEmpty(token))
+            Client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
     }
 
     private static string GetCurrentVersion()

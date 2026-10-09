@@ -152,6 +152,9 @@ public class AutoUpdater : IDisposable
         _cts = cts;
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Helide-Updater/1.0");
+        var token = System.Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+        if (!string.IsNullOrEmpty(token))
+            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         // Find Helide installation (not this updater's path)
         _exePath = FindHelideExecutable();
