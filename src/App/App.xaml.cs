@@ -73,6 +73,9 @@ public partial class App : Application
         // first layout pass paints rather than a flash of the default.
         ThemePalette.ApplyTheme(state.Theme);
 
+        // Auto-check for updates on restart (non-blocking, silent unless update found)
+        CheckForUpdatesSilently();
+
         var window = new MainWindow(stateStore, state, projectPath);
         MainWindow = window;
         window.Show();
@@ -260,6 +263,37 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             Write("AppDomain", args.ExceptionObject as Exception ?? new Exception(args.ExceptionObject?.ToString()));
         TaskScheduler.UnobservedTaskException += (_, args) => Write("Task", args.Exception);
+    }
+
+    // Silent background check for new updates when app restarts.
+    // If one exists, a subtle notification is shown (not a popup blocking startup).
+    private async void CheckForUpdatesSilently()
+    {
+        try
+        {
+            var updater = new HelideUpdater();
+            // Use a short timeout so startup isn't delayed.
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            var hasUpdate = await updater.CheckAsync(_ => { });
+
+            if (hasUpdate)
+            {
+                // Popup notification: user hasn't visited About yet, so show it here.
+                Dispatcher?.BeginInvoke(new Action(() =>
+                {
+                    System.Windows.MessageBox.Show(
+                        $"A new version of Helide (v{updater.LatestAvailable}) is available.\n\n" +
+                        "Open About to download and install the update.",
+                        "Helide Update Available",
+                        System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Information);
+                }));
+            }
+        }
+        catch
+        {
+            // Silent failure: no update check is critical to app function.
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

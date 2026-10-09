@@ -21,6 +21,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="tools\AutoUpdater\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="EasyWindowsTerminalControl" Version="1.0.38" />
   </ItemGroup>
 
