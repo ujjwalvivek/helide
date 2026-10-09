@@ -65,6 +65,10 @@ public partial class MainWindow : Window
     private readonly AppStateStore _stateStore;
     private readonly AppState _state;
 
+    // Exposed so other windows (e.g., AboutWindow) can determine the current project
+    // when restarting after an update, so the new instance can resume the workspace.
+    public string? LastProjectPathFromState => _state.LastProjectPath;
+
     // Per-project, and reloaded whenever the workspace switches projects. Kept apart
     // from _state so two Helide processes on different projects write different files
     // instead of the second one overwriting the first's sessions and tabs.
@@ -82,6 +86,10 @@ public partial class MainWindow : Window
     private string? _openRequestPath;
     private long _openRequestOffset;
     private string? _currentProject;
+    public string? CurrentProject => _currentProject;
+
+    // Read by the About window so its button reads the same state as the titlebar pill.
+    public bool IsUpdateReadyToRestart => HelideUpdateState.IsReadyToRestart;
     private string _runCommand = "pwsh";
     private bool _loaded;
     private bool _closingWorkspace;
@@ -690,8 +698,9 @@ private void OpenInNewWindow(string? projectPath)
         try
         {
             UpdatePillText.Text = "Restarting...";
-            var updater = new HelideUpdater();
-            updater.RestartApp();
+            // Same restart path as the About window, so the two cannot diverge and
+            // the project recorded is the one that was loaded when the update applied.
+            HelideUpdateState.Restart();
         }
         catch (Exception ex)
         {

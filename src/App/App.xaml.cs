@@ -69,6 +69,13 @@ public partial class App : Application
         var stateStore = new AppStateStore();
         var state = stateStore.Load();
 
+        // If no project passed on startup but we have a last project from a previous session,
+        // use it to resume the workspace.
+        if (string.IsNullOrEmpty(projectPath) && !string.IsNullOrEmpty(state.LastProjectPath) && Directory.Exists(state.LastProjectPath))
+        {
+            projectPath = state.LastProjectPath;
+        }
+
         // Before the window is constructed, so the persisted theme is the one the
         // first layout pass paints rather than a flash of the default.
         ThemePalette.ApplyTheme(state.Theme);
@@ -290,6 +297,18 @@ public partial class App : Application
                             var updater = new HelideUpdater();
                             await updater.DownloadAndApplyAsync(pct =>
                                 Dispatcher.Invoke(() => mw.UpdatePillText.Text = $"installing ... {pct}%"));
+
+                            // The project to resume once the user agrees to restart. The
+                            // window may still be on the welcome screen here, in which
+                            // case the persisted path is the best answer available.
+                            var projectPathArg = mw.CurrentProject;
+                            if (string.IsNullOrEmpty(projectPathArg))
+                            {
+                                var stateStore = new AppStateStore();
+                                projectPathArg = stateStore.Load().LastProjectPath;
+                            }
+
+                            HelideUpdateState.MarkUpdateApplied(projectPathArg);
                             mw.UpdatePillText.Text = "restart to update";
                         }
                         catch (Exception ex)
@@ -313,5 +332,16 @@ public partial class App : Application
         _activationEvent = null;
         _instanceMutex?.Dispose();
         base.OnExit(e);
+    }
+
+    // Called by the updater right before it spawns the replacement process.
+    //
+    // The new process is the same exe at the same path, so it asks for the very mutex
+    // this one is still holding. If it does not get it it assumes a window for that
+    // project is already open, signals it, and exits -- which reads as the restart
+    // having done nothing. Releasing here means the child finds the claim free.
+    internal static void ReleaseInstanceGuardForRestart()
+    {
+        if (Application.Current is App app) app.ReleaseClaim();
     }
 }

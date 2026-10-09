@@ -143,7 +143,13 @@ public class HelideUpdater
         }
     }
 
-    public void RestartApp()
+    // Starts the freshly downloaded exe and hands off the workspace to it.
+    //
+    // The single-instance guard has to be released first. The new process is the same
+    // exe at the same path, so it tries to claim exactly the mutex this one still holds;
+    // if it loses, it assumes another window already owns the project and shuts down,
+    // which is what "clicked the pill and nothing came back" was.
+    public void RestartApp(string? projectPath = null)
     {
         if (!File.Exists(_exePath))
         {
@@ -151,13 +157,31 @@ public class HelideUpdater
         }
         try
         {
+            // Persist the workspace so the new instance can resume it even if the
+            // argument is lost, then let go of the instance claim before the child
+            // tries to take it.
+            if (!string.IsNullOrWhiteSpace(projectPath) && Directory.Exists(projectPath))
+            {
+                var store = new Helide.Persistence.AppStateStore();
+                var state = store.Load();
+                store.RecordProject(state, projectPath);
+            }
+
+            App.ReleaseInstanceGuardForRestart();
+
             var dir = Path.GetDirectoryName(_exePath) ?? ".";
             var psi = new System.Diagnostics.ProcessStartInfo(_exePath)
             {
                 UseShellExecute = true,
-                WorkingDirectory = dir
+                WorkingDirectory = dir,
+                Arguments = string.IsNullOrWhiteSpace(projectPath) ? string.Empty : "\"" + projectPath + "\""
             };
             System.Diagnostics.Process.Start(psi);
+
+            // Give the child time to get past its own startup before this process
+            // disappears. The mutex is already free, so this is only about not
+            // tearing down shared OS state (named events, the updater's HttpClient)
+            // out from under a process that is seconds old.
             System.Threading.Thread.Sleep(800);
             System.Environment.Exit(0);
         }
@@ -166,6 +190,37 @@ public class HelideUpdater
             // Re-throw so AboutWindow can show the error
             throw new Exception($"Failed to restart Helide: {ex.Message}. Path: {_exePath}", ex);
         }
+    }
+}
+
+/// <summary>
+/// The one place the update lifecycle is stored, so the titlebar pill and the About
+/// window cannot disagree. Before this, the pill only knew its own TextBlock and the
+/// About window recomputed the whole check from scratch -- which meant clicking "Check
+/// for Updates" after a silent download downloaded the update a second time.
+/// </summary>
+public static class HelideUpdateState
+{
+    /// True once the update is on disk and the app just needs to restart to load it.
+    public static bool IsReadyToRestart { get; private set; }
+
+    /// The project to reopen after the restart. Empty means start on the welcome screen.
+    public static string? PendingProjectPath { get; private set; }
+
+    public static event Action? Changed;
+
+    /// Call after DownloadAndApplyAsync succeeds. Both entry points read from here.
+    public static void MarkUpdateApplied(string? projectPath)
+    {
+        IsReadyToRestart = true;
+        PendingProjectPath = projectPath;
+        Changed?.Invoke();
+    }
+
+    /// The single restart path. The pill and the About window both go through it.
+    public static void Restart()
+    {
+        new HelideUpdater().RestartApp(PendingProjectPath);
     }
 }
 
