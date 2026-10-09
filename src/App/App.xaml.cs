@@ -292,11 +292,11 @@ public partial class App : Application
                     {
                         try
                         {
-                            mw.UpdatePill.Visibility = System.Windows.Visibility.Visible;
-                            mw.UpdatePillText.Text = "downloading";
+                            HelideUpdateState.SetDownloading();
                             var updater = new HelideUpdater();
-                            await updater.DownloadAndApplyAsync(pct =>
-                                Dispatcher.Invoke(() => mw.UpdatePillText.Text = $"installing ... {pct}%"));
+                            // Reported through the shared state so a window opened midway
+                            // sees the same labels rather than its own stale button.
+                            await updater.DownloadAndApplyAsync(pct => HelideUpdateState.SetProgress(pct));
 
                             // The project to resume once the user agrees to restart. The
                             // window may still be on the welcome screen here, in which
@@ -309,10 +309,10 @@ public partial class App : Application
                             }
 
                             HelideUpdateState.MarkUpdateApplied(projectPathArg);
-                            mw.UpdatePillText.Text = "restart to update";
                         }
                         catch (Exception ex)
                         {
+                            HelideUpdateState.Clear();
                             mw.UpdatePillText.Text = $"failed: {ex.Message}";
                         }
                     }

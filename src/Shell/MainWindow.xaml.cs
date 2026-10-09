@@ -152,7 +152,13 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             ThemePalette.ThemeChanged -= ThemePalette_ThemeChanged;
+            HelideUpdateState.Changed -= OnUpdateStateChanged;
         };
+
+        // The update state lives outside both the pill and the About window so they
+        // cannot disagree. Whoever downloads the update raises this, and the pill
+        // follows rather than the two of them racing to guess.
+        HelideUpdateState.Changed += OnUpdateStateChanged;
 
         CommandPaletteControl.Chosen += CommandPalette_Chosen;
         CommandPaletteControl.Dismissed += CloseCommandPalette;
@@ -706,6 +712,29 @@ private void OpenInNewWindow(string? projectPath)
         {
             UpdatePillText.Text = $"failed: {ex.Message}";
         }
+    }
+
+    // Raised by HelideUpdateState, which both the pill and the About window write to.
+    // Following the shared state instead of each window's own TextBlock is what keeps
+    // "the pill says restart but About offers to download again" from coming back.
+    private void OnUpdateStateChanged()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(OnUpdateStateChanged);
+            return;
+        }
+
+        var status = HelideUpdateState.Status;
+        if (string.IsNullOrEmpty(status)) return;
+
+        UpdatePill.Visibility = Visibility.Visible;
+        UpdatePillText.Text = status;
+        // Only clickable once the exe is on disk; mid-download a click would start a
+        // second one.
+        UpdatePill.Cursor = HelideUpdateState.IsReadyToRestart
+            ? System.Windows.Input.Cursors.Hand
+            : System.Windows.Input.Cursors.Arrow;
     }
 
     private void RunProjectCommand()

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO;
 using System.Windows;
 using System.Reflection;
 
@@ -11,25 +10,43 @@ public partial class AboutWindow : Window
     {
         InitializeComponent();
         VersionText.Text = $"Version {DescribeVersion()}";
-        Loaded += (_, _) => SyncWithMainWindow();
+        Loaded += (_, _) =>
+        {
+            // Past the constructor on purpose: the Owner is assigned after it, and the
+            // subscription has to outlive this window being reopened for a second look.
+            SyncWithUpdateState();
+            HelideUpdateState.Changed += OnUpdateStateChanged;
+        };
+        Closed += (_, _) => HelideUpdateState.Changed -= OnUpdateStateChanged;
     }
 
-    // The pill and this button must always read the same. Without this, opening About
-    // after a silent download shows "Check for Updates" and clicking it re-downloads the
-    // very exe that was just installed, which wastes the download and confuses the user.
-    private void SyncWithMainWindow()
-    {
-        var owner = Window.GetWindow(this) as MainWindow;
-        if (owner is null) return;
+    private void OnUpdateStateChanged() => SyncWithUpdateState();
 
-        if (owner.IsUpdateReadyToRestart)
+    // The pill and this button read the same place, so opening About mid-download shows
+    // the same thing rather than falling back to a stale "Check for Updates" -- which
+    // was both wrong to read and, if clicked, a second download of the same exe.
+    private void SyncWithUpdateState()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(SyncWithUpdateState);
+            return;
+        }
+
+        if (HelideUpdateState.IsReadyToRestart)
         {
             UpdateButton.Content = "restart to update";
             UpdateButton.IsEnabled = true;
         }
-        else if (UpdateButton.Content.ToString() == "restart to update")
+        else if (HelideUpdateState.IsInProgress)
+        {
+            UpdateButton.Content = HelideUpdateState.Status;
+            UpdateButton.IsEnabled = false;
+        }
+        else
         {
             UpdateButton.Content = "Check for Updates";
+            UpdateButton.IsEnabled = true;
         }
     }
 
@@ -41,56 +58,57 @@ public partial class AboutWindow : Window
 
     private async void UpdateButton_Click(object sender, RoutedEventArgs e)
     {
-        if (UpdateButton.Content.ToString() == "Check for Updates")
+        if (HelideUpdateState.IsReadyToRestart)
         {
-            UpdateButton.IsEnabled = false;
-            UpdateButton.Content = "downloading";
-            try
-            {
-                var updater = new HelideUpdater();
-                bool hasUpdate = await updater.CheckAsync();
-                if (hasUpdate)
-                {
-                    UpdateButton.Content = "installing";
-                    await updater.DownloadAndApplyAsync(pct =>
-                        Dispatcher.Invoke(() => UpdateButton.Content = $"installing ... {pct}%"));
-
-                    // This download is the other entry point into the state the pill uses.
-                    // Without this the button would offer a restart, but HelideUpdateState
-                    // would still be empty and restarting would drop the workspace.
-                    var owner = Window.GetWindow(this) as MainWindow;
-                    var projectPathArg = owner?.CurrentProject;
-                    if (string.IsNullOrEmpty(projectPathArg))
-                        projectPathArg = owner?.LastProjectPathFromState;
-                    HelideUpdateState.MarkUpdateApplied(projectPathArg);
-
-                    SyncWithMainWindow();
-                    if (UpdateButton.Content.ToString() != "restart to update")
-                        UpdateButton.Content = "restart to update";
-                    UpdateButton.IsEnabled = true;
-                    return;
-                }
-                SyncWithMainWindow();
-            }
-            catch (Exception ex)
-            {
-                UpdateButton.Content = $"failed: {ex.Message}";
-                await System.Threading.Tasks.Task.Delay(3000);
-                SyncWithMainWindow();
-            }
-            if (UpdateButton.Content.ToString() != "restart to update")
-            {
-                UpdateButton.IsEnabled = true;
-                UpdateButton.Content = "Check for Updates";
-            }
-        }
-        else if (UpdateButton.Content.ToString() == "restart to update")
-        {
-            try { new HelideUpdater().RestartApp(HelideUpdateState.PendingProjectPath); }
+            try { HelideUpdateState.Restart(); }
             catch (Exception ex)
             {
                 System.Windows.MessageBox.Show($"Failed to restart Helide: {ex.Message}", "Restart Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
+            return;
+        }
+
+        // A download is already running somewhere -- starting another one would waste
+        // the bandwidth on the same exe twice.
+        if (HelideUpdateState.IsInProgress)
+        {
+            SyncWithUpdateState();
+            return;
+        }
+
+        if (UpdateButton.Content.ToString() != "Check for Updates") return;
+
+        UpdateButton.IsEnabled = false;
+        try
+        {
+            var updater = new HelideUpdater();
+            bool hasUpdate = await updater.CheckAsync();
+            if (!hasUpdate)
+            {
+                HelideUpdateState.Clear();
+                SyncWithUpdateState();
+                return;
+            }
+
+            HelideUpdateState.SetDownloading();
+            await updater.DownloadAndApplyAsync(pct => HelideUpdateState.SetProgress(pct));
+
+            // This window is the other way an update can land on disk, so it has to
+            // record the same state the silent download did -- otherwise the shared
+            // restart path would restart with no project and the workspace is lost.
+            var owner = Owner as MainWindow;
+            var projectPath = owner?.CurrentProject;
+            if (string.IsNullOrEmpty(projectPath))
+                projectPath = owner?.LastProjectPathFromState ?? HelideUpdateState.PendingProjectPath;
+            HelideUpdateState.MarkUpdateApplied(projectPath);
+        }
+        catch (Exception ex)
+        {
+            HelideUpdateState.Clear();
+            UpdateButton.Content = $"failed: {ex.Message}";
+            UpdateButton.IsEnabled = false;
+            await System.Threading.Tasks.Task.Delay(3000);
+            SyncWithUpdateState();
         }
     }
 

@@ -201,19 +201,51 @@ public class HelideUpdater
 /// </summary>
 public static class HelideUpdateState
 {
+    // Null while nothing is happening: the About button then reads "Check for Updates".
+    // Otherwise the label both surfaces show -- "downloading", "installing ... 42%",
+    // or "restart to update" once the exe is on disk.
+    public static string? Status { get; private set; }
+
     /// True once the update is on disk and the app just needs to restart to load it.
     public static bool IsReadyToRestart { get; private set; }
+
+    /// True while the download/install is still in flight, so neither surface offers
+    /// an interaction that would start a second one.
+    public static bool IsInProgress => !IsReadyToRestart && Status is not null;
 
     /// The project to reopen after the restart. Empty means start on the welcome screen.
     public static string? PendingProjectPath { get; private set; }
 
     public static event Action? Changed;
 
+    public static void SetDownloading()
+    {
+        IsReadyToRestart = false;
+        Status = "downloading";
+        Changed?.Invoke();
+    }
+
+    public static void SetProgress(int percent)
+    {
+        IsReadyToRestart = false;
+        Status = $"installing ... {percent}%";
+        Changed?.Invoke();
+    }
+
     /// Call after DownloadAndApplyAsync succeeds. Both entry points read from here.
     public static void MarkUpdateApplied(string? projectPath)
     {
         IsReadyToRestart = true;
         PendingProjectPath = projectPath;
+        Status = "restart to update";
+        Changed?.Invoke();
+    }
+
+    /// Back to idle, which is what "up to date" or a failed attempt means.
+    public static void Clear()
+    {
+        IsReadyToRestart = false;
+        Status = null;
         Changed?.Invoke();
     }
 
