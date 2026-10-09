@@ -1,8 +1,11 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using Helide.Theme;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using ListBoxItem = System.Windows.Controls.ListBoxItem;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using TextChangedEventArgs = System.Windows.Controls.TextChangedEventArgs;
 using UserControl = System.Windows.Controls.UserControl;
@@ -22,7 +25,7 @@ namespace Helide.Shell;
 /// </remarks>
 public partial class CommandPalette : UserControl
 {
-    private readonly ObservableCollection<PaletteCommand> _visible = [];
+    private readonly ObservableCollection<PaletteRow> _visible = [];
     private IReadOnlyList<PaletteCommand> _all = [];
 
     public CommandPalette()
@@ -52,53 +55,111 @@ public partial class CommandPalette : UserControl
     {
         var query = QueryBox.Text;
 
-        _visible.Clear();
-        foreach (var command in _all)
-        {
-            if (command.CanInvoke?.Invoke() == false)
-                continue;
-
-            if (FuzzyMatch.ScoreCommand(command.Title, command.Keywords, query) <= 0)
-                continue;
-
-            _visible.Add(command);
-        }
+        var matched = _all
+            .Where(command => command.CanInvoke?.Invoke() != false)
+            .Where(command => FuzzyMatch.ScoreCommand(command.Title, command.Keywords, query) > 0)
+            .ToList();
 
         // Order only once something has been typed. With an empty query the declared
         // order is the useful one -- grouping still reads, and no reordering is needed.
         if (!string.IsNullOrWhiteSpace(query))
         {
-            var ordered = _visible
-                .Select(c => (Command: c, Score: FuzzyMatch.ScoreCommand(c.Title, c.Keywords, query)))
-                .OrderByDescending(x => x.Score)
-                .ThenBy(x => x.Command.Title, StringComparer.OrdinalIgnoreCase)
-                .Select(x => x.Command)
+            matched = matched
+                .OrderByDescending(c => FuzzyMatch.ScoreCommand(c.Title, c.Keywords, query))
+                .ThenBy(c => c.Title, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
 
-            _visible.Clear();
-            foreach (var command in ordered)
-                _visible.Add(command);
+        _visible.Clear();
+
+        // A heading is emitted only when it introduces something, so a filtered list
+        // never carries a row of empty categories above the results.
+        var currentGroup = string.Empty;
+        foreach (var command in matched)
+        {
+            var group = command.Group ?? string.Empty;
+            if (!string.Equals(group, currentGroup, StringComparison.Ordinal))
+            {
+                if (group.Length > 0)
+                {
+                    _visible.Add(PaletteRow.Heading(group));
+                    currentGroup = group;
+                }
+            }
+
+            _visible.Add(PaletteRow.For(command));
         }
 
         ResultsList.Visibility = _visible.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Visibility = _visible.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
 
-        // Land on the first row so Enter always does the obvious thing.
-        if (_visible.Count > 0)
-            ResultsList.SelectedIndex = 0;
+        // Land on the first command rather than the first row, so Enter runs something
+        // instead of trying to run a heading.
+        SelectFirstCommand();
+    }
+
+    private void SelectFirstCommand()
+    {
+        for (var i = 0; i < _visible.Count; i++)
+        {
+            if (_visible[i].IsHeading)
+                continue;
+
+            ResultsList.SelectedIndex = i;
+            ResultsList.ScrollIntoView(_visible[i]);
+            return;
+        }
+
+        ResultsList.SelectedIndex = -1;
     }
 
     private void QueryBox_TextChanged(object sender, TextChangedEventArgs e) => Refilter();
 
     /// <summary>
-    /// Double-click runs a command. Single click only selects, which is what the
-    /// ListBox already does -- binding invocation to a single click would fire commands
-    /// while the pointer was still travelling toward the row.
+    /// Moves the selection by whole rows. Public because the window's key handler owns
+    /// palette navigation: when the overlay was opened from a pane, the query box never
+    /// received these keys at all, so relying on its own handler left the list stuck.
     /// </summary>
-    private void Results_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    public void MoveSelection(int delta) => Move(delta);
+
+    /// <summary>Runs the selected command. Public for the same reason.</summary>
+    public void InvokeCurrent() => InvokeSelected();
+
+    /// <summary>
+    /// Appends a typed character. Used when a pane underneath still owns real keyboard
+    /// focus: the query box looks focused as far as WPF is concerned, yet no keystroke
+    /// ever reaches it, so characters have to be handed over explicitly.
+    /// </summary>
+    public void AppendText(string text) => QueryBox.AppendText(text);
+
+    /// <summary>
+    /// A click runs the command. Single click rather than double, because selecting is
+    /// not a useful outcome on its own here: a palette exists to be used with one
+    /// gesture, and with the selection indicator being the only feedback, a click that
+    /// only selected read as a click that did nothing.
+    /// </summary>
+    private void Results_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        // Clicks that miss a row -- the scrollbar, or the list padding -- must not run
+        // whatever happens to be selected.
+        if (Ancestor<ListBoxItem>(e.OriginalSource as DependencyObject) is null)
+            return;
+
         InvokeSelected();
         e.Handled = true;
+    }
+
+    private static T? Ancestor<T>(DependencyObject? start) where T : DependencyObject
+    {
+        for (var current = start; current is not null;)
+        {
+            if (current is T match)
+                return match;
+
+            current = VisualTreeHelper.GetParent(current) ?? LogicalTreeHelper.GetParent(current);
+        }
+
+        return null;
     }
 
     private void QueryBox_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -139,19 +200,29 @@ public partial class CommandPalette : UserControl
         if (_visible.Count == 0)
             return;
 
-        var next = ResultsList.SelectedIndex + delta;
-        if (next < 0)
-            next = _visible.Count - 1;
-        else if (next >= _visible.Count)
-            next = 0;
+        // Skips headings in both directions, so arrowing never stops on a row that
+        // cannot be run.
+        var index = ResultsList.SelectedIndex;
+        for (var step = 0; step < _visible.Count; step++)
+        {
+            index += delta;
+            if (index < 0)
+                index = _visible.Count - 1;
+            else if (index >= _visible.Count)
+                index = 0;
 
-        ResultsList.SelectedIndex = next;
-        ResultsList.ScrollIntoView(_visible[next]);
+            if (_visible[index].IsHeading)
+                continue;
+
+            ResultsList.SelectedIndex = index;
+            ResultsList.ScrollIntoView(_visible[index]);
+            return;
+        }
     }
 
     private void InvokeSelected()
     {
-        if (ResultsList.SelectedItem is not PaletteCommand command)
+        if (ResultsList.SelectedItem is not PaletteRow { Command: { } command })
             return;
 
         Chosen?.Invoke(command);

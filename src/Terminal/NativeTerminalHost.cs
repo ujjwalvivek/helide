@@ -37,9 +37,6 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr SetFocus(IntPtr hWnd);
 
-        [DllImport("user32.dll")]
-        public static extern short GetKeyState(int virtualKey);
-
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SetWindowPos(
@@ -63,75 +60,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     private readonly TextBlock _startupStatus;
     private DispatcherTimer? _revealTimer;
     private HwndHost? _rendererHost;
-    private HwndHost? _hookedHost;
     private bool _disposed;
-
-    private const int WmKeyDown = 0x0100;
-    private const int WmSysKeyDown = 0x0101;
-    private const int VkControl = 0x11;
-    private const int VkP = 0x50;
-
-    /// <summary>
-    /// Raised when the pane's renderer HWND sees Ctrl+P. The shortcut has to be caught
-    /// at the HWND rather than by a WPF key handler: <see cref="FocusTerminal"/> hands
-    /// real keyboard focus to the child renderer, and key messages sent to a focused
-    /// child HWND never enter WPF's input routing, so a window-level PreviewKeyDown
-    /// would not see them.
-    /// </summary>
-    public event Action? PaletteRequested;
-
-    private void AttachRendererHook()
-    {
-        if (_hookedHost is not null)
-            return;
-
-        // Resolved through FindRendererHost directly rather than through
-        // RendererHandle, which is the other half of this pair and would recurse.
-        var host = FindRendererHost();
-        if (host is null)
-            return;
-
-        IntPtr handle;
-        try
-        {
-            handle = host.Handle;
-        }
-        catch
-        {
-            // HwndHost throws while its window is being torn down.
-            return;
-        }
-
-        if (handle == IntPtr.Zero)
-            return;
-
-        // HwndHost.MessageHook, not HwndSource.AddHook. An HwndHost creates and owns
-        // its own HWND rather than being wrapped in an HwndSource, so HwndSource.FromHwnd
-        // returns null for it instead of throwing -- which is a null dereference waiting
-        // to happen. MessageHook is the supported path and, unlike a source hook, it
-        // survives the host rebuilding its window.
-        _hookedHost = host;
-        host.MessageHook += RendererKeyHook;
-    }
-
-    private IntPtr RendererKeyHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        if (msg is not (WmKeyDown or WmSysKeyDown))
-            return IntPtr.Zero;
-
-        if (wParam.ToInt32() != VkP)
-            return IntPtr.Zero;
-
-        var control = (NativeMethods.GetKeyState(VkControl) & 0x8000) != 0;
-        if (!control)
-            return IntPtr.Zero;
-
-        // Swallowed rather than forwarded: the pane has focus, so without this the
-        // character also reaches the shell or agent running inside it.
-        handled = true;
-        PaletteRequested?.Invoke();
-        return IntPtr.Zero;
-    }
 
     public NativeTerminalHost(
         string label,
@@ -406,10 +335,6 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         {
             PrepareTerminalSurface();
             ApplyTheme();
-
-            // Deferred to Loaded priority: the renderer's HwndHost does not have a
-            // handle at this point, so the shortcut hook cannot be attached yet.
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(AttachRendererHook));
         }
         catch
         {
@@ -547,13 +472,6 @@ private void Fail(string message)
         _disposed = true;
         _revealTimer?.Stop();
 
-        // Detached before the host is torn down: MessageHook fires on message
-        // dispatch, so a handler still attached to a disposed window is reachable.
-        if (_hookedHost is not null)
-        {
-            _hookedHost.MessageHook -= RendererKeyHook;
-            _hookedHost = null;
-        }
         ThemePalette.ThemeChanged -= Palette_ThemeChanged;
         _terminal.Terminal.Loaded -= Terminal_Loaded;
         _terminal.Terminal.RemoveHandler(Keyboard.GotKeyboardFocusEvent, _focusChangedHandler);

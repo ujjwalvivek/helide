@@ -55,6 +55,13 @@
     <SolidColorBrush x:Key="TextOnCaptionCloseBrush" Color="#FFFFFFFF" />
     <SolidColorBrush x:Key="TerminalHintBrush" Color="#FF6C6C6C" />
 
+    <!--
+        Muted relative to Catppuccin: this theme runs pure black and pure white, and a
+        full-strength mauve would read as a third accent rather than as the secondary
+        tone it is.
+    -->
+    <SolidColorBrush x:Key="MauveBrush" Color="#FFB79ACB" />
+
     <!-- Status -->
     <SolidColorBrush x:Key="AccentBrush" Color="#FFFFFFFF" />
     <SolidColorBrush x:Key="DangerBrush" Color="#FFD06C6C" />

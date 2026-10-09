@@ -4,6 +4,71 @@
              Background="Transparent"
              Focusable="False"
              Width="640">
+    <UserControl.Resources>
+        <!--
+            A slim themed scrollbar. The WPF default is a wide grey trough with arrow
+            buttons at each end, which is both out of place against this surface and
+            wide enough to eat the list's right margin. Arrows are removed because the
+            wheel and the keyboard both drive this list.
+        -->
+        <Style x:Key="PaletteScrollThumb" TargetType="Thumb">
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="Bar"
+                                Background="{DynamicResource BorderBrush}"
+                                CornerRadius="3"
+                                Width="6"
+                                Margin="0,2" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bar" Property="Background"
+                                        Value="{DynamicResource TextFaintBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="Bar" Property="Background"
+                                        Value="{DynamicResource MauveBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ScrollBar">
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource PaletteScrollThumb}" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Orientation" Value="Horizontal">
+                                <Setter Property="Height" Value="10" />
+                                <Setter Property="Width" Value="Auto" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <Border Background="{DynamicResource PopoverBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="1"
@@ -24,51 +89,57 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- Query strip. Full width and on its own background so it reads as a
-                 header, matching the pane headers, rather than as a text box floating
-                 on the list. -->
+            <!-- Query strip. Columns so the icon, the caret and the placeholder cannot
+                 land on top of each other; they previously shared one cell and the
+                 placeholder sat under the glyph. -->
             <Border Grid.Row="0"
                     Background="{DynamicResource PaneHeaderBrush}"
                     CornerRadius="8,8,0,0"
-                    Padding="14,0">
-                <Grid Height="44">
-                    <TextBlock Text="&#xE721;"
+                    Padding="16,0,16,0">
+                <Grid Height="46">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="&#xE721;"
                                FontFamily="Segoe Fluent Icons"
                                FontSize="{DynamicResource FontSizeMedium}"
-                               Foreground="{DynamicResource AccentBrush}"
+                               Foreground="{DynamicResource MauveBrush}"
                                VerticalAlignment="Center"
-                               Margin="0,0,10,0" />
-                    <TextBox x:Name="QueryBox"
-                             TextChanged="QueryBox_TextChanged"
-                             PreviewKeyDown="QueryBox_PreviewKeyDown"
-                             FontFamily="{DynamicResource UiFontFamily}"
-                             FontSize="{DynamicResource FontSizeBody}"
-                             Foreground="{DynamicResource TextBrush}"
-                             CaretBrush="{DynamicResource AccentBrush}"
-                             SelectionBrush="{DynamicResource AccentBrush}"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             Padding="0"
-                             VerticalContentAlignment="Center" />
-                    <!-- Placeholder, so an empty palette is not a blank bar. -->
-                    <TextBlock Text="Type a command"
-                               FontFamily="{DynamicResource UiFontFamily}"
-                               FontSize="{DynamicResource FontSizeBody}"
-                               Foreground="{DynamicResource TextSubtleBrush}"
-                               VerticalAlignment="Center"
-                               IsHitTestVisible="False">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Text, ElementName=QueryBox}"
-                                                 Value="">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                               Margin="0,0,12,0" />
+                    <Grid Grid.Column="1">
+                        <TextBox x:Name="QueryBox"
+                                 TextChanged="QueryBox_TextChanged"
+                                 PreviewKeyDown="QueryBox_PreviewKeyDown"
+                                 FontFamily="{DynamicResource UiFontFamily}"
+                                 FontSize="{DynamicResource FontSizeBody}"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 CaretBrush="{DynamicResource MauveBrush}"
+                                 SelectionBrush="{DynamicResource MauveBrush}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="0"
+                                 VerticalContentAlignment="Center" />
+                        <TextBlock Text="Type a command"
+                                   FontFamily="{DynamicResource UiFontFamily}"
+                                   FontSize="{DynamicResource FontSizeBody}"
+                                   Foreground="{DynamicResource TextFaintBrush}"
+                                   VerticalAlignment="Center"
+                                   IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=QueryBox}"
+                                                     Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                 </Grid>
             </Border>
 
@@ -80,19 +151,19 @@
                      Grid.Row="2"
                      Background="Transparent"
                      BorderThickness="0"
-                     MaxHeight="380"
-                     MinHeight="90"
+                     MaxHeight="384"
+                     MinHeight="96"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                      Padding="6,6"
                      HorizontalContentAlignment="Stretch"
-                     MouseDoubleClick="Results_MouseDoubleClick"
+                     MouseLeftButtonUp="Results_MouseLeftButtonUp"
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.VirtualizationMode="Recycling">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
                         <Setter Property="Padding" Value="0" />
-                        <Setter Property="Margin" Value="0,1" />
+                        <Setter Property="Margin" Value="0,0" />
                         <Setter Property="Background" Value="Transparent" />
                         <Setter Property="Cursor" Value="Hand" />
                         <Setter Property="Template">
@@ -101,18 +172,36 @@
                                     <Border x:Name="Row"
                                             Background="{TemplateBinding Background}"
                                             CornerRadius="6"
-                                            Padding="12,9">
-                                        <ContentPresenter />
+                                            Padding="10,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <!-- Selection marker. A background alone cannot
+                                                 carry it: this theme's Interactive and Border
+                                                 brushes are the same value, so a selected row
+                                                 looked identical to an unselected one and
+                                                 clicking appeared to do nothing. -->
+                                            <Border x:Name="Marker"
+                                                    Grid.Column="0"
+                                                    Width="2"
+                                                    Margin="0,2,10,2"
+                                                    CornerRadius="1"
+                                                    Background="Transparent" />
+                                            <ContentPresenter Grid.Column="1" />
+                                        </Grid>
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
                                             <Setter TargetName="Row" Property="Background"
-                                                    Value="{DynamicResource InteractiveBrush}" />
+                                                    Value="{DynamicResource RaisedBrush}" />
                                         </Trigger>
                                         <Trigger Property="IsSelected" Value="True">
                                             <Setter TargetName="Row" Property="Background"
-                                                    Value="{DynamicResource InteractiveBrush}" />
-                                            <Setter Property="Cursor" Value="Hand" />
+                                                    Value="{DynamicResource RaisedBrush}" />
+                                            <Setter TargetName="Marker" Property="Background"
+                                                    Value="{DynamicResource MauveBrush}" />
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -122,45 +211,56 @@
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
+                        <!-- Headings and commands share one template so the list stays a
+                             single flat collection. A heading binds no detail and is
+                             restyled by IsHeading; commands are indented under it. -->
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <!-- Group is a coloured label rather than a heading row: a
-                                 heading per group would spend more vertical space on
-                                 structure than on the commands themselves. -->
+
                             <TextBlock Grid.Column="0"
-                                       Text="{Binding Group}"
-                                       FontFamily="{DynamicResource UiFontFamily}"
-                                       FontSize="{DynamicResource FontSizeSmall}"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource AccentBrush}"
-                                       VerticalAlignment="Center"
-                                       MinWidth="52"
-                                       Margin="0,0,14,0" />
-                            <TextBlock Grid.Column="1"
                                        Text="{Binding Title}"
-                                       FontFamily="{DynamicResource UiFontFamily}"
-                                       FontSize="{DynamicResource FontSizeBody}"
-                                       Foreground="{DynamicResource TextBrush}"
                                        VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis" />
-                            <TextBlock Grid.Column="2"
+                                       TextTrimming="CharacterEllipsis">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontFamily" Value="{DynamicResource UiFontFamily}" />
+                                        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                                        <Style.Triggers>
+                                            <!-- Headings sit flush and carry the spacing that
+                                                 indents the commands below them. -->
+                                            <DataTrigger Binding="{Binding IsHeading}" Value="True">
+                                                <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}" />
+                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                <Setter Property="Foreground" Value="{DynamicResource MauveBrush}" />
+                                                <Setter Property="Margin" Value="2,0,0,0" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsHeading}" Value="False">
+                                                <Setter Property="Margin" Value="22,0,0,0" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <TextBlock Grid.Column="1"
                                        Text="{Binding Detail}"
                                        FontFamily="{DynamicResource UiMonoFontFamily}"
                                        FontSize="{DynamicResource FontSizeSmall}"
-                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       Foreground="{DynamicResource MauveBrush}"
                                        VerticalAlignment="Center"
-                                       Margin="16,0,2,0" />
+                                       Margin="18,0,2,0"
+                                       TextTrimming="CharacterEllipsis" />
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
 
             <!-- Shown instead of the list when a query matches nothing. A blank panel
-                 reads as a broken palette rather than an empty result. -->
+                 reads as a broken palette rather than as an empty result. -->
             <TextBlock x:Name="EmptyText"
                        Grid.Row="2"
                        Text="No matching commands"
@@ -176,16 +276,14 @@
                     Height="1"
                     Background="{DynamicResource BorderBrush}" />
 
-            <!-- Hint strip. Its own row and its own background, so it cannot sit on top
-                 of the separator above it. -->
             <Border Grid.Row="4"
                     Background="{DynamicResource PaneHeaderBrush}"
                     CornerRadius="0,0,8,8"
-                    Padding="14,7">
+                    Padding="16,8">
                 <TextBlock Text="Enter run    ·    ↑ ↓ move    ·    Esc close"
                            FontFamily="{DynamicResource UiFontFamily}"
                            FontSize="{DynamicResource FontSizeSmall}"
-                           Foreground="{DynamicResource TextMutedBrush}" />
+                           Foreground="{DynamicResource TextFaintBrush}" />
             </Border>
         </Grid>
     </Border>

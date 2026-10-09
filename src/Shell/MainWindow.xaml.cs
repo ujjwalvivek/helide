@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -217,6 +218,18 @@ public partial class MainWindow : Window
     // make sense once there is somewhere to put them. Built fresh on each open because
     // most of it depends on what is currently open.
 
+    private static class NativeMethods
+    {
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr SetFocus(IntPtr hWnd);
+
+        // Which window in this thread holds real keyboard focus. WPF's
+        // Keyboard.FocusedElement cannot answer this: it reports the query box as
+        // focused even while the terminal's HWND is the one receiving keys.
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetFocus();
+    }
+
     private bool _paletteOpen;
 
     private void OpenCommandPalette()
@@ -235,14 +248,21 @@ public partial class MainWindow : Window
 
         // Focus comes from the popup's own Opened event, which is the first moment its
         // HwndSource exists. Asking earlier just queues focus against a window that is
-        // not there yet, which is why Escape and typing used to do nothing.
+        // not there yet.
     }
 
     private void CommandPalettePopup_Opened(object sender, EventArgs e)
     {
-        // Focusable popup: WPF activates the child's HwndSource itself, so this only has
-        // to put the caret in the query box.
         CommandPaletteControl.FocusQuery();
+
+        // WPF focus alone is not enough when the palette was opened from a pane. That
+        // pane's renderer still holds real keyboard focus, so keystrokes went to it
+        // rather than to the query box -- which is why Escape and typing did nothing
+        // even though WPF reported the TextBox as the focused element. Handing the
+        // popup's own window the focus is the same move NativeTerminalHost.FocusTerminal
+        // makes in reverse.
+        if (PresentationSource.FromVisual(CommandPaletteControl) is HwndSource source)
+            NativeMethods.SetFocus(source.Handle);
     }
 
     private void CloseCommandPalette()
@@ -338,48 +358,37 @@ public partial class MainWindow : Window
 
     private void OpenProjectFolder() => OpenProjectButton_Click(this, new RoutedEventArgs());
 
-    // Every pane needs the palette shortcut, and each one has to be told about it at
-    // construction: the hook lives on that pane's renderer HWND, which does not exist
-    // until the terminal loads. Routing all five creation sites through here keeps that
-    // from being forgotten when a new kind of pane is added.
-    private NativeTerminalHost PaletteAwareHost(NativeTerminalHost host)
+    // Whether the popup's own window is the one receiving real keystrokes.
+    //
+    // This replaced a check on WPF's Keyboard.FocusedElement, which was the wrong
+    // signal: it reports the query box as focused even while the terminal's HWND is
+    // the one actually receiving keys, so the palette believed it had the keyboard and
+    // let arrows and characters fall through to a text box that never saw them.
+    private bool PaletteHasOsFocus()
     {
-        host.PaletteRequested += OnRendererPaletteRequested;
-        return host;
+        if (PresentationSource.FromVisual(CommandPaletteControl) is not HwndSource source)
+            return false;
+
+        return NativeMethods.GetFocus() == source.Handle;
     }
 
-    // A pane's HWND hook and the window's key handler both see the same physical
-    // Ctrl+P. Opening the palette moves focus into it, so the press continues into WPF
-    // and the overlay was toggled a second time on the same keypress -- opening and
-    // shutting on one press, then again on the next, which is the loop. Synthesising
-    // the key event routes both paths through the one handler that owns the decision.
-    private void OnRendererPaletteRequested()
+    // The character a key produces, or null when it is not printable. Only plain
+    // unmodified keys are forwarded; anything with a modifier is a shortcut.
+    private static string? PrintableText(Key key)
     {
-        if (PresentationSource.FromVisual(this) is not PresentationSource source)
-            return;
+        if (Keyboard.Modifiers != ModifierKeys.None)
+            return null;
 
-        // Raised on the window because that is where PreviewKeyDown is handled.
-        RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.P)
-        {
-            RoutedEvent = Keyboard.PreviewKeyDownEvent,
-        });
-    }
+        if (key == Key.Space)
+            return " ";
 
-    // True when WPF's keyboard focus is inside the palette, in which case the palette's
-    // own controls must be the ones to see the key.
-    private bool PaletteOwnsKeyboard()
-    {
-        DependencyObject? current = Keyboard.FocusedElement as DependencyObject;
+        if (key is >= Key.A and <= Key.Z)
+            return key.ToString();
 
-        while (current is not null)
-        {
-            if (ReferenceEquals(current, CommandPaletteControl))
-                return true;
+        if (key is >= Key.D0 and <= Key.D9)
+            return ((char)('0' + (key - Key.D0))).ToString();
 
-            current = VisualTreeHelper.GetParent(current);
-        }
-
-        return false;
+        return null;
     }
 
     private void ToggleCommandPalette()
@@ -682,7 +691,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var host = PaletteAwareHost(new NativeTerminalHost(label, commandLine, workingDirectory));
+            var host = new NativeTerminalHost(label, commandLine, workingDirectory);
             host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
             slot.Content = host;
             _terminalHosts.Add(host);
@@ -707,7 +716,7 @@ public partial class MainWindow : Window
     {
         var label = tool == LeftTool.Project ? "yazi" : "lazygit";
         var stateText = tool == LeftTool.Project ? ProjectPaneState : GitPaneState;
-        var host = PaletteAwareHost(new NativeTerminalHost(label, ToolCommand($"{label}.exe"), _currentProject!));
+        var host = new NativeTerminalHost(label, ToolCommand($"{label}.exe"), _currentProject!);
         host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
         LeftToolStack.Children.Add(host);
         _terminalHosts.Add(host);
@@ -937,7 +946,7 @@ public partial class MainWindow : Window
         var command = path is null ? ToolCommand("hx.exe", ".") : ToolCommand("hx.exe", path);
         try
         {
-            var host = PaletteAwareHost(new NativeTerminalHost("helix", command, _currentProject, path));
+            var host = new NativeTerminalHost("helix", command, _currentProject, path);
             var tab = new EditorTab(path, host);
 
             EditorSlot.Children.Add(host);
@@ -1102,34 +1111,62 @@ public partial class MainWindow : Window
     {
         var modifiers = Keyboard.Modifiers;
 
-        if (_paletteOpen)
-        {
-            // The closing chord is handled here even though focus is in the query box,
-            // because that box only knows about Escape.
-            if (modifiers == ModifierKeys.Control && e.Key == Key.P)
-            {
-                CloseCommandPalette();
-                e.Handled = true;
-                return;
-            }
-
-            // Everything else belongs to the palette. This handler is Preview, which
-            // tunnels from the root down, so it runs *before* the focused element: any
-            // key swallowed here never reaches the query box. That is what made Escape
-            // and typing do nothing while the overlay was up.
-            if (PaletteOwnsKeyboard())
-                return;
-
-            // Focus is still on a pane underneath, so this key is aimed at a terminal
-            // hidden behind the overlay and must not reach it.
-            e.Handled = true;
-            return;
-        }
-
         if (modifiers == ModifierKeys.Control && e.Key == Key.P)
         {
             ToggleCommandPalette();
             e.Handled = true;
+            return;
+        }
+
+        if (_paletteOpen)
+        {
+            // Palette navigation is handled here rather than only in the query box.
+            //
+            // Opened from a pane, the palette takes WPF focus but the OS focus can stay
+            // on that pane's renderer HWND, so the query box's own handlers never run.
+            // The trace showed the split cleanly: Escape and the arrows did nothing when
+            // opened from a terminal and worked when opened from the window. This
+            // handler receives keys either way, so it owns them.
+            switch (e.Key)
+            {
+                case Key.Escape:
+                    CloseCommandPalette();
+                    e.Handled = true;
+                    return;
+
+                case Key.Down:
+                    CommandPaletteControl.MoveSelection(1);
+                    e.Handled = true;
+                    return;
+
+                case Key.Up:
+                    CommandPaletteControl.MoveSelection(-1);
+                    e.Handled = true;
+                    return;
+
+                case Key.Enter:
+                    CommandPaletteControl.InvokeCurrent();
+                    e.Handled = true;
+                    return;
+            }
+
+            // Everything else belongs to the palette. This handler is Preview, which
+            // tunnels from the root down, so anything swallowed here would never reach
+            // the query box.
+            //
+            // If the popup is not the window actually receiving keys, the characters are
+            // handed over by hand. Letting them fall through instead would send them to
+            // the terminal behind the overlay, which is how typing silently typed into a
+            // shell while the palette sat there looking focused.
+            if (!PaletteHasOsFocus())
+            {
+                if (PrintableText(e.Key) is { } text)
+                    CommandPaletteControl.AppendText(text);
+
+                e.Handled = true;
+                return;
+            }
+
             return;
         }
 
@@ -1590,7 +1627,7 @@ public partial class MainWindow : Window
         try
         {
             // Create the new session host
-            var host = PaletteAwareHost(new NativeTerminalHost(type, commandLine, _currentProject!));
+            var host = new NativeTerminalHost(type, commandLine, _currentProject!);
 
             // Replace the agent panel content
             AgentSlot.Content = host;
@@ -2279,7 +2316,7 @@ public partial class MainWindow : Window
         if (_currentProject is null) return;
         try
         {
-            var host = PaletteAwareHost(new NativeTerminalHost(type, commandLine, _currentProject!));
+            var host = new NativeTerminalHost(type, commandLine, _currentProject!);
             RunnerSlot.Content = host;
             _terminalHosts.Add(host);
 

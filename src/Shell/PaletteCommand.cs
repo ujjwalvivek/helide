@@ -56,3 +56,35 @@ public sealed class PaletteCommand
     public static string? Gesture(Key key, ModifierKeys modifiers = ModifierKeys.Control) =>
         modifiers == ModifierKeys.None ? key.ToString() : $"{modifiers}+{key}";
 }
+
+/// <summary>
+/// One rendered line in the palette: either a category heading or a command under one.
+/// </summary>
+/// <remarks>
+/// Headings and commands are interleaved in a single list rather than the commands
+/// being grouped by a ListBox <c>GroupStyle</c>. Grouping re-groups whenever the query
+/// re-sorts the list, which makes headings jump around mid-typing; interleaving keeps
+/// each heading attached to the commands it introduces.
+/// </remarks>
+internal sealed class PaletteRow
+{
+    private PaletteRow(string title, PaletteCommand? command)
+    {
+        Title = title;
+        Command = command;
+    }
+
+    public string Title { get; }
+
+    /// <summary>Right-aligned hint for a command row; empty on a heading.</summary>
+    public string Detail => Command?.Detail ?? string.Empty;
+
+    /// <summary>Null for a heading row, which cannot be run.</summary>
+    public PaletteCommand? Command { get; }
+
+    public bool IsHeading => Command is null;
+
+    public static PaletteRow Heading(string group) => new(group.ToUpperInvariant(), null);
+
+    public static PaletteRow For(PaletteCommand command) => new(command.Title, command);
+}

@@ -57,6 +57,13 @@
     <SolidColorBrush x:Key="TextOnCaptionCloseBrush" Color="#ffffff" />
     <SolidColorBrush x:Key="TerminalHintBrush" Color="#7782a4" />
 
+    <!--
+        The Helide mark is mauve, so the palette's secondary column uses the same
+        value rather than a grey. It is a token rather than a literal because OLED
+        needs its own: pure white on pure black is the whole point of that theme.
+    -->
+    <SolidColorBrush x:Key="MauveBrush" Color="#cba6f7" />
+
     <!-- Status -->
     <SolidColorBrush x:Key="AccentBrush" Color="#89b4fa" />
     <SolidColorBrush x:Key="DangerBrush" Color="#f38ba8" />
