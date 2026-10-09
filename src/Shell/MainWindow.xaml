@@ -999,9 +999,21 @@
                                     Grid.Row="0"
                                     Style="{DynamicResource PaneHeaderStyle}"
                                 >
-                                <DockPanel Margin="9,0" LastChildFill="False">
+                                <!-- A Grid rather than a DockPanel: the strip has to be the
+                                     flexible element so it gives up width when the pane is
+                                     narrow. Docked children are measured in order and each
+                                     takes what it asks for, so a capped strip still pushed the
+                                     + button and the state text off the right edge once the
+                                     tab list grew. -->
+                                <Grid Margin="9,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
                                     <TextBlock
-                                            DockPanel.Dock="Left"
+                                            Grid.Column="0"
                                             Text="HELIX"
                                             VerticalAlignment="Center"
                                             FontFamily="{DynamicResource UiMonoFontFamily}"
@@ -1009,25 +1021,26 @@
                                             Foreground="{DynamicResource TextPaneTitleBrush}"
                                         />
                                     <Border
-                                            DockPanel.Dock="Left"
+                                            Grid.Column="1"
                                             Width="1"
                                             Margin="8,6"
                                             Background="{DynamicResource BorderBrush}"
                                             VerticalAlignment="Center"
                                         />
-<Border
-                                            DockPanel.Dock="Left"
+                                    <Border
+                                            Grid.Column="2"
                                             VerticalAlignment="Stretch"
                                             Height="27"
-                                            MaxWidth="560"
-                                            Margin="9,0,0,0"
+                                            Margin="9,0,4,0"
                                             Background="Transparent"
                                             ClipToBounds="True">
                                             <!-- The tab strip is clipped to the header row, so a
                                                  long list of tabs slides out of sight instead of
                                                  spilling down the pane. -->
                                             <ScrollViewer
-                                                    HorizontalScrollBarVisibility="Auto"
+                                                    x:Name="EditorTabStripScroll"
+                                                    PreviewMouseWheel="TabStrip_MouseWheel"
+                                                    HorizontalScrollBarVisibility="Hidden"
                                                     VerticalScrollBarVisibility="Disabled"
                                                     Focusable="False"
                                             >
@@ -1130,6 +1143,8 @@
                                             </ScrollViewer>
                                         </Border>
                                         <Button
+                                                Grid.Column="3"
+                                                VerticalAlignment="Center"
                                                 x:Name="EditorTabSplitButton"
                                                 Width="22"
                                                 Height="27"
@@ -1164,15 +1179,7 @@
                                                 </ControlTemplate>
                                             </Button.Template>
                                         </Button>
-                                    <TextBlock
-                                            DockPanel.Dock="Right"
-                                            x:Name="EditorPaneState"
-                                            Text="starting"
-                                            VerticalAlignment="Center"
-                                            Foreground="{DynamicResource TextIdleBrush}"
-                                            FontSize="{DynamicResource FontSizeSmall}"
-                                        />
-                                </DockPanel>
+                                </Grid>
                             </Border>
                             <Grid
                                     Grid.Row="1"
@@ -1200,9 +1207,15 @@
                                     Grid.Row="0"
                                     Style="{DynamicResource PaneHeaderStyle}"
                                 >
-                                <DockPanel Margin="9,0" LastChildFill="False">
+                                <Grid Margin="9,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
                                     <TextBlock
-                                            DockPanel.Dock="Left"
+                                            Grid.Column="0"
                                             Text="RUN"
                                             VerticalAlignment="Center"
                                             FontFamily="{DynamicResource UiMonoFontFamily}"
@@ -1210,26 +1223,27 @@
                                             Foreground="{DynamicResource TextPaneTitleBrush}"
                                         />
                                     <Border
-                                            DockPanel.Dock="Left"
+                                            Grid.Column="1"
                                             Width="1"
                                             Margin="8,6"
                                             Background="{DynamicResource BorderBrush}"
                                             VerticalAlignment="Center"
                                         />
                                     <Border
-                                            DockPanel.Dock="Left"
+                                            Grid.Column="2"
                                             VerticalAlignment="Stretch"
                                             Height="27"
-                                            MaxWidth="300"
-                                            Margin="9,0,0,0"
+                                            Margin="9,0,4,0"
                                             Background="Transparent"
                                             ClipToBounds="True"
                                         >
                                         <ScrollViewer
-                                                HorizontalScrollBarVisibility="Auto"
+                                                x:Name="RunnerTabStripScroll"
+                                                PreviewMouseWheel="TabStrip_MouseWheel"
+                                                HorizontalScrollBarVisibility="Hidden"
                                                 VerticalScrollBarVisibility="Disabled"
                                                 Focusable="False"
-                                            >
+                                        >
                                             <ItemsControl x:Name="RunnerTabStrip" Margin="0,1,0,0">
                                                 <ItemsControl.ItemsPanel>
                                                     <ItemsPanelTemplate>
@@ -1319,6 +1333,8 @@
                                         </ScrollViewer>
                                     </Border>
                                     <Button
+                                            Grid.Column="3"
+                                            VerticalAlignment="Center"
                                             x:Name="RunnerNewSessionButton"
                                             Click="RunnerNewSessionButton_Click"
                                             ToolTip="New runner session"
@@ -1353,15 +1369,7 @@
                                             </ControlTemplate>
                                         </Button.Template>
                                     </Button>
-                                    <TextBlock
-                                            DockPanel.Dock="Right"
-                                            x:Name="RunnerPaneState"
-                                            Text="starting"
-                                            VerticalAlignment="Center"
-                                            Foreground="{DynamicResource TextIdleBrush}"
-                                            FontSize="{DynamicResource FontSizeSmall}"
-                                        />
-                                </DockPanel>
+                                </Grid>
                             </Border>
                             <ContentControl
                                     Grid.Row="1"
@@ -1392,10 +1400,16 @@
                                 Grid.Row="0"
                                 Style="{DynamicResource PaneHeaderStyle}"
                             >
-                            <DockPanel Margin="9,0" LastChildFill="False">
+                            <Grid Margin="9,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <!-- Title -->
                                 <TextBlock
-                                        DockPanel.Dock="Left"
+                                        Grid.Column="0"
                                         x:Name="AgentPaneTitle"
                                         Text="OPENCODE"
                                         VerticalAlignment="Center"
@@ -1405,7 +1419,7 @@
                                     />
                                 <!-- Separator -->
                                 <Border
-                                        DockPanel.Dock="Left"
+                                        Grid.Column="1"
                                         Width="1"
                                         Margin="8,6"
                                         Background="{DynamicResource BorderBrush}"
@@ -1413,19 +1427,20 @@
                                     />
                                 <!-- Session tab strip -->
                                 <Border
-                                        DockPanel.Dock="Left"
+                                        Grid.Column="2"
                                         VerticalAlignment="Stretch"
                                         Height="27"
-                                        MaxWidth="400"
-                                        Margin="9,0,0,0"
+                                        Margin="9,0,4,0"
                                         Background="Transparent"
                                         ClipToBounds="True"
                                     >
                                     <ScrollViewer
-                                            HorizontalScrollBarVisibility="Auto"
+                                            x:Name="AgentTabStripScroll"
+                                            PreviewMouseWheel="TabStrip_MouseWheel"
+                                            HorizontalScrollBarVisibility="Hidden"
                                             VerticalScrollBarVisibility="Disabled"
                                             Focusable="False"
-                                        >
+                                    >
                                         <ItemsControl x:Name="AgentTabStrip" Margin="0,1,0,0">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate>
@@ -1516,6 +1531,8 @@
                                 </Border>
                                 <!-- + icon -->
                                 <Button
+                                        Grid.Column="3"
+                                        VerticalAlignment="Center"
                                         x:Name="AgentNewSessionButton"
                                         Click="AgentNewSessionButton_Click"
                                         ToolTip="New agent session"
@@ -1550,16 +1567,7 @@
                                         </ControlTemplate>
                                     </Button.Template>
                                 </Button>
-                                <!-- State -->
-                                <TextBlock
-                                        DockPanel.Dock="Right"
-                                        x:Name="AgentPaneState"
-                                        Text="starting"
-                                        VerticalAlignment="Center"
-                                        Foreground="{DynamicResource TextIdleBrush}"
-                                        FontSize="{DynamicResource FontSizeSmall}"
-                                    />
-                            </DockPanel>
+                            </Grid>
                         </Border>
                         <!-- Flyout for new agent session -->
                         <Popup

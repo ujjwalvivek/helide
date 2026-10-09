@@ -649,6 +649,49 @@ public partial class MainWindow : Window
         CreateEditorTab(path);
     }
 
+    // ---- Tab strip scrolling ----------------------------------------------------
+    //
+    // Three tab strips (editor, runner, agent) share this behaviour: no scrollbar is
+    // drawn, the wheel scrolls them horizontally, and adding a tab scrolls it into
+    // view. Without this a strip whose tabs outgrow the pane leaves the new tab --
+    // the one you just asked for -- sitting off-screen past the right edge.
+
+    // Wheel over a strip scrolls it sideways. A vertical wheel is the gesture people
+    // actually have, and ScrollViewer would otherwise swallow it (the strip is
+    // horizontal, so vertical scrolling does nothing and the wheel does nothing at
+    // all). Marking the event handled stops the wheel bubbling up to whatever the
+    // pane underneath would do with it.
+    private void TabStrip_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ScrollViewer viewer)
+            return;
+
+        if (e.Delta == 0)
+            return;
+
+        // A strip whose content fits has nothing to scroll. Left alone, the offset is
+        // set to a negative value and clamped, and the strip appears to eat the wheel
+        // instead of passing it on.
+        if (viewer.ScrollableWidth <= 0)
+            return;
+
+        viewer.ScrollToHorizontalOffset(viewer.HorizontalOffset - (e.Delta / 120.0) * 48.0);
+        e.Handled = true;
+    }
+
+    // Scrolls a strip so its right-hand end is visible. Called when a tab is added,
+    // since that is the case where the content grows past the viewport; the offset
+    // can then only be past the end already.
+    private static void ScrollStripToEnd(System.Windows.Controls.ScrollViewer viewer)
+    {
+        // Deferred to the next layout pass: the new tab has no measured width until
+        // the ItemsControl has arranged, so the extent read now is the old one and the
+        // new tab would still be off-screen.
+        viewer.Dispatcher.BeginInvoke(
+            DispatcherPriority.Loaded,
+            new Action(() => viewer.ScrollToRightEnd()));
+    }
+
     private EditorTab? CreateEditorTab(string? path)
     {
         if (_currentProject is null)
@@ -661,27 +704,16 @@ public partial class MainWindow : Window
             var host = new NativeTerminalHost("helix", command, _currentProject, path);
             var tab = new EditorTab(path, host);
 
-            // Only the tab actually on screen may write the pane header. Every tab
-            // shares one header, so without this the state of a background tab --
-            // including the "stopped" that closing one reports -- would overwrite
-            // what the visible tab is doing.
-            host.StateChanged += (_, state) =>
-            {
-                if (ReferenceEquals(_activeEditorTab, tab))
-                    UpdatePaneState(EditorPaneState, state);
-            };
-
             EditorSlot.Children.Add(host);
             _editorTabs.Add(tab);
             _terminalHosts.Add(host);
+            ScrollStripToEnd(EditorTabStripScroll);
             ActivateEditorTab(tab);
             return tab;
         }
         catch (Exception exception)
         {
             EditorSlot.Children.Add(CreateErrorPanel("helix", exception));
-            EditorPaneState.Text = "failed";
-            EditorPaneState.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
             return null;
         }
     }
@@ -699,10 +731,6 @@ public partial class MainWindow : Window
         // The dot means "not looked at yet", so arriving here clears it. Without
         // this it would sit there for the rest of the session.
         tab.ClearAttention();
-
-        // A tab that has been sitting in the background has not reported its state
-        // since it was last on screen, so repaint the header from the host itself.
-        UpdatePaneState(EditorPaneState, tab.Host.State);
 
         // The renderer only exists once WPF has laid the host out at a real size, so
         // the raise has to wait for a pass that has actually happened.
@@ -812,8 +840,7 @@ public partial class MainWindow : Window
 
     private void ResetPaneStates()
     {
-        foreach (var stateText in new[]
-                 { GitPaneState, ProjectPaneState, EditorPaneState, RunnerPaneState, AgentPaneState })
+        foreach (var stateText in new[] { GitPaneState, ProjectPaneState })
         {
             stateText.Text = "starting";
             stateText.Foreground = ThemePalette.Brush(ThemePalette.TextIdleBrush);
@@ -1378,7 +1405,6 @@ public partial class MainWindow : Window
         {
             // Create the new session host
             var host = new NativeTerminalHost(type, commandLine, _currentProject!);
-            host.StateChanged += (_, state) => UpdatePaneState(AgentPaneState, state);
 
             // Replace the agent panel content
             AgentSlot.Content = host;
@@ -1404,8 +1430,6 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             AgentSlot.Content = CreateErrorPanel(type, exception);
-            AgentPaneState.Text = "failed";
-            AgentPaneState.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
         }
     }
     private void AgentSessionButton_Click(object sender, RoutedEventArgs e)
@@ -1433,6 +1457,7 @@ public partial class MainWindow : Window
     {
         AgentTabStrip.ItemsSource = null;
         AgentTabStrip.ItemsSource = _agentSessions;
+        ScrollStripToEnd(AgentTabStripScroll);
     }
 
     private void InitializeAgentSessions(string project)
@@ -2064,7 +2089,6 @@ public partial class MainWindow : Window
         try
         {
             var host = new NativeTerminalHost(type, commandLine, _currentProject!);
-            host.StateChanged += (_, state) => UpdatePaneState(RunnerPaneState, state);
             RunnerSlot.Content = host;
             _terminalHosts.Add(host);
 
@@ -2078,12 +2102,11 @@ var session = new AgentSessionView(type, label);
             _activeRunnerSession = session;
             RunnerTabStrip.ItemsSource = null;
             RunnerTabStrip.ItemsSource = _runnerSessions;
+            ScrollStripToEnd(RunnerTabStripScroll);
         }
         catch (Exception exception)
         {
             RunnerSlot.Content = CreateErrorPanel(type, exception);
-            RunnerPaneState.Text = "failed";
-            RunnerPaneState.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
         }
     }
 
