@@ -21,7 +21,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="tools\CheckNInstall\**\*" />
     <Compile Remove="tools\AutoUpdater\**\*" />
+    <None Remove="tools\CheckNInstall\**\*" />
+    <Content Remove="tools\CheckNInstall\**\*" />
   </ItemGroup>
 
   <ItemGroup>
