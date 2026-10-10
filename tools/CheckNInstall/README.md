@@ -14,10 +14,10 @@ Keyboard: arrows or `1`-`6` to move, `Enter` to select, `Esc` to quit.
 
 ## Phases
 
-| #   | Phase       | What it does                                                                                                         |
-| --- | ----------- | -------------------------------------------------------------------------------------------------------------------- |
-| 1   | Check       | lazygit, hx, yazi, opencode, codex -- by the executable that is on PATH                                              |
-| 2   | Install     | `winget install` each missing one                                                                                    |
-| 3   | Repair PATH | `WinGet\Links` can be empty, so `WinGet\Packages` is added to the user PATH                                          |
-| 4   | Build       | `-r win-x64 --self-contained`, flattens its own single-file bundle up to `bin\Release\net8.0-windows\*​-win-x64.exe` |
-| 5   | Install     | `%LOCALAPPDATA%\Programs\Helide\`, on the user PATH, Start Menu entry, and `AutoUpdater.exe` beside it               |
+| #   | Phase       | What it does                                                                                                        |
+| --- | ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| 1   | Check       | lazygit, hx, yazi, opencode, codex -- by the executable that is on PATH                                             |
+| 2   | Install     | `winget install` each missing one                                                                                   |
+| 3   | Repair PATH | `WinGet\Links` can be empty, so `WinGet\Packages` is added to the user PATH                                         |
+| 4   | Build       | `-r win-x64 --self-contained`, flattens its own single-file bundle up to `bin\Release\net8.0-windows\*-win-x64.exe` |
+| 5   | Install     | `%LOCALAPPDATA%\Programs\Helide\`, on the user PATH, Start Menu entry, and `AutoUpdater.exe` beside it              |
