@@ -1464,9 +1464,10 @@
                          </StackPanel>
                      </Grid>
                  </Border>
-             </Grid>
+              </Grid>
          </Grid>
          </Grid>
+
 
         <!-- A top-level Popup rather than an overlay inside the tree. Every pane is an
              HwndHost-backed terminal renderer, and WPF has no z-order authority over a

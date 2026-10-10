@@ -1,0 +1,78 @@
+# Yazi configuration for the Helide left sidebar.
+#
+# Helide renders yazi into a narrow vertical sidebar rather than a full window,
+# so the defaults (which assume a wide terminal) waste most of the width.
+
+[mgr]
+# parent | current | preview.
+#
+# The parent column is hidden outright. In a 220px sidebar it was only wide
+# enough to show two truncated characters per row ("0b..", "as.."), which is
+# worse than no context at all. Directory context comes from the CWD line at
+# the bottom instead.
+#
+# The preview column is hidden because at this width it cannot show anything
+# useful and only steals columns from the file list.
+ratio = [0, 1, 0]
+
+# No line mode. "size" printed a number against every folder, which consumed
+# the width that the file names needed and made rows read as bare figures.
+linemode = "none"
+
+# Folders first, then files, both ascending.
+sort_by = "natural"
+sort_dir_first = true
+sort_reverse = false
+sort_sensitive = false
+
+show_hidden = false
+
+# Keep the cursor near the middle so it does not hide at the edges of a tall pane.
+scrolloff = 5
+
+# Yazi is mouse-driven in a sidebar; enable it so click and wheel work.
+mouse_events = ["click", "scroll", "touch"]
+
+# Opening files ---------------------------------------------------------------
+
+# `edit` and `open` both point at the same script.
+#
+# `edit` is reached by the explicit text rules below. `open` is yazi's own fallback
+# for everything unrecognised, and taking it over is what keeps unknown file types
+# out of the Windows app picker: the script decides what to do instead of handing
+# everything to the shell.
+#
+# `%s` is deliberately NOT wrapped in quotes. Yazi quotes each substituted path
+# itself, so adding another layer turns `C:\dir\my file.txt` into a command with a
+# doubled-up quoted argument; the script then saw two arguments, neither of which
+# existed, and opened nothing. The official yazi examples quote the executable and
+# leave %s bare for the same reason.
+#
+# `block` is deliberately not set. With `block = true` yazi drops into the
+# alternate screen and paints the child on the main screen, which is the flash of
+# raw terminal on every open. Nothing here is interactive, and `orphan` keeps yazi
+# from waiting on PowerShell startup.
+[opener]
+edit = [
+	# Absolute path on purpose: yazi does not expand %APPDATA% in opener commands.
+	{ run = 'pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%APPDATA%\yazi\config\open-with-helix.ps1" %s', orphan = true, desc = "Open in Helide", for = "windows" },
+	{ run = 'pwsh -NoProfile -NonInteractive -File ~/.config/yazi/open-with-helix.ps1 %s', orphan = true, desc = "Open in Helide", for = "unix" },
+]
+open = [
+	{ run = 'pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%APPDATA%\yazi\config\open-with-helix.ps1" %s', orphan = true, desc = "Open in Helide", for = "windows" },
+	{ run = 'pwsh -NoProfile -NonInteractive -File ~/.config/yazi/open-with-helix.ps1 %s', orphan = true, desc = "Open in Helide", for = "unix" },
+]
+
+# No wildcard rule on purpose. A `{ url = "*" }` rule also captures directories,
+# and a directory that matches an opener no longer descends on Enter -- yazi hands
+# it to the script instead, so folders stop expanding. Listing the text types keeps
+# directories (and everything else) on yazi's own path, while the script in
+# open-with-helix.ps1 makes the final text/binary call per file.
+#
+# The old list was short enough to miss common types, and anything it missed fell
+# through to yazi's `open`, which is why .html ended up in a browser.
+[open]
+prepend_rules = [
+	{ mime = "text/*", use = "edit" },
+	{ url = "*.{md,markdown,mdx,txt,text,log,csv,tsv,json,json5,jsonc,yaml,yml,toml,ini,cfg,conf,env,properties,plist,xml,xsd,xsl,svg,html,htm,css,scss,sass,less,styl,js,mjs,cjs,jsx,ts,tsx,mts,cts,py,pyi,rb,rs,go,cs,fsx,vb,c,h,cc,cpp,cxx,hpp,m,mm,java,kt,kts,scala,swift,php,pl,pm,lua,tcl,sh,bash,zsh,fish,ps1,psm1,psd1,cmd,bat,sql,graphql,gql,proto,cmake,gradle,mk,mak,dockerfile,makefile,gitignore,gitattributes,editorconfig,diff,patch}", use = "edit" },
+]

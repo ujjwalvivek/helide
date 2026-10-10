@@ -18,6 +18,12 @@ internal sealed class AppState
     public string? LastProjectPath { get; set; }
     public List<RecentProjectState> RecentProjects { get; set; } = [];
     public string Theme { get; set; } = "mocha";  // "mocha" or "oled"
+
+    // Whether the yazi config that routes file opens into Helide's editor is installed.
+    // Only a mirror of what is on disk -- yazi reads its config once at startup, so the
+    // script's presence is the fact that decides it -- and is kept only so the palette
+    // can label the command without touching the file system to find out.
+    public bool YaziOpenInHelide { get; set; }
 }
 
 /// <summary>Everything describing one project's workspace, persisted per project path.</summary>

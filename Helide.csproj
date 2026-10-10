@@ -32,6 +32,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The yazi config Helide offers to install into the user's own yazi config
+         directory. Embedded rather than copied beside the exe because Helide publishes
+         as a single file and these have to land somewhere else entirely at runtime;
+         LogicalName keeps the manifest names stable instead of deriving them from the
+         folder path. -->
+    <EmbeddedResource Include="src\Config\Yazi\yazi.toml" LogicalName="Helide.YaziConfig.yazi.toml" />
+    <EmbeddedResource Include="src\Config\Yazi\keymap.toml" LogicalName="Helide.YaziConfig.keymap.toml" />
+    <EmbeddedResource Include="src\Config\Yazi\theme.toml" LogicalName="Helide.YaziConfig.theme.toml" />
+    <EmbeddedResource Include="src\Config\Yazi\open-with-helix.ps1" LogicalName="Helide.YaziConfig.open-with-helix.ps1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Page Remove="src\App\App.xaml" />
     <ApplicationDefinition Include="src\App\App.xaml" />
     <Resource Include="src\Assets\helide.png" />

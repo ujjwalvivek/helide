@@ -1,0 +1,56 @@
+# Yazi keymap for the Helide left sidebar.
+#
+# Only additions to the default keymap; everything else keeps stock behaviour.
+# These use prepend_keymap so they take priority, and deliberately avoid Tab
+# and Ctrl+1..Ctrl+5, which Helide claims for pane focus and terminal traversal.
+
+[[mgr.prepend_keymap]]
+on   = [ "g", "d" ]
+run  = "plugin --args cd --path='~'"
+desc = "Change directory (interactive)"
+
+[[mgr.prepend_keymap]]
+on   = [ "g", "o" ]
+run  = "open --interactive"
+desc = "Open with… (interactive)"
+
+[[mgr.prepend_keymap]]
+on   = "S"
+run  = "sort by=natural --reverse=no --dir-first=yes"
+desc = "Sort naturally, folders first, ascending"
+
+[[mgr.prepend_keymap]]
+on   = "H"
+run  = "hidden toggle"
+desc = "Toggle hidden files"
+
+# Reveal the hovered file in the parent list above. Useful in a sidebar where
+# the parent column is only one part wide.
+[[mgr.prepend_keymap]]
+on   = "L"
+run  = "reveal"
+desc = "Reveal in parent list"
+
+# Open the hovered file without the selection, which is what you want when
+# clicking around a narrow list.
+[[mgr.prepend_keymap]]
+on   = "O"
+run  = "open --hovered"
+desc = "Open hovered file"
+
+# Going up. yazi's default for these keys is `leave`, which is fine, but the
+# sidebar hides the parent column (ratio[0] = 0) so there is no column to move into.
+# `leave` is also what actually moves the listing, so bind it explicitly and keep
+# the keys working whether or not the parent column is ever turned back on.
+[[mgr.prepend_keymap]]
+on   = [ "h", "<Left>", "<BS>" ]
+run  = "leave"
+desc = "Go back to the parent directory"
+
+# Descend. `enter` is the action meant for this; `open` would consult the [open]
+# rules, and a directory matching a rule is handed to the opener instead of being
+# descended into -- which is why folders stopped expanding.
+[[mgr.prepend_keymap]]
+on   = [ "l", "<Right>" ]
+run  = "enter"
+desc = "Enter the hovered directory"

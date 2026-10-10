@@ -1,0 +1,167 @@
+<UserControl x:Class="Helide.Shell.YaziPromptCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource TerminalBrush}">
+    <UserControl.Resources>
+        <Style x:Key="CardCloseStyle" TargetType="Button">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="CloseSurface"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="2"
+                        >
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CloseSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CardAcceptStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="AcceptSurface"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="2"
+                            Padding="{TemplateBinding Padding}"
+                        >
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="AcceptSurface" Property="Background" Value="{DynamicResource MauveBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="AcceptSurface" Property="Background" Value="{DynamicResource PressedStrongBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CardDeclineStyle" TargetType="Button" BasedOn="{StaticResource CardAcceptStyle}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        </Style>
+    </UserControl.Resources>
+
+    <!-- Fills the pane rather than floating over it: the browser behind is not started
+         until the question is answered, so this is the whole pane, not an overlay. The
+         card is pinned to the top because a narrow pane renders the buttons one under
+         the other and the answer is what the reader is looking for. -->
+    <Grid Margin="14">
+        <Border
+            Background="{DynamicResource PopoverBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+            CornerRadius="4"
+            Padding="14,12"
+            VerticalAlignment="Top"
+        >
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        Text="Open files inside Helide?"
+                        Foreground="{DynamicResource TextStrongBrush}"
+                        FontSize="{DynamicResource FontSizeBody}"
+                        FontWeight="SemiBold"
+                        TextWrapping="Wrap"
+                        VerticalAlignment="Center"
+                    />
+                    <Button
+                        Grid.Column="1"
+                        x:Name="CloseButton"
+                        Click="CloseButton_Click"
+                        Style="{DynamicResource CardCloseStyle}"
+                        Content="&#xE8BB;"
+                        ToolTip="Dismiss"
+                    />
+                </Grid>
+
+                <TextBlock
+                    Grid.Row="1"
+                    Margin="0,8,0,0"
+                    TextWrapping="Wrap"
+                    Foreground="{DynamicResource TextMutedBrush}"
+                    FontSize="{DynamicResource FontSizeSmall}"
+                    Text="The project browser can hand the file you select straight to Helide's editor. Doing that needs Helide's own yazi config, which replaces any you already have. Whatever is there now is backed up first."
+                />
+
+                <TextBlock
+                    Grid.Row="2"
+                    x:Name="PathText"
+                    Margin="0,8,0,0"
+                    TextWrapping="Wrap"
+                    Foreground="{DynamicResource TextFaintBrush}"
+                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                    FontSize="{DynamicResource FontSizeSmall}"
+                />
+
+                <!-- Stacked rather than side by side: the pane is a couple of hundred
+                     pixels wide, and two captions on one line would be trimmed to
+                     fragments there. The offer is the primary action and sits closest
+                     to the text it belongs to. -->
+                <StackPanel
+                    Grid.Row="3"
+                    Margin="0,12,0,0"
+                    Orientation="Vertical"
+                >
+                    <Button
+                        x:Name="AcceptButton"
+                        Click="AcceptButton_Click"
+                        Style="{DynamicResource CardAcceptStyle}"
+                        Content="Yes, open in Helide"
+                    />
+                    <Button
+                        x:Name="DeclineButton"
+                        Click="DeclineButton_Click"
+                        Margin="0,8,0,0"
+                        Style="{DynamicResource CardDeclineStyle}"
+                        Content="No thanks"
+                    />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

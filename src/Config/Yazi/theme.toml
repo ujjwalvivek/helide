@@ -1,0 +1,98 @@
+# Yazi theme for the Helide left sidebar.
+#
+# Colours are taken from Helide's own palette so yazi does not read as a foreign
+# app sitting inside the workspace: terminal background #191724, borders #313244,
+# accent #89b4fa, body text #cdd6f4.
+#
+# Everything not listed here keeps the built-in dark theme.
+
+[app]
+# Match Helide's terminal background so the pane has no visible seam.
+# overall = { bg = "#191724" }
+
+[mgr]
+# The absolute cwd is the only directory context yazi offers -- there is no
+# relative-to-project mode -- and truncates from the left once the path outgrows the
+# pane, so the tail ("…\sub") is what stays readable. Kept visible because the file
+# list reads better with the row than with a blank gap above it.
+cwd = { fg = "#89b4fa" }
+find_keyword = { fg = "#f9e2af", bg = "#45475a", bold = true }
+
+# A sidebar has no room for decoration, so the markers stay quiet.
+marker_copied = { fg = "#a6e3a1" }
+marker_cut = { fg = "#f38ba8" }
+marker_selected = { fg = "#89b4fa" }
+count_selected = { fg = "#7f849c" }
+
+[indicator]
+parent = { fg = "#45475a" }
+# No fill at all -- the hovered row keeps the terminal background and is marked only
+# by its text colour, in the same mauve the theme already uses for images. An earlier
+# attempt inverted the row (`reversed`, dark text on bright accent) and a later one
+# tinted the whole row; both read as a slab rather than as a selection.
+current = { fg = "#cba6f7", bold = true }
+# Yazi lays the padding out as [open][indicator][close] and only then the filename,
+# so these glyphs can only mark the row's left edge; there is no way to put one on
+# the right. The default padding is a pair of powerline glyphs, which drew the fill
+# as a rounded pill, and an empty string reads as unset -- so this has to be set
+# explicitly to get a plain bar.
+padding = { open = "│", close = " " }
+
+[status]
+overall = { fg = "#7f849c" }
+# Same trap as the indicator: "" reads as unset, so the defaults' powerline glyphs
+# came through and the ends of the bar were rounded. A literal space leaves square
+# ends with no glyph between the segments.
+sep_left = { open = " ", close = " " }
+sep_right = { open = " ", close = " " }
+
+# The file type marker is redundant next to a real icon in a narrow column.
+perm_type = { fg = "#6c7086" }
+perm_read = { fg = "#89b4fa" }
+perm_write = { fg = "#89b4fa" }
+perm_exec = { fg = "#a6e3a1" }
+perm_sep = { fg = "#313244" }
+
+[mode]
+# No bg anywhere in the status bar. The mode chip used to be a filled block, which
+# is what made the bottom of the pane read as a row of pills; as coloured text it
+# stays legible and the bar goes flat. `bold` carries the emphasis instead.
+normal_main = { fg = "#89b4fa", bold = true }
+normal_alt = { fg = "#a6e3a1" }
+select_main = { fg = "#11111b", bg = "#f9e2af" }
+select_alt = { fg = "#89b4fa" }
+unset_main = { fg = "#7f849c" }
+unset_alt = { fg = "#6c7086" }
+
+[filetype]
+# No fg on the folder rule on purpose. Setting one here overrides the colour that
+# each directory's own icon already carries, which flattened .github, artifacts, bin,
+# obj and src to the same blue and made the tree unreadable. Bold is enough to keep
+# folders distinct from files without overriding anything.
+rules = [
+	{ url = "*/", bold = true },
+	{ mime = "image/*", fg = "#cba6f7" },
+	{ mime = "{audio,video}/*", fg = "#f9e2af" },
+	{ mime = "inode/empty", fg = "#6c7086" },
+	{ url = "*", is = "orphan", fg = "#f38ba8" },
+	{ url = "*", fg = "#cdd6f4" },
+]
+
+[input]
+title = { fg = "#89b4fa", bold = true }
+value = { fg = "#cdd6f4" }
+selected = { fg = "#11111b", bg = "#89b4fa" }
+
+[which]
+border = { fg = "#313244" }
+cand = { fg = "#89b4fa" }
+rest = { fg = "#7f849c" }
+desc = { fg = "#a6adc8" }
+
+[tasks]
+hovered = { fg = "#cdd6f4", bold = true }
+
+[notify]
+title_info = { fg = "#89b4fa", bold = true }
+title_warn = { fg = "#f9e2af", bold = true }
+title_error = { fg = "#f38ba8", bold = true }

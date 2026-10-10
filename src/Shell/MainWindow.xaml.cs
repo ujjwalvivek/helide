@@ -80,6 +80,12 @@ public partial class MainWindow : Window
     private NativeTerminalHost? _leftHost;
     private LeftTool _leftHostTool = LeftTool.Git;
     private LeftTool _activeLeftTool = LeftTool.Git;
+
+    // The yazi offer, waiting for the project browser. Held as a fact rather than asked
+    // of the file system every time the pane is shown: the answer only changes when the
+    // config is installed, and that path already clears it.
+    private bool _yaziPromptPending;
+    private YaziPromptCard? _yaziPromptCard;
     private readonly ObservableCollection<EditorTab> _editorTabs = [];
     private EditorTab? _activeEditorTab;
     private FileSystemWatcher? _openRequestWatcher;
@@ -221,10 +227,109 @@ public partial class MainWindow : Window
         // "open this file" back to us instead of spawning their own windows.
         Environment.SetEnvironmentVariable("HELIDE_OPEN_REQUEST", _openRequestPath ?? string.Empty);
 
+        SyncYaziIntegration();
+
         if (!string.IsNullOrWhiteSpace(_startupProject) && Directory.Exists(_startupProject))
             OpenWorkspace(_startupProject);
         else
             ShowWelcome();
+    }
+
+    // Whether the file tree opens files in the editor is decided by yazi's own config,
+    // which lives in the user's yazi directory and is only written when they ask for it.
+    // So the check is the script's presence on disk rather than anything this app
+    // remembers: it stays correct when the user deletes it, restores a backup, or edits
+    // the config by hand.
+    private void SyncYaziIntegration()
+    {
+        if (YaziConfig.IsInstalled())
+        {
+            if (!_state.YaziOpenInHelide)
+            {
+                _state.YaziOpenInHelide = true;
+                _stateStore.Save(_state);
+            }
+
+            return;
+        }
+
+        // Nothing is raised here. The offer belongs to the browser pane, which does not
+        // exist until a workspace opens, so this only arms it: SetLeftTool puts it on
+        // screen the moment the project browser is the pane being shown.
+        _yaziPromptPending = true;
+    }
+
+    // The offer sits in the browser's own pane, so the terminal behind it is never
+    // started until the question is answered. Starting it first would leave the pane
+    // looking like a working file browser that opens files the old way, which is
+    // precisely what the offer is about changing.
+    private void ShowYaziPrompt()
+    {
+        if (_yaziPromptCard is null)
+        {
+            _yaziPromptCard = new YaziPromptCard();
+            _yaziPromptCard.Accepted += YaziPrompt_Accepted;
+            _yaziPromptCard.Declined += YaziPrompt_Declined;
+        }
+
+        if (!LeftToolStack.Children.Contains(_yaziPromptCard))
+            LeftToolStack.Children.Add(_yaziPromptCard);
+
+        ProjectPaneState.Text = "offer";
+        ProjectPaneState.Foreground = ThemePalette.Brush(ThemePalette.TextIdleBrush);
+    }
+
+    private void DismissYaziPrompt()
+    {
+        if (_yaziPromptCard is not null)
+            LeftToolStack.Children.Remove(_yaziPromptCard);
+    }
+
+    private void YaziPrompt_Accepted() => EnableYaziFileOpening();
+
+    private void YaziPrompt_Declined()
+    {
+        // Decline installs nothing: yazi keeps its own config and opens files the way
+        // it always has. What it does do is start the browser that was held back while
+        // the question was on screen, so the pane is never left empty.
+        _yaziPromptPending = false;
+        DismissYaziPrompt();
+        StartLeftTool(LeftTool.Project);
+    }
+
+    // The project browser opens files by appending their path to a file this window
+    // watches, but only if yazi's own openers point at the hand-off script -- and that
+    // config is the user's, so it is written here or nowhere.
+    //
+    // The restart is not optional politeness: yazi reads its config once at startup, so
+    // the instance already running keeps the openers it launched with and would keep
+    // opening files the old way no matter what was just written to disk.
+    private void EnableYaziFileOpening()
+    {
+        try
+        {
+            YaziConfig.Install();
+
+            _state.YaziOpenInHelide = true;
+            _stateStore.Save(_state);
+
+            _yaziPromptPending = false;
+            DismissYaziPrompt();
+
+            // Goes through the updater's restart path rather than a raw Process.Start:
+            // it releases the single-instance claim first, or the replacement asks for
+            // the mutex this process still holds, loses, and shuts itself down.
+            new HelideUpdater().RestartApp(_currentProject);
+        }
+        catch (Exception exception)
+        {
+            // A failed install leaves yazi exactly as it was, so the fallback still
+            // works and there is nothing to roll back. The offer stays up: it is what
+            // the pane is showing, and clearing it would leave nothing behind.
+            MessageBox.Show(this,
+                $"Could not install the yazi config:\n\n{exception.Message}",
+                "Helide", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void OpenProjectButton_Click(object sender, RoutedEventArgs e)
@@ -580,6 +685,15 @@ public partial class MainWindow : Window
         // --- Navigate ---
         commands.Add(new PaletteCommand("Show Lazygit Panel", () => ToggleLeftTool(LeftTool.Git), "View", keywords: "git left", canInvoke: workspace));
         commands.Add(new PaletteCommand("Show Project Browser", () => ToggleLeftTool(LeftTool.Project), "View", keywords: "yazi files left", canInvoke: workspace));
+        // The same offer the first-run toast makes, reachable any time -- the toast is
+        // driven by the config file's absence, so a user who dismissed it once can still
+        // turn the whole thing on without hunting for the file themselves.
+        commands.Add(new PaletteCommand(
+            "Open Project Browser Files in Helide",
+            EnableYaziFileOpening,
+            "View",
+            _state.YaziOpenInHelide ? "on · restarts Helide" : "restarts Helide",
+            keywords: "yazi file tree editor helix open config"));
         commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanel(ToolPanel.Runner), "View", canInvoke: workspace));
         commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanel(ToolPanel.Agent), "View", canInvoke: workspace));
         commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
@@ -995,7 +1109,9 @@ private void OpenInNewWindow(string? projectPath)
             // authority over the child HWNDs that back the terminal renderer, so one of
             // them always ended up invisible-but-alive, swallowing clicks and keys.
             SetLeftTool(RestoreLeftTool(), persist: false);
-            if (_leftHost is null)
+            // The pane is not missing when the offer is on it -- the browser is simply
+            // held back until the question is answered.
+            if (_leftHost is null && !_yaziPromptPending)
                 failures++;
             // Restores the editor tabs this workspace had open. A tab whose file has since
             // been deleted or moved is dropped rather than opened on a path that no
@@ -1123,15 +1239,19 @@ private void OpenInNewWindow(string? projectPath)
 
     private void StopLeftTool()
     {
-        if (_leftHost is null)
-            return;
-
         // Detach, then dispose -- see CloseEditorTab for why the order matters.
-        _leftHost.Visibility = Visibility.Collapsed;
+        if (_leftHost is not null)
+        {
+            _leftHost.Visibility = Visibility.Collapsed;
+            LeftToolStack.Children.Clear();
+            _terminalHosts.Remove(_leftHost);
+            _leftHost.Dispose();
+            _leftHost = null;
+        }
+
+        // Cleared even with nothing to dispose: the pane also hosts the yazi offer,
+        // which is ordinary WPF content rather than a terminal.
         LeftToolStack.Children.Clear();
-        _terminalHosts.Remove(_leftHost);
-        _leftHost.Dispose();
-        _leftHost = null;
     }
 
     // Yazi hands paths over by appending them to a file Helide watches, rather than
@@ -1769,7 +1889,12 @@ private void OpenInNewWindow(string? projectPath)
 
         // Swap the process rather than the visibility of a stacked sibling: there is
         // only ever one child window behind this pane, so it always owns the clicks.
-        if (_leftHost is null || _leftHostTool != tool)
+        if (_yaziPromptPending && !showingGit)
+        {
+            StopLeftTool();
+            ShowYaziPrompt();
+        }
+        else if (_leftHost is null || _leftHostTool != tool)
         {
             StopLeftTool();
             try
