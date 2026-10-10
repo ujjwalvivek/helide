@@ -68,100 +68,123 @@
             </Setter>
         </Style>
 
-        <Style x:Key="CardDeclineStyle" TargetType="Button" BasedOn="{StaticResource CardAcceptStyle}">
+        <!-- Not BasedOn the accept style. A derived style keeps the base triggers, and
+             those paint the surface the accent's hover colour: light mauve under grey
+             muted text, which is not readable. So the decline button carries its own
+             template and its own hover, the pane's interactive colour with the strong
+             text colour on top of it. -->
+        <Style x:Key="CardDeclineStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="DeclineSurface"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="2"
+                            Padding="{TemplateBinding Padding}"
+                        >
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="DeclineSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="DeclineSurface" Property="Background" Value="{DynamicResource PressedStrongBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </UserControl.Resources>
 
-    <!-- Fills the pane rather than floating over it: the browser behind is not started
-         until the question is answered, so this is the whole pane, not an overlay. The
-         card is pinned to the top because a narrow pane renders the buttons one under
-         the other and the answer is what the reader is looking for. -->
-    <Grid Margin="14">
-        <Border
-            Background="{DynamicResource PopoverBrush}"
-            BorderBrush="{DynamicResource BorderBrush}"
-            BorderThickness="1"
-            CornerRadius="4"
-            Padding="14,12"
-            VerticalAlignment="Top"
+    <!-- The whole pane, not a card floating in it: the pane is already a bordered box
+         with its own header, and a second box inside it reads as a dialog that happens
+         to be docked. So the content sits straight on the terminal background and fills
+         the pane, with the answer pinned to the bottom and the text at the top. -->
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock
+                Grid.Column="0"
+                Text="Open files inside Helide?"
+                Foreground="{DynamicResource TextStrongBrush}"
+                FontSize="{DynamicResource FontSizeBody}"
+                FontWeight="SemiBold"
+                TextWrapping="Wrap"
+                VerticalAlignment="Center"
+            />
+            <Button
+                Grid.Column="1"
+                x:Name="CloseButton"
+                Click="CloseButton_Click"
+                Style="{DynamicResource CardCloseStyle}"
+                Content="&#xE8BB;"
+                ToolTip="Dismiss"
+            />
+        </Grid>
+
+        <TextBlock
+            Grid.Row="1"
+            Margin="0,10,0,0"
+            TextWrapping="Wrap"
+            Foreground="{DynamicResource TextMutedBrush}"
+            FontSize="{DynamicResource FontSizeSmall}"
+            Text="The project browser can hand the file you select straight to Helide's editor. Doing that needs Helide's own yazi config, which replaces any you already have. Whatever is there now is backed up first."
+        />
+
+        <TextBlock
+            Grid.Row="2"
+            x:Name="PathText"
+            Margin="0,10,0,0"
+            TextWrapping="Wrap"
+            Foreground="{DynamicResource TextFaintBrush}"
+            FontFamily="{DynamicResource UiMonoFontFamily}"
+            FontSize="{DynamicResource FontSizeSmall}"
+        />
+
+        <!-- Stacked rather than side by side: the pane is a couple of hundred pixels
+             wide, and two captions on one line would be trimmed to fragments there.
+             The offer is the primary action and sits closest to the text it belongs to. -->
+        <StackPanel
+            Grid.Row="4"
+            Margin="0,12,0,0"
+            Orientation="Vertical"
         >
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <Grid Grid.Row="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock
-                        Grid.Column="0"
-                        Text="Open files inside Helide?"
-                        Foreground="{DynamicResource TextStrongBrush}"
-                        FontSize="{DynamicResource FontSizeBody}"
-                        FontWeight="SemiBold"
-                        TextWrapping="Wrap"
-                        VerticalAlignment="Center"
-                    />
-                    <Button
-                        Grid.Column="1"
-                        x:Name="CloseButton"
-                        Click="CloseButton_Click"
-                        Style="{DynamicResource CardCloseStyle}"
-                        Content="&#xE8BB;"
-                        ToolTip="Dismiss"
-                    />
-                </Grid>
-
-                <TextBlock
-                    Grid.Row="1"
-                    Margin="0,8,0,0"
-                    TextWrapping="Wrap"
-                    Foreground="{DynamicResource TextMutedBrush}"
-                    FontSize="{DynamicResource FontSizeSmall}"
-                    Text="The project browser can hand the file you select straight to Helide's editor. Doing that needs Helide's own yazi config, which replaces any you already have. Whatever is there now is backed up first."
-                />
-
-                <TextBlock
-                    Grid.Row="2"
-                    x:Name="PathText"
-                    Margin="0,8,0,0"
-                    TextWrapping="Wrap"
-                    Foreground="{DynamicResource TextFaintBrush}"
-                    FontFamily="{DynamicResource UiMonoFontFamily}"
-                    FontSize="{DynamicResource FontSizeSmall}"
-                />
-
-                <!-- Stacked rather than side by side: the pane is a couple of hundred
-                     pixels wide, and two captions on one line would be trimmed to
-                     fragments there. The offer is the primary action and sits closest
-                     to the text it belongs to. -->
-                <StackPanel
-                    Grid.Row="3"
-                    Margin="0,12,0,0"
-                    Orientation="Vertical"
-                >
-                    <Button
-                        x:Name="AcceptButton"
-                        Click="AcceptButton_Click"
-                        Style="{DynamicResource CardAcceptStyle}"
-                        Content="Yes, open in Helide"
-                    />
-                    <Button
-                        x:Name="DeclineButton"
-                        Click="DeclineButton_Click"
-                        Margin="0,8,0,0"
-                        Style="{DynamicResource CardDeclineStyle}"
-                        Content="No thanks"
-                    />
-                </StackPanel>
-            </Grid>
-        </Border>
+            <Button
+                x:Name="AcceptButton"
+                Click="AcceptButton_Click"
+                Style="{DynamicResource CardAcceptStyle}"
+                Content="Yes, open in Helide"
+            />
+            <Button
+                x:Name="DeclineButton"
+                Click="DeclineButton_Click"
+                Margin="0,8,0,0"
+                Style="{DynamicResource CardDeclineStyle}"
+                Content="No thanks"
+            />
+        </StackPanel>
     </Grid>
 </UserControl>
