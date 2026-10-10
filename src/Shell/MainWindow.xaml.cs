@@ -795,6 +795,11 @@ private void OpenInNewWindow(string? projectPath)
         Activate();
     }
 
+    // `SwitchToThisWindow` is undocumented.
+    // It is the reliable way to force a window to the foreground when the request comes from a different process, which is exactly this case.
+    // `SetForegroundWindow` is refused in that situation. The usual alternative, toggling `Topmost`, works but visibly flashes/jumps the window.
+    // Undocumented does not mean unstable, so if activation ever misbehaves this is the first thing to look at.
+
     private void MinimizeCaptionButton_Click(object sender, RoutedEventArgs e) =>
         SystemCommands.MinimizeWindow(this);
 
