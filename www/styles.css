@@ -40,8 +40,8 @@ main {
 }
 
 .window {
+    position: relative;
     background: rgba(30, 30, 46, 0.80);
-    border: 1px solid var(--surface0);
     border-radius: var(--radius);
     overflow: hidden;
     backdrop-filter: blur(32px) saturate(1.2);

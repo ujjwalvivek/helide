@@ -366,7 +366,7 @@ if (carousel && track && dotsBox && lightbox && SHOTS.length) {
 // Background shader
 const bgCanvas = document.getElementById("bg-shader");
 if (bgCanvas && bgCanvas.getContext) {
-  const gl = bgCanvas.getContext("webgl") || bgCanvas.getContext("experimental-webgl");
+  const gl = bgCanvas.getContext("webgl", { preserveDrawingBuffer: true }) || bgCanvas.getContext("experimental-webgl", { preserveDrawingBuffer: true });
   if (gl) {
     const vsSource = `
       attribute vec2 a_pos;
@@ -387,6 +387,9 @@ if (bgCanvas && bgCanvas.getContext) {
       const sh = gl.createShader(type);
       gl.shaderSource(sh, src);
       gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        console.warn(gl.getShaderInfoLog(sh));
+      }
       return sh;
     }
 
@@ -395,6 +398,7 @@ precision mediump float;
 uniform float iTime;
 uniform vec2 iResolution;
 uniform vec2 iMouse;
+uniform vec4 uWin;
 `;
 
     fetch("background-lite.glsl")
@@ -406,6 +410,9 @@ uniform vec2 iMouse;
         gl.attachShader(prog, vs);
         gl.attachShader(prog, fs);
         gl.linkProgram(prog);
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+          console.warn(gl.getProgramInfoLog(prog));
+        }
         gl.useProgram(prog);
 
         const posLoc = gl.getAttribLocation(prog, "a_pos");
@@ -418,6 +425,8 @@ uniform vec2 iMouse;
         const iTime = gl.getUniformLocation(prog, "iTime");
         const iRes = gl.getUniformLocation(prog, "iResolution");
         const iMouse = gl.getUniformLocation(prog, "iMouse");
+        const uWin = gl.getUniformLocation(prog, "uWin");
+        const winEl = document.querySelector(".window");
 
         function resize() {
           const rect = bgCanvas.parentElement.getBoundingClientRect();
@@ -436,11 +445,29 @@ uniform vec2 iMouse;
         });
 
         let start = Date.now();
+
+        // Feed the shader the window's rect so it can bend its own output
+        // around the border. Kept in GL space (origin bottom-left).
+        function setWinRect() {
+          if (!winEl || !uWin) return;
+          const r = winEl.getBoundingClientRect();
+          const sx = bgCanvas.width / window.innerWidth;
+          const sy = bgCanvas.height / window.innerHeight;
+          gl.uniform4f(
+            uWin,
+            r.left * sx,
+            (window.innerHeight - r.top - r.height) * sy,
+            r.width * sx,
+            r.height * sy
+          );
+        }
+
         function draw() {
           const t = (Date.now() - start) / 1000;
           gl.uniform1f(iTime, t);
           gl.uniform2f(iRes, bgCanvas.width, bgCanvas.height);
           gl.uniform2f(iMouse, mouse[0], mouse[1]);
+          setWinRect();
           gl.drawArrays(gl.TRIANGLES, 0, 3);
           requestAnimationFrame(draw);
         }
