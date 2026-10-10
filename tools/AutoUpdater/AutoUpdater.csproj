@@ -8,7 +8,7 @@
     <AssemblyName>AutoUpdater</AssemblyName>
     <RootNamespace>AutoUpdater</RootNamespace>
     <Product>Helide AutoUpdater</Product>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <DebugType>none</DebugType>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -16,6 +16,14 @@
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <ApplicationIcon>..\..\src\Assets\helide.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!--
+      The same mark CheckNInstall draws, embedded rather than read from disk: this exe is
+      installed as a single file and has no assets folder beside it to load from.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\src\Assets\helide.txt" LogicalName="helide.txt" />
+  </ItemGroup>
 
   <PropertyGroup>
     <_AutoUpdaterArtifactName>AutoUpdater-$(RuntimeIdentifier).exe</_AutoUpdaterArtifactName>
