@@ -76,15 +76,15 @@ main {
 }
 
 .hero {
-    padding: 36px 32px 0px;
+    padding: 28px 32px 0px;
     text-align: left;
 }
 
 .fetch {
     display: flex;
     align-items: flex-start;
-    gap: 24px;
-    margin-bottom: 24px;
+    gap: 22px;
+    margin-bottom: 20px;
 }
 
 .logo-box {
@@ -92,8 +92,8 @@ main {
 }
 
 .logo {
-    width: 170px;
-    height: 170px;
+    width: 150px;
+    height: 150px;
     border-radius: 4px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
     filter: contrast(1.05);
@@ -107,7 +107,7 @@ main {
 .fetch-text {
     font-family: inherit;
     font-size: 13px;
-    line-height: 1.6;
+    line-height: 1.3;
     color: var(--text);
     background: transparent;
     border: none;
@@ -179,45 +179,8 @@ main {
     font-weight: 600;
 }
 .term-link:hover {
-    text-decoration: underline;
-}
-
-.header-strip {
-    padding: 8px 14px;
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--pink);
-    opacity: 1;
-    background: rgba(245, 194, 231, 0.08);
-    border: none;
-    border-radius: 0;
-    width: calc(100% + 28px);
-    margin: -12px -14px 10px -14px;
-}
-
-.header-title {
-    color: var(--text);
-    font-weight: 700;
-    text-transform: uppercase;
-    opacity: 0.9;
-}
-
-.header-links {
-    display: flex;
-    gap: 14px;
-}
-
-.header-link {
-    color: var(--subtext);
-    text-decoration: none;
-    opacity: 0.7;
-    transition: color 0.15s ease, opacity 0.15s ease;
-}
-
-.header-link:hover {
-    color: var(--blue);
-    opacity: 1;
+    cursor: pointer;
+    text-decoration: underline !important;
 }
 
 .layout {
@@ -244,37 +207,35 @@ main {
 }
 
 .pill {
-    display: block;
-    padding: 8px 10px;
+    display: inline;
+    padding: 2px 4px;
     border: 1px solid var(--surface0);
-    border-radius: 0;
-    color: var(--pill, var(--text));
+    color: var(--pink);
     text-decoration: none;
-    font-size: 12px;
-    font-weight: 700;
-    text-align: center;
+    font-size: 13px;
+    font-weight: 900;
     letter-spacing: 0.02em;
     background: rgba(255,255,255,0.02);
     transition: background 0.15s ease, border-color 0.15s ease;
-    margin: 0 auto;
-    width: 100%;
 }
 
-.palette {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    margin-top: auto;
-    padding-top: 10px;
+.hero .palette {
+    display: flex;
+    gap: 2px;
+    width: auto;
+    margin: 9px 0 10px;
+    padding-top: 0;
 }
 
-.swatch {
-    width: 100%;
-    aspect-ratio: 1.75;
-    border-radius: 0;
+.hero .palette .swatch {
+    width: 14px;
+    height: 14px;
+    aspect-ratio: auto;
+    border-radius: 2px;
 }
 
 .pill:hover {
-    border-color: var(--pill, var(--surface0));
+    border-color: var(--surface0);
     background: rgba(255,255,255,0.06);
 }
 
@@ -308,6 +269,258 @@ main {
 
 .download {
     padding: 8px 32px 28px;
+}
+
+.showcase {
+    flex: 1 1 0%;
+    min-height: 150px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.showcase-title {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--subtext);
+    opacity: 0.7;
+    text-align: right;
+}
+
+.carousel-wrap {
+    position: relative;
+    flex: 1 1 0%;
+    min-height: 0;
+}
+
+.carousel {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border: 1px solid var(--surface0);
+    border-radius: var(--radius);
+    background: rgba(17, 17, 27, 0.80);
+    cursor: pointer;
+    -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent,
+        #000 34px,
+        #000 calc(100% - 34px),
+        transparent
+    );
+    mask-image: linear-gradient(
+        to bottom,
+        transparent,
+        #000 34px,
+        #000 calc(100% - 34px),
+        transparent
+    );
+}
+
+.carousel-track {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    padding: 10px;
+    will-change: transform;
+}
+
+.carousel-track.is-gliding {
+    transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.carousel-slide {
+    flex: 0 0 auto;
+    width: 100%;
+    padding: 0;
+    border: 1px solid var(--surface0);
+    border-radius: var(--radius);
+    background: var(--mantle);
+    overflow: hidden;
+    cursor: zoom-in;
+    position: relative;
+    display: block;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.carousel-slide img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+}
+
+.carousel-slide:hover {
+    border-color: var(--pink);
+    transform: translateY(-2px);
+}
+
+.carousel-slide:focus-visible {
+    outline: 2px solid var(--pink);
+    outline-offset: 2px;
+}
+
+.slide-caption {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 18px 10px 7px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--text);
+    background: linear-gradient(to top, rgba(17, 17, 27, 0.95), transparent);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.carousel-slide:hover .slide-caption,
+.carousel-slide:focus-visible .slide-caption {
+    opacity: 1;
+}
+
+.dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border: 1px solid var(--subtext);
+    border-radius: 0;
+    background: transparent;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.dot:hover {
+    border-color: var(--pink);
+    opacity: 1;
+}
+
+.dot[aria-selected="true"] {
+    background: var(--pink);
+    border-color: var(--pink);
+    opacity: 1;
+}
+
+.lightbox[hidden] {
+    display: none;
+}
+
+.lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 64px;
+}
+
+.lightbox-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(17, 17, 27, 0.86);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    cursor: zoom-out;
+    animation: fade-in 0.15s ease;
+}
+
+.lightbox-figure {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    max-width: 100%;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.lightbox-figure img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 110px);
+    border: 1px solid var(--surface0);
+    border-radius: var(--radius);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    animation: fade-in 0.15s ease;
+}
+
+.lightbox-caption {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text);
+}
+
+.lightbox-index {
+    color: var(--pink);
+}
+
+.lightbox-nav,
+.lightbox-close {
+    position: absolute;
+    z-index: 2;
+    padding: 0;
+    border: 1px solid var(--surface0);
+    background: rgba(30, 30, 46, 0.85);
+    color: var(--text);
+    font-family: inherit;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.lightbox-nav {
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 56px;
+    font-size: 24px;
+    line-height: 1;
+}
+
+.lightbox-prev {
+    left: 8px;
+}
+
+.lightbox-next {
+    right: 8px;
+}
+
+.lightbox-close {
+    top: 16px;
+    right: 16px;
+    width: 34px;
+    height: 34px;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.lightbox-nav:hover,
+.lightbox-close:hover {
+    color: var(--pink);
+    border-color: var(--pink);
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
 }
 
 
@@ -346,25 +559,72 @@ main {
         flex-wrap: wrap;
         gap: 8px;
     }
-    .pill {
-        width: auto;
-        flex: 1;
-        min-width: 80px;
-        padding: 6px 8px;
-        font-size: 11px;
-    }
-    .palette {
-        display: none;
-    }
-    .header-strip {
-        width: 100%;
-        margin: 0;
-        border-radius: 0;
-        padding: 6px 10px;
-    }
     .logo {
-        width: 100px;
-        height: 100px;
+        width: 150px;
+        height: 150px;
+    }
+
+    /* Below 720px the sidebar is full width and short, so the reel scrolls
+       horizontally. JS reads the same breakpoint to flip the scroll axis.
+       Slides are sized from the strip height (16:9) so nothing is clipped. */
+    .showcase {
+        flex: 0 0 100%;
+        height: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        position: relative;
+    }
+    .showcase-title {
+        order: 1;
+    }
+    /* Dots ride in the header line, top-right, over the carousel. */
+    .dots {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 3;
+        justify-content: flex-start;
+        margin: 0;
+    }
+    .carousel-wrap {
+        order: 2;
+        flex: 0 0 auto;
+        height: 128px;
+        margin-top: 4px;
+    }
+    .carousel {
+        -webkit-mask-image: linear-gradient(
+            to right,
+            transparent,
+            #000 32px,
+            #000 calc(100% - 32px),
+            transparent
+        );
+        mask-image: linear-gradient(
+            to right,
+            transparent,
+            #000 32px,
+            #000 calc(100% - 32px),
+            transparent
+        );
+    }
+    .carousel-track {
+        flex-direction: row;
+        align-items: center;
+        width: max-content;
+        height: 100%;
+        padding: 10px 0;
+    }
+    .carousel-slide {
+        flex: 0 0 auto;
+        width: auto;
+        height: 100%;
+    }
+    .carousel-slide img {
+        height: 100%;
+        width: auto;
+        aspect-ratio: 16 / 9;
     }
 }
 
@@ -375,6 +635,10 @@ main {
     }
     .hero {
         padding: 24px 16px 0;
+    }
+    .logo {
+        width: 100px;
+        height: 100px;
     }
     .fetch {
         flex-direction: column;
@@ -390,6 +654,36 @@ main {
     }
     .panes {
         padding: 8px 16px 8px;
+    }
+    .showcase {
+        flex: 0 0 100%;
+        height: auto;
+    }
+    .carousel-wrap {
+        flex: 0 0 148px;
+        height: 148px;
+    }
+    .lightbox {
+        padding: 20px 16px 68px;
+    }
+    /* Shrink the image so the nav row below it never overlaps the picture. */
+    .lightbox-figure img {
+        max-height: calc(100vh - 150px);
+    }
+    /* Nav buttons move out of the picture's side margins and dock underneath. */
+    .lightbox-nav {
+        top: auto;
+        bottom: 16px;
+        transform: none;
+        width: 44px;
+        height: 44px;
+        font-size: 22px;
+    }
+    .lightbox-prev {
+        left: calc(50% - 56px);
+    }
+    .lightbox-next {
+        right: calc(50% - 56px);
     }
     .download {
         padding: 8px 16px 20px;
