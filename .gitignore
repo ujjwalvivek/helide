@@ -1,4 +1,10 @@
+# Build Artifacts
 bin/
 obj/
 artifacts/
+
+# Deprecated Code
 background.glsl
+
+# Product Images (copy stay in www/images folder)
+src/Assets/images/
