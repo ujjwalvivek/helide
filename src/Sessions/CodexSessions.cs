@@ -177,3 +177,17 @@ internal static class CodexSessions
         }
     }
 }
+
+// Worth writing down, because the bug was one line and it took four wrong fixes to find.
+// Codex holds its rollout file open for as long as its TUI is up, so a default `new StreamReader(path)` throws.
+// Every id was swallowed by an empty `catch` and returned as null, so every pane came back with no ids attached.
+// What settled it was a counter in a throwaway log showing `enumerated=137 skippedBeforeSnapshot=0 unreadable=1`.
+// Meaning, the file was found, passed both filters, and died on open.
+//
+// Constraints this code depends on:
+//
+// `FileShare.ReadWrite | FileShare.Delete`, or nothing is readable at all.
+// Resuming forks the rollout name, so the file carries the resumed id alongside a new one.
+// Take the id from `payload.session_id` on the first line; parsing the filename yields fragments `codex resume` rejects, and those fragments get persisted and re-fail on every launch.
+// The cutoff marks rollout files created after app start. Taken afterwards, terminal startup is enough for panes to have written theirs, and they get discarded for the whole session.
+// Codex writes no rollout until a conversation starts, so a pane you never message reopens empty every time and never accumulates history.
