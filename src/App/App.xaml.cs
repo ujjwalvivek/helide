@@ -351,8 +351,28 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) => Write("Dispatcher", args.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             Write("AppDomain", args.ExceptionObject as Exception ?? new Exception(args.ExceptionObject?.ToString()));
-        TaskScheduler.UnobservedTaskException += (_, args) => Write("Task", args.Exception);
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            // Closing a pane disposes the stream its terminal is still reading, and the
+            // control lets that read fault unobserved. It happens once per pane closed
+            // and means nothing, but it was nearly every entry in the log -- enough to
+            // bury the crashes the log exists for.
+            if (IsClosedPaneRead(args.Exception))
+            {
+                args.SetObserved();
+                return;
+            }
+
+            Write("Task", args.Exception);
+        };
     }
+
+    // Matched on the frame as well as the type: an ObjectDisposedException from anywhere
+    // else is still worth reading about.
+    private static bool IsClosedPaneRead(AggregateException exception) =>
+        exception.Flatten().InnerExceptions.All(inner =>
+            inner is ObjectDisposedException
+            && inner.StackTrace?.Contains("TermPTY.ReadOutputLoop", StringComparison.Ordinal) == true);
 
     // Silent background check for new updates when app restarts.
     // If one exists, a subtle notification is shown (not a popup blocking startup).

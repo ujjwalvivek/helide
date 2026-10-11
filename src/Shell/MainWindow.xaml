@@ -256,78 +256,6 @@
             </Setter>
         </Style>
 
-        <Style
-            x:Key="WelcomeActionStyle"
-            TargetType="Button"
-            BasedOn="{StaticResource ChromeButtonStyle}"
-        >
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="Padding" Value="10,10" />
-            <Setter Property="MinHeight" Value="42" />
-            <Setter Property="FontSize" Value="13" />
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-        </Style>
-
-        <Style x:Key="CaptionButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="46" />
-            <Setter Property="Height" Value="32" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
-            <Setter Property="FontSize" Value="10" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border
-                            x:Name="CaptionSurface"
-                            Background="{TemplateBinding Background}"
-                        >
-                            <ContentPresenter
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                            />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter
-                                    TargetName="CaptionSurface"
-                                    Property="Background"
-                                    Value="{DynamicResource InteractiveBrush}"
-                                />
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter
-                                    TargetName="CaptionSurface"
-                                    Property="Background"
-                                    Value="{DynamicResource PressedBrush}"
-                                />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style
-            x:Key="CloseCaptionButtonStyle"
-            TargetType="Button"
-            BasedOn="{StaticResource CaptionButtonStyle}"
-        >
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource CaptionCloseBrush}" />
-                    <Setter Property="Foreground" Value="{DynamicResource TextOnCaptionCloseBrush}" />
-                </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource CaptionClosePressedBrush}" />
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-
         <!-- The three window buttons as coloured dots. What each one does is drawn inside
              it only while the pointer is over the group, so at rest they are just colour. -->
         <Style x:Key="TrafficLightStyle" TargetType="Button">
@@ -372,17 +300,6 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-        </Style>
-
-        <Style
-            x:Key="RecentProjectStyle"
-            TargetType="Button"
-            BasedOn="{StaticResource ChromeButtonStyle}"
-        >
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="Padding" Value="10,8" />
-            <Setter Property="MinHeight" Value="40" />
         </Style>
 
         <Style x:Key="TerminalSlotStyle" TargetType="ContentControl">
@@ -517,21 +434,6 @@
             <Setter Property="RenderOptions.BitmapScalingMode" Value="HighQuality" />
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-
-        <Style x:Key="TitlePillStyle" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource InteractiveBrush}" />
-            <Setter Property="CornerRadius" Value="0" />
-            <Setter Property="Padding" Value="4,2" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Margin" Value="4,0,0,0" />
-        </Style>
-
-        <Style x:Key="TitlePillTextStyle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
-            <Setter Property="FontFamily" Value="{DynamicResource UiMonoFontFamily}" />
-            <Setter Property="FontSize" Value="10" />
-            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
     </Window.Resources>

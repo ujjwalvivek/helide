@@ -76,7 +76,6 @@ public partial class MainWindow : Window
 
     private readonly string? _startupProject;
     private readonly List<NativeTerminalHost> _terminalHosts = [];
-    private NativeTerminalHost? _runnerHost;
     private NativeTerminalHost? _leftHost;
     private LeftTool _leftHostTool = LeftTool.Git;
     private LeftTool _activeLeftTool = LeftTool.Git;
@@ -206,6 +205,10 @@ public partial class MainWindow : Window
 
     private void ThemePalette_ThemeChanged(object? sender, EventArgs e)
     {
+        // The frame is drawn by DWM from colours it was handed once, so it has to be
+        // handed the new ones.
+        DwmNative.Apply(this);
+
         foreach (var tab in _editorTabs)
             tab.RefreshTheme();
 
@@ -230,9 +233,12 @@ public partial class MainWindow : Window
         SyncYaziIntegration();
         UpdateAiChrome();
 
-        if (!string.IsNullOrWhiteSpace(_startupProject) && Directory.Exists(_startupProject))
-            OpenWorkspace(_startupProject);
-        else
+        // A startup project another window already owns is refused, and without the
+        // fallback this one would be left exactly as the XAML declares it: no recents,
+        // nothing to continue, and a title that says nothing.
+        if (string.IsNullOrWhiteSpace(_startupProject)
+            || !Directory.Exists(_startupProject)
+            || !OpenWorkspace(_startupProject))
             ShowWelcome();
     }
 
@@ -691,7 +697,7 @@ public partial class MainWindow : Window
         // --- Focus ---
         commands.Add(new PaletteCommand("Focus Left Panel", () => FocusPanel(ToolPanel.Left, ActiveLeftHost()), "Focus", PaletteCommand.Gesture(Key.D1), canInvoke: workspace));
         commands.Add(new PaletteCommand("Focus Editor", () => FocusPanel(null, ActiveEditorHost()), "Focus", PaletteCommand.Gesture(Key.D2), canInvoke: workspace));
-        commands.Add(new PaletteCommand("Focus Runner", () => FocusPanel(ToolPanel.Runner, _runnerHost), "Focus", PaletteCommand.Gesture(Key.D3), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Focus Runner", () => FocusPanel(ToolPanel.Runner, _activeRunnerSession?.Host), "Focus", PaletteCommand.Gesture(Key.D3), canInvoke: workspace));
         if (_state.AiEnabled)
             commands.Add(new PaletteCommand("Focus Agent", () => FocusPanel(ToolPanel.Agent, _activeAgentSession?.Host), "Focus", PaletteCommand.Gesture(Key.D4), canInvoke: workspace));
 
@@ -712,7 +718,6 @@ public partial class MainWindow : Window
             commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanel(ToolPanel.Agent), "View", canInvoke: workspace));
         commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
         commands.Add(new PaletteCommand("Previous Editor Tab", () => CycleEditorTab(-1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
-        commands.Add(new PaletteCommand("Run Project Command", RunProjectCommand, "Run", canInvoke: workspace));
 
         // --- Theme ---
         // Driven off the theme table rather than a hand-maintained list, so a theme
@@ -726,6 +731,16 @@ public partial class MainWindow : Window
                 key == ThemePalette.ActiveTheme ? "active" : null,
                 keywords: key));
         }
+
+        // --- AI ---
+        // The same switch as the banner on the welcome screen, reachable without
+        // leaving the workspace.
+        commands.Add(new PaletteCommand(
+            _state.AiEnabled ? "Disable AI" : "Enable AI",
+            () => SetAiEnabled(!_state.AiEnabled),
+            "AI",
+            _state.AiEnabled ? "closes the agent pane" : "opens the agent pane",
+            keywords: "agent opencode codex claude toggle switch"));
 
         commands.Add(new PaletteCommand("About Helide", ShowAbout, "Help"));
 
@@ -867,16 +882,6 @@ private void OpenInNewWindow(string? projectPath)
             : System.Windows.Input.Cursors.Arrow;
     }
 
-    private void RunProjectCommand()
-    {
-        if (_runnerHost is null)
-            return;
-
-        _runnerHost.FocusTerminal();
-        if (_runCommand != "pwsh")
-            _runnerHost.WriteLine(_runCommand);
-    }
-
     private void ApplyTheme(string key)
     {
         ThemePalette.ApplyTheme(key);
@@ -893,7 +898,32 @@ private void OpenInNewWindow(string? projectPath)
             return;
 
         if (reveal is { } panel && IsPanelCollapsed(panel))
+        {
             TogglePanel(panel);
+
+            // A collapsed pane's renderer window is hidden, and a hidden window is
+            // refused focus -- the pane opened and the keys stayed where they were.
+            // The renderer comes back some passes after the toggle, and not on any
+            // event this window is told about: one deferred call at idle priority was
+            // still too early. So the focus is asked for over the next moment instead.
+            var attempts = 0;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            timer.Tick += (_, _) =>
+            {
+                // Closed in the meantime: there is nothing left to focus.
+                if (!_terminalHosts.Contains(host))
+                {
+                    timer.Stop();
+                    return;
+                }
+
+                host.FocusTerminal();
+                if (++attempts >= 8)
+                    timer.Stop();
+            };
+            timer.Start();
+            return;
+        }
 
         host.FocusTerminal();
     }
@@ -953,10 +983,24 @@ private void OpenInNewWindow(string? projectPath)
     {
         // Dropped on the way to the chooser: a window sitting here must not stop another
         // from opening the same project, which is what holding the claim would do.
+        //
+        // The workspace is written first, and then not again until this window owns
+        // the project once more. Its panes stay alive behind this screen, and without
+        // that a second window could open the project, change it, and have this
+        // window's older picture written over the top when it closed.
+        SaveWorkspaceLayout();
+        if (_currentProject is not null && _ownsProject)
+        {
+            RecordAgentSessions();
+            SaveEditorTabs();
+            WriteWorkspace();
+        }
+
+        _ownsProject = false;
+
         if (_currentProject is not null && Application.Current is App app)
             app.ReleaseProjectClaim(this);
 
-        SaveWorkspaceLayout();
         WorkspaceRoot.Visibility = Visibility.Collapsed;
         WelcomeRoot.Visibility = Visibility.Visible;
         ProjectNamePill.Visibility = Visibility.Collapsed;
@@ -964,7 +1008,32 @@ private void OpenInNewWindow(string? projectPath)
         GitBranchPill.Visibility = Visibility.Collapsed;
         Title = "Open Recent Project";
         PopulateWelcome();
-        OpenProjectButton.Focus();
+
+        FocusWelcomeDefault();
+
+        // And again once things have settled. Arriving here from the palette, the
+        // popup is still closing, and when its window goes the main window is handed
+        // focus back and restores whatever last had it -- a pane that is now hidden.
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(FocusWelcomeDefault));
+    }
+
+    // Enter goes to whichever row has focus, and the Enter badge sits on the continue
+    // row, so that is the one focused whenever it is there.
+    private void FocusWelcomeDefault()
+    {
+        if (WelcomeRoot.Visibility != Visibility.Visible)
+            return;
+
+        // A pane's renderer can still hold the real keyboard focus after the workspace
+        // is hidden, and WPF focus alone does not take it back.
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle != IntPtr.Zero && IsActive)
+            NativeMethods.SetFocus(handle);
+
+        if (ContinueProjectButton.Visibility == Visibility.Visible)
+            ContinueProjectButton.Focus();
+        else
+            OpenProjectButton.Focus();
     }
 
     private void ShowWorkspace()
@@ -1037,9 +1106,12 @@ private void OpenInNewWindow(string? projectPath)
         AgentPanelToggle.Visibility = _state.AiEnabled ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void AiBanner_Click(object sender, RoutedEventArgs e)
+    private void AiBanner_Click(object sender, RoutedEventArgs e) =>
+        SetAiEnabled(AiBanner.IsChecked == true);
+
+    // The one switch behind both the welcome banner and the palette entry.
+    private void SetAiEnabled(bool enable)
     {
-        var enable = AiBanner.IsChecked == true;
         if (enable == _state.AiEnabled)
             return;
 
@@ -1053,11 +1125,11 @@ private void OpenInNewWindow(string? projectPath)
         _stateStore.Save(_state);
         UpdateAiChrome();
 
-        // Turning it off takes effect now: a workspace can still be alive behind this
-        // screen, and its agents should not keep running. Turning it on waits until a
-        // workspace is on screen, because a terminal must not be started inside a pane
-        // that has no size yet.
-        if (!enable)
+        // Turning it off takes effect now: a workspace can still be alive behind the
+        // welcome screen, and its agents should not keep running. Turning it on waits
+        // until a workspace is on screen, because a terminal must not be started inside
+        // a pane that has no size yet -- from the palette it already is.
+        if (!enable || WorkspaceRoot.Visibility == Visibility.Visible)
             SyncAgentsWithAiState();
     }
 
@@ -1130,12 +1202,38 @@ private void OpenInNewWindow(string? projectPath)
             AgentPaneTitle.Text = "AGENT";
     }
 
+    // Back to the workspace that was kept alive behind the welcome screen.
+    //
+    // The claim on its project has to be taken again first. Going to the welcome
+    // screen drops it, and coming back used to just show the panes -- so this window
+    // was on a project it no longer owned, and "Open New Window" found that project
+    // free and opened it a second time.
+    //
+    // If another window took the project in the meantime it is the owner now. It has
+    // been asked forward, and the copy held here is dropped without being saved, since
+    // the file is the other window's to write.
+    private bool ResumeKeptWorkspace()
+    {
+        if (Application.Current is App app && !app.ClaimProject(_currentProject, this))
+        {
+            CloseWorkspace();
+            TearDownAgentSessions();
+            _currentProject = null;
+            PopulateWelcome();
+            return false;
+        }
+
+        _ownsProject = true;
+        ShowWorkspace();
+        SyncAgentsWithAiState();
+        return true;
+    }
+
     private void ContinueProjectButton_Click(object sender, RoutedEventArgs e)
     {
         if (!string.IsNullOrWhiteSpace(_currentProject))
         {
-            ShowWorkspace();
-            SyncAgentsWithAiState();
+            ResumeKeptWorkspace();
             return;
         }
 
@@ -1162,23 +1260,24 @@ private void OpenInNewWindow(string? projectPath)
         OpenWorkspace(path);
     }
 
-    private void OpenWorkspace(string project)
+    // False when the project was not opened: it is missing, another window owns it, or
+    // it failed to start. Every caller but startup can ignore that, because they leave
+    // the window on whatever it was already showing.
+    private bool OpenWorkspace(string project)
     {
         if (!Directory.Exists(project))
         {
             MessageBox.Show(this, $"The project folder does not exist:\n\n{project}",
                 "Helide", MessageBoxButton.OK, MessageBoxImage.Warning);
             ShowWelcome();
-            return;
+            return false;
         }
 
         project = Path.GetFullPath(project);
         if (string.Equals(project, _currentProject, StringComparison.OrdinalIgnoreCase) &&
             _terminalHosts.Count > 0)
         {
-            ShowWorkspace();
-            SyncAgentsWithAiState();
-            return;
+            return ResumeKeptWorkspace();
         }
 
         // Ownership is taken before anything below tears the old workspace down. If
@@ -1186,7 +1285,15 @@ private void OpenInNewWindow(string? projectPath)
         // put -- checked afterwards it would have already closed the workspace it was
         // showing. Two windows on one project would both write the same state file.
         if (Application.Current is App app && !app.ClaimProject(project, this))
-            return;
+        {
+            // A refused claim leaves this window holding the chooser's claim instead of
+            // its own project's. The workspace it is still showing has to be taken
+            // back, or it would be open here and free for another window to open too.
+            if (_ownsProject && _currentProject is not null)
+                app.ClaimProject(_currentProject, this);
+
+            return false;
+        }
 
         try
         {
@@ -1196,11 +1303,13 @@ private void OpenInNewWindow(string? projectPath)
             //
             // The agent tabs and which of them was showing are captured here too. They
             // used to be recorded only when the window closed, so a workspace left by
-            // switching came back on whatever the file last held -- the last tab.
+            // switching came back on whatever the file last held -- the last tab. The
+            // editor tabs had the same gap.
             if (_currentProject is not null)
             {
                 RecordAgentSessions();
-                _stateStore.SaveWorkspace(_workspace, _currentProject);
+                SaveEditorTabs();
+                WriteWorkspace();
             }
 
             SaveWorkspaceLayout();
@@ -1208,6 +1317,7 @@ private void OpenInNewWindow(string? projectPath)
             TearDownAgentSessions();
 
             _currentProject = project;
+            _ownsProject = true;
 
             // Loaded before anything reads it: RestoreWorkspaceLayout, RestoreEditorTabs
             // and InitializeAgentSessions all come further down this method.
@@ -1338,6 +1448,8 @@ private void OpenInNewWindow(string? projectPath)
             _stateStore.RecordProject(_state, project);
             if (failures > 0)
                 WelcomeStatus.Text = $"{failures} tool pane{(failures == 1 ? "" : "s")} failed to start.";
+
+            return true;
         }
         catch (Exception exception)
         {
@@ -1345,6 +1457,7 @@ private void OpenInNewWindow(string? projectPath)
             _currentProject = null;
             ShowWelcome();
             WelcomeStatus.Text = $"Could not open the workspace.\n{exception.Message}";
+            return false;
         }
     }
 
@@ -1628,6 +1741,7 @@ private void OpenInNewWindow(string? projectPath)
             _terminalHosts.Add(host);
             ScrollStripToEnd(EditorTabStripScroll);
             ActivateEditorTab(tab);
+            PersistEditorTabs();
             return tab;
         }
         catch (Exception exception)
@@ -1845,6 +1959,7 @@ private void OpenInNewWindow(string? projectPath)
         {
             case EditorTab editor:
                 _editorTabs.Move(_editorTabs.IndexOf(editor), to);
+                PersistEditorTabs();
                 break;
             case AgentSessionView session when _runnerSessions.Contains(session):
                 _runnerSessions.Move(_runnerSessions.IndexOf(session), to);
@@ -1915,6 +2030,7 @@ private void OpenInNewWindow(string? projectPath)
             ActivateNeighbourAfter(tab);
         }
 
+        PersistEditorTabs();
     }
 
     private void ActivateNeighbourAfter(EditorTab removed)
@@ -2091,6 +2207,20 @@ private void OpenInNewWindow(string? projectPath)
             return;
         }
 
+        // Enter on the welcome screen continues, as the badge on that row says, without
+        // depending on the row having kept focus. A button that does have focus -- a
+        // recent project tabbed to, say -- still gets its own Enter.
+        if (modifiers == ModifierKeys.None
+            && e.Key == Key.Enter
+            && WelcomeRoot.Visibility == Visibility.Visible
+            && ContinueProjectButton.Visibility == Visibility.Visible
+            && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.ButtonBase)
+        {
+            ContinueProjectButton_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+            return;
+        }
+
         if (!modifiers.HasFlag(ModifierKeys.Control))
             return;
 
@@ -2116,16 +2246,27 @@ private void OpenInNewWindow(string? projectPath)
         // Ctrl+5 always means the project browser; Ctrl+1 means whichever left tool is
         // showing, so it can never focus a pane the user cannot see.
         if (number == 5)
+        {
             ToggleLeftTool(LeftTool.Project);
 
-        // Ctrl+1 focuses whichever left tool is showing, Ctrl+2 the editor. Every
-        // other index still resolves positionally, so the list order of the
-        // remaining tools is unchanged.
+            // The toggle just hid the browser. Carrying on would focus the pane, and
+            // focusing reveals it again.
+            if (IsPanelCollapsed(ToolPanel.Left))
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+
+        // Each number names a pane and resolves to whatever that pane is showing.
+        // Ctrl+3 and Ctrl+4 used to index the host list instead, which is in creation
+        // order: with a second editor tab open they focused that, not the runner.
         var host = number switch
         {
-            1 => ActiveLeftHost(),
+            1 or 5 => ActiveLeftHost(),
             2 => ActiveEditorHost(),
-            _ => number <= _terminalHosts.Count ? _terminalHosts[number - 1] : null,
+            3 => _activeRunnerSession?.Host,
+            _ => _activeAgentSession?.Host,
         };
         if (host is not null)
         {
@@ -2136,10 +2277,7 @@ private void OpenInNewWindow(string? projectPath)
                 4 => ToolPanel.Agent,
                 _ => (ToolPanel?)null,
             };
-            if (panel is { } target && IsPanelCollapsed(target))
-                TogglePanel(target);
-
-            host.FocusTerminal();
+            FocusPanel(panel, host);
             e.Handled = true;
         }
     }
@@ -2766,15 +2904,23 @@ private void OpenInNewWindow(string? projectPath)
     {
         var restored = 0;
 
-        foreach (var saved in _workspace.EditorTabs)
+        _restoringEditorTabs = true;
+        try
         {
-            // A file that moved or was deleted between sessions opens as a Helix
-            // error pane, so skip it and let the file picker take over.
-            if (saved.Path is not null && !File.Exists(saved.Path))
-                continue;
+            foreach (var saved in _workspace.EditorTabs)
+            {
+                // A file that moved or was deleted between sessions opens as a Helix
+                // error pane, so skip it and let the file picker take over.
+                if (saved.Path is not null && !File.Exists(saved.Path))
+                    continue;
 
-            if (CreateEditorTab(saved.Path) is not null)
-                restored++;
+                if (CreateEditorTab(saved.Path) is not null)
+                    restored++;
+            }
+        }
+        finally
+        {
+            _restoringEditorTabs = false;
         }
 
         return restored;
@@ -2875,7 +3021,6 @@ private void OpenInNewWindow(string? projectPath)
             _terminalHosts.Clear();
             _editorTabs.Clear();
             _activeEditorTab = null;
-            _runnerHost = null;
             _leftHost = null;
         }
         finally
@@ -2952,6 +3097,35 @@ private void OpenInNewWindow(string? projectPath)
         _workspace.EditorTabs.Clear();
         foreach (var tab in _editorTabs)
             _workspace.EditorTabs.Add(new EditorTabState { Path = tab.Path });
+    }
+
+    // Set while saved tabs are being reopened, when the saved list is the thing being
+    // read and must not be rewritten from a half-built set of tabs.
+    private bool _restoringEditorTabs;
+
+    // Writes the open editor tabs to disk as soon as the set changes, for the reason
+    // the agent panes are: what was open should not depend on Helide exiting cleanly.
+    private void PersistEditorTabs()
+    {
+        if (_currentProject is null || _restoringEditorTabs)
+            return;
+
+        SaveEditorTabs();
+        WriteWorkspace();
+    }
+
+    // False while this window sits on the welcome screen with a workspace kept alive
+    // behind it. It has let go of the project then, so the project's file may be
+    // another window's to write.
+    private bool _ownsProject;
+
+    // The only place the workspace file is written from.
+    private void WriteWorkspace()
+    {
+        if (_currentProject is null || !_ownsProject)
+            return;
+
+        _stateStore.SaveWorkspace(_workspace, _currentProject);
     }
 
     // Records which conversation each agent pane is on, so the next launch reopens it
@@ -3074,7 +3248,7 @@ private void OpenInNewWindow(string? projectPath)
             return;
 
         RecordAgentSessions();
-        _stateStore.SaveWorkspace(_workspace, _currentProject);
+        WriteWorkspace();
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -3089,8 +3263,7 @@ private void OpenInNewWindow(string? projectPath)
         // Only when a project is open: with no project there is nothing to key a
         // workspace file against, and writing one would create an orphan per launch
         // from the welcome screen.
-        if (_currentProject is not null)
-            _stateStore.SaveWorkspace(_workspace, _currentProject);
+        WriteWorkspace();
 
         _stateStore.Save(_state);
         CloseWorkspace();

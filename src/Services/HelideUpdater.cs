@@ -19,7 +19,12 @@ public class HelideUpdater
 
     public HelideUpdater()
     {
-        _exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+        // MainModule is null when the process cannot be inspected. An empty path is
+        // already handled everywhere it is read: the version falls back and a restart
+        // reports the executable as missing.
+        _exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
+            ?? Environment.ProcessPath
+            ?? string.Empty;
         _currentVer = ReadInstalledVersion();
         Client.DefaultRequestHeaders.UserAgent.ParseAdd("Helide-Updater/1.0");
         var token = System.Environment.GetEnvironmentVariable("GITHUB_TOKEN");

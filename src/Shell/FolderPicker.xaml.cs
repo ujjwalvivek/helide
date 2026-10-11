@@ -160,6 +160,7 @@ public partial class FolderPicker : UserControl
         _visible.Add(FolderRow.Browse());
 
         EmptyText.Visibility = folders == 0 ? Visibility.Visible : Visibility.Collapsed;
+        CountText.Text = folders == 1 ? "1 folder" : $"{folders} folders";
 
         SelectFirst();
     }
@@ -363,24 +364,18 @@ internal sealed class FolderRow
     };
 
     /// <summary>
-    /// Project-relative path, shown as a tooltip: two folders in a large tree share a
-    /// name more often than a glance at the indent can tell apart.
+    /// Project-relative path, shown quietly at the right of the row: two folders in a
+    /// large tree share a name more often than a glance at the indent can tell apart.
+    /// Empty for the root and its direct children, where it would only repeat the name.
     /// </summary>
-    public string Path => Entry?.RelativePath ?? Kind switch
-    {
-        FolderRowKind.Back => "Return to the command palette",
-        FolderRowKind.Browse => "Browse for a folder outside this project",
-        _ => string.Empty,
-    };
+    public string Note => Entry is { Depth: > 1 } entry ? entry.RelativePath : string.Empty;
 
-    // The pinned rows get air instead of a divider, so they read as outside the tree
-    // without a second kind of row in the list.
-    public Thickness Indent => Kind switch
-    {
-        FolderRowKind.Back => new Thickness(0, 0, 0, 5),
-        FolderRowKind.Browse => new Thickness(0, 7, 0, 3),
-        _ => new Thickness(Entry!.Depth * 12, 0, 0, 0),
-    };
+    // Only folders are indented. The pinned rows used to get air above and below
+    // instead, but a row is now a flat band, and air inside one pushes its text off
+    // centre; their glyph and quieter text are what set them apart from the tree.
+    public Thickness Indent => Kind == FolderRowKind.Folder
+        ? new Thickness(Entry!.Depth * 12, 0, 0, 0)
+        : new Thickness(0);
 
     public static FolderRow Back() => new(FolderRowKind.Back);
 

@@ -22,6 +22,10 @@ namespace Helide.Sessions;
 /// worth marking. The database is in WAL mode, so these reads never contend with the agent
 /// writing to it.
 /// </para>
+/// <para>
+/// The timer runs on the dispatcher but each read runs on the thread pool, and only the
+/// <see cref="BecameIdle"/> raise comes back.
+/// </para>
 /// </remarks>
 internal sealed class OpenCodeStatusSource : ISessionStatusSource
 {
@@ -32,9 +36,13 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _timer;
 
+    // Only ever touched by the read in flight, and _reading allows one at a time.
     private long? _observedIdleAt;
     private bool _baselineTaken;
     private bool _sawRunning;
+
+    private int _reading;
+    private volatile bool _disposed;
 
     public OpenCodeStatusSource(string databasePath, string sessionId, Dispatcher dispatcher)
     {
@@ -56,9 +64,36 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
 
     public void Start() => _timer.Start();
 
-    public void Dispose() => _timer.Stop();
+    public void Dispose()
+    {
+        _disposed = true;
+        _timer.Stop();
+    }
 
+    // The timer ticks on the dispatcher, and the read does not belong there: it opens a
+    // connection to a database that holds every session on the machine, and that can
+    // take long enough to be felt as a stutter in every pane at once. A read still
+    // running when the next tick comes round is left to finish rather than joined by a
+    // second one.
     private void Poll()
+    {
+        if (Interlocked.Exchange(ref _reading, 1) == 1)
+            return;
+
+        Task.Run(() =>
+        {
+            try
+            {
+                Read();
+            }
+            finally
+            {
+                Volatile.Write(ref _reading, 0);
+            }
+        });
+    }
+
+    private void Read()
     {
         OpenCodeSessionRow? session;
 
@@ -112,6 +147,11 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
         if (!justFinished)
             return;
 
-        _dispatcher.BeginInvoke(new Action(() => BecameIdle?.Invoke()));
+        // A pane closed while its last read was in flight has nobody left to tell.
+        _dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!_disposed)
+                BecameIdle?.Invoke();
+        }));
     }
 }
