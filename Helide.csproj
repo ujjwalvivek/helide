@@ -10,7 +10,7 @@
     <AssemblyName>Helide</AssemblyName>
     <RootNamespace>Helide</RootNamespace>
     <Product>Helide</Product>
-    <Version>1.6.4</Version>
+    <Version>1.6.5</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <DebugType>none</DebugType>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
