@@ -604,8 +604,10 @@ public class AutoUpdater : IDisposable
         if (System.IO.File.Exists(installPath)) return installPath;
 
         // Try same directory as updater
-        var here = System.IO.Path.GetDirectoryName(
-            System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName)!;
+        // ProcessPath rather than MainModule, which is nullable and was dereferenced
+        // twice here. It is the updater's own exe either way, single-file or not.
+        var here = System.IO.Path.GetDirectoryName(Environment.ProcessPath)
+            ?? AppContext.BaseDirectory;
         var local = System.IO.Path.Combine(here, "Helide.exe");
         if (System.IO.File.Exists(local)) return local;
 
@@ -618,8 +620,7 @@ public class AutoUpdater : IDisposable
         }
 
         // Fallback to updater's own dir (if updater was copied into Helide folder)
-        return System.IO.Path.GetDirectoryName(
-            System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName)! + System.IO.Path.DirectorySeparatorChar + "Helide.exe";
+        return local;
     }
 
     private string GetCurrentAssemblyVersionFromHelide()
