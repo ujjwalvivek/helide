@@ -17,7 +17,7 @@
                     <ControlTemplate TargetType="Thumb">
                         <Border x:Name="Bar"
                                 Background="{DynamicResource BorderBrush}"
-                                CornerRadius="3"
+                                CornerRadius="0"
                                 Width="6"
                                 Margin="0,2" />
                         <ControlTemplate.Triggers>
@@ -64,7 +64,7 @@
     <Border Background="{DynamicResource PopoverBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="1"
-            CornerRadius="9"
+            CornerRadius="0"
             SnapsToDevicePixels="True">
         <Border.Effect>
             <DropShadowEffect BlurRadius="30"
@@ -83,7 +83,7 @@
 
             <Border Grid.Row="0"
                     Background="{DynamicResource PaneHeaderBrush}"
-                    CornerRadius="8,8,0,0"
+                    CornerRadius="0"
                     Padding="16,0,16,0">
                 <Grid Height="46">
                     <Grid.ColumnDefinitions>
@@ -173,7 +173,7 @@
                                 <ControlTemplate TargetType="ListBoxItem">
                                     <Border x:Name="Row"
                                             Background="{TemplateBinding Background}"
-                                            CornerRadius="6"
+                                            CornerRadius="0"
                                             Padding="10,6"
                                             ToolTip="{Binding Path}">
                                         <Grid>
@@ -189,7 +189,7 @@
                                                     Grid.Column="0"
                                                     Width="2"
                                                     Margin="0,2,10,2"
-                                                    CornerRadius="1"
+                                                    CornerRadius="0"
                                                     Background="Transparent" />
                                             <ContentPresenter Grid.Column="1" />
                                         </Grid>
@@ -297,7 +297,7 @@
 
             <Border Grid.Row="4"
                     Background="{DynamicResource PaneHeaderBrush}"
-                    CornerRadius="0,0,8,8"
+                    CornerRadius="0"
                     Padding="16,8">
                 <TextBlock Text="Enter open    ·    ↑ ↓ move    ·    Esc close"
                            FontFamily="{DynamicResource UiFontFamily}"

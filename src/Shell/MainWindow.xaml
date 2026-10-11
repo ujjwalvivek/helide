@@ -22,7 +22,7 @@
             CaptionHeight="32"
             ResizeBorderThickness="6"
             GlassFrameThickness="0"
-            CornerRadius="4"
+            CornerRadius="0"
             UseAeroCaptionButtons="False"
         />
     </shell:WindowChrome.WindowChrome>
@@ -31,6 +31,186 @@
              than combined here. FrameworkElement.Triggers accepts EventTrigger only, so
              a DataTrigger on the tab Border would throw as soon as a strip renders. -->
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- The x on a tab. Drawn rather than typed, so it sits on the pixel grid at this
+             size instead of wherever the font's glyph happens to land. -->
+        <Style x:Key="TabCloseStyle" TargetType="Button">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="CloseSurface" Background="{TemplateBinding Background}">
+                            <Path
+                                Data="M5.5,5.5 L12.5,12.5 M12.5,5.5 L5.5,12.5"
+                                Stroke="{TemplateBinding Foreground}"
+                                StrokeThickness="1.2"
+                                SnapsToDevicePixels="True"
+                            />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CloseSurface" Property="Background" Value="{DynamicResource DangerBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- One tab, for all three strips. The editor, runner and agent strips used to
+             carry a copy each, and the copies had drifted: different widths, different
+             close buttons, and three sets of handlers.
+
+             Two borders on purpose. The inner one takes its fill from the view model,
+             which is transparent for an inactive tab, so the outer one's hover colour
+             shows through it; a single border could not do both, because a bound
+             Background outranks a style trigger.
+
+             The active tab is the colour of the pane beneath it and reaches one pixel
+             over the header's bottom line, so it reads as part of the pane rather than
+             as a button above it. -->
+        <DataTemplate x:Key="PaneTabTemplate">
+            <Border
+                Margin="0,0,1,-1"
+                Cursor="Hand"
+                ToolTip="{Binding ToolTipText}"
+                MouseEnter="Tab_MouseEnter"
+                MouseLeave="Tab_MouseLeave"
+                PreviewMouseLeftButtonDown="Tab_PointerDown"
+                MouseMove="Tab_PointerMove"
+                MouseLeftButtonUp="Tab_PointerUp"
+                LostMouseCapture="Tab_LostCapture"
+            >
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="Transparent" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Border
+                    Background="{Binding Background}"
+                    BorderBrush="{Binding Underline}"
+                    BorderThickness="0,2,0,0"
+                    Padding="10,0,4,2"
+                >
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock
+                            Text="{Binding Name}"
+                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                            FontSize="{DynamicResource FontSizeSmall}"
+                            Foreground="{Binding Foreground}"
+                            FontWeight="{Binding Weight}"
+                            MaxWidth="150"
+                            TextTrimming="CharacterEllipsis"
+                            VerticalAlignment="Center"
+                        />
+                        <Grid Width="18" Height="18" Margin="5,0,0,0">
+                            <Ellipse
+                                Width="6"
+                                Height="6"
+                                Fill="{DynamicResource SuccessBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Visibility="{Binding ShowAttentionDot, Converter={StaticResource BoolToVis}}"
+                            />
+                            <Button
+                                Click="Tab_Close"
+                                Style="{StaticResource TabCloseStyle}"
+                                ToolTip="Close"
+                                Visibility="{Binding ShowCloseButton, Converter={StaticResource BoolToVis}}"
+                            />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Border>
+        </DataTemplate>
+
+        <!-- A row on the welcome screen: a box, and the pointer only lights its edge.
+             Filling the whole box on hover made a list of them flash as the mouse
+             crossed it. -->
+        <Style x:Key="WelcomeRowStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Height" Value="44" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="Box"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True"
+                        >
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource PressedStrongBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- A row in a small menu, such as the one that picks an agent. -->
+        <Style x:Key="MenuRowStyle" TargetType="Button">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="8,0,14,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="FontFamily" Value="{DynamicResource UiMonoFontFamily}" />
+            <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="RowSurface"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="2,0,0,0"
+                            Padding="{TemplateBinding Padding}"
+                        >
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="RowSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                <Setter TargetName="RowSurface" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
         <Style x:Key="ChromeButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
@@ -46,7 +226,7 @@
                         <Border
                             x:Name="Chrome"
                             Background="{TemplateBinding Background}"
-                            CornerRadius="2"
+                            CornerRadius="0"
                             Padding="{TemplateBinding Padding}"
                         >
                             <ContentPresenter
@@ -260,7 +440,7 @@
             <Setter Property="Background" Value="{DynamicResource PaneHeaderBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
-            <Setter Property="CornerRadius" Value="2,2,0,0" />
+            <Setter Property="CornerRadius" Value="0" />
         </Style>
 
         <Style x:Key="PanelToggleStyle" TargetType="ToggleButton">
@@ -279,7 +459,7 @@
                         <Border
                             x:Name="ToggleSurface"
                             Background="{TemplateBinding Background}"
-                            CornerRadius="2"
+                            CornerRadius="0"
                         >
                             <ContentPresenter
                                 HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -341,7 +521,7 @@
 
         <Style x:Key="TitlePillStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource InteractiveBrush}" />
-            <Setter Property="CornerRadius" Value="2" />
+            <Setter Property="CornerRadius" Value="0" />
             <Setter Property="Padding" Value="4,2" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="4,0,0,0" />
@@ -357,6 +537,18 @@
     </Window.Resources>
 
     <Grid x:Name="RootGrid" Background="{DynamicResource WindowBrush}">
+        <!-- The window's own edge. Windows stops drawing one once the corners are
+             squared, and without it the window has no outline against whatever is
+             behind it. Drawn above everything and never hit-tested, so it costs the
+             content one pixel and the resize grip nothing. When maximised it falls
+             outside the screen along with the rest of the frame. -->
+        <Border
+            Panel.ZIndex="100"
+            BorderBrush="{DynamicResource PressedBrush}"
+            BorderThickness="1"
+            IsHitTestVisible="False"
+            SnapsToDevicePixels="True"
+        />
         <Grid x:Name="MaximizeInset" Margin="0">
         <Grid.RowDefinitions>
             <RowDefinition Height="32" />
@@ -397,23 +589,70 @@
                                 RenderOptions.BitmapScalingMode="HighQuality"
                             />
                     </Button>
-                    <Border x:Name="ProjectNamePill" Style="{DynamicResource TitlePillStyle}" Visibility="Collapsed">
+                    <!-- One strip in three segments: which project, where it is, which
+                         branch. The name is the accent block because it is the one
+                         thing that tells two Helide windows apart at a glance. -->
+                    <Border
+                            x:Name="ProjectNamePill"
+                            Visibility="Collapsed"
+                            Height="18"
+                            Margin="8,0,0,0"
+                            Padding="9,0"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource AccentBrush}"
+                        >
                         <TextBlock
                                 x:Name="ProjectNamePillText"
-                                Style="{DynamicResource TitlePillTextStyle}"
+                                VerticalAlignment="Center"
+                                FontFamily="{DynamicResource UiMonoFontFamily}"
+                                FontSize="{DynamicResource FontSizeBody}"
+                                FontWeight="SemiBold"
+                                Foreground="{DynamicResource TextOnAccentBrush}"
                             />
                     </Border>
-                    <Border x:Name="ProjectPathPill" Style="{DynamicResource TitlePillStyle}" Visibility="Collapsed">
+                    <Border
+                            x:Name="ProjectPathPill"
+                            Visibility="Collapsed"
+                            Height="18"
+                            MaxWidth="460"
+                            Padding="9,0"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource InteractiveBrush}"
+                        >
                         <TextBlock
                                 x:Name="ProjectPathPillText"
-                                Style="{DynamicResource TitlePillTextStyle}"
+                                VerticalAlignment="Center"
+                                FontFamily="{DynamicResource UiMonoFontFamily}"
+                                FontSize="{DynamicResource FontSizeSmall}"
+                                Foreground="{DynamicResource TextBrush}"
+                                TextTrimming="CharacterEllipsis"
                             />
                     </Border>
-                    <Border x:Name="GitBranchPill" Style="{DynamicResource TitlePillStyle}" Visibility="Collapsed">
-                        <TextBlock
-                                x:Name="GitBranchPillText"
-                                Style="{DynamicResource TitlePillTextStyle}"
-                            />
+                    <Border
+                            x:Name="GitBranchPill"
+                            Visibility="Collapsed"
+                            Height="18"
+                            Padding="8,0,9,0"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource PressedBrush}"
+                        >
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Image
+                                    Source="/src/Assets/icons/git.png"
+                                    Width="10"
+                                    Height="10"
+                                    Margin="0,0,6,0"
+                                    RenderOptions.BitmapScalingMode="HighQuality"
+                                />
+                            <TextBlock
+                                    x:Name="GitBranchPillText"
+                                    VerticalAlignment="Center"
+                                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                                    FontSize="{DynamicResource FontSizeSmall}"
+                                    FontWeight="SemiBold"
+                                    Foreground="{DynamicResource MauveBrush}"
+                                />
+                        </StackPanel>
                     </Border>
                 </StackPanel>
 
@@ -423,8 +662,37 @@
                         Margin="8,0,0,0"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"
                     >
-                    <Border x:Name="UpdatePill" Style="{DynamicResource TitlePillStyle}" Visibility="Collapsed" MouseLeftButtonUp="UpdatePill_Click" Cursor="Hand" ToolTip="Update available. Click to install">
-                        <TextBlock x:Name="UpdatePillText" Style="{DynamicResource TitlePillTextStyle}" Text="Update available" />
+                    <!-- Green, because it is the one pill that is asking for something. -->
+                    <Border
+                            x:Name="UpdatePill"
+                            Visibility="Collapsed"
+                            MouseLeftButtonUp="UpdatePill_Click"
+                            Cursor="Hand"
+                            ToolTip="Update available. Click to install"
+                            Height="18"
+                            Padding="8,0,9,0"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource SuccessBrush}"
+                        >
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock
+                                    Text="&#xE896;"
+                                    FontFamily="Segoe Fluent Icons"
+                                    FontSize="10"
+                                    Margin="0,0,6,0"
+                                    VerticalAlignment="Center"
+                                    Foreground="{DynamicResource TextOnAccentBrush}"
+                                />
+                            <TextBlock
+                                    x:Name="UpdatePillText"
+                                    Text="Update available"
+                                    VerticalAlignment="Center"
+                                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                                    FontSize="{DynamicResource FontSizeSmall}"
+                                    FontWeight="SemiBold"
+                                    Foreground="{DynamicResource TextOnAccentBrush}"
+                                />
+                        </StackPanel>
                     </Border>
                     <!-- A panel of their own: the hover that reveals the signs is this
                          panel's, and it must not include the update pill beside it. -->
@@ -474,64 +742,53 @@
                     >
                     <Grid MinHeight="650" Margin="48">
                         <StackPanel
-                                Width="600"
+                                Width="560"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
                             >
-                            <StackPanel
-                                    Orientation="Horizontal"
-                                    Margin="10,0,10,28"
-                                >
-                                <Border
-                                        Width="44"
-                                        Height="44"
-                                        CornerRadius="4"
-                                        Margin="0,0,14,0"
-                                        Background="Transparent"
-                                    >
-                                    <Image
-                                            Source="/src/Assets/helide.png"
-                                            Width="44"
-                                            Height="44"
-                                            RenderOptions.BitmapScalingMode="HighQuality"
-                                        />
-                                </Border>
-                                <StackPanel VerticalAlignment="Center">
+                            <Grid Margin="0,0,0,30">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Image
+                                        Source="/src/Assets/helide.png"
+                                        Width="60"
+                                        Height="60"
+                                        VerticalAlignment="Center"
+                                        RenderOptions.BitmapScalingMode="HighQuality"
+                                    />
+                                <StackPanel Grid.Column="1" Margin="18,0,0,0" VerticalAlignment="Center">
                                     <TextBlock
                                             Text="Helide"
-                                            FontSize="{DynamicResource FontSizeDisplay}"
-                                            FontWeight="SemiBold"
+                                            FontSize="36"
+                                            FontWeight="Bold"
                                             Foreground="{DynamicResource TextBrush}"
                                         />
                                     <TextBlock
                                             Text="Keep the editor you love. Bring the project tools you need."
-                                            Margin="0,2,0,0"
-                                            FontSize="{DynamicResource FontSizeMedium}"
+                                            Margin="2,0,0,0"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                                            FontSize="{DynamicResource FontSizeSmall}"
                                             Foreground="{DynamicResource TextSubtleBrush}"
                                         />
                                 </StackPanel>
-                            </StackPanel>
+                            </Grid>
 
                             <TextBlock
                                     Text="GET STARTED"
-                                    Margin="0,0,0,7"
-                                    FontFamily="{DynamicResource UiMonoFontFamily}"
-                                    FontSize="{DynamicResource FontSizeCaption}"
-                                    Foreground="{DynamicResource TextFaintBrush}"
-                                />
-                            <Border
-                                    Height="1"
-                                    Background="{DynamicResource BorderBrush}"
+                                    Margin="1,0,0,7"
+                                    Style="{DynamicResource SectionLabelStyle}"
                                 />
 
                             <Button
                                     x:Name="OpenProjectButton"
                                     Click="OpenProjectButton_Click"
-                                    Style="{DynamicResource WelcomeActionStyle}"
+                                    Style="{DynamicResource WelcomeRowStyle}"
                                 >
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="28" />
+                                        <ColumnDefinition Width="30" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
@@ -542,27 +799,24 @@
                                     <TextBlock
                                             Grid.Column="1"
                                             Text="Open project folder"
-                                        />
-                                    <TextBlock
-                                            Grid.Column="2"
-                                            Text="Ctrl+O"
+                                            FontSize="{DynamicResource FontSizeLarge}"
                                             VerticalAlignment="Center"
-                                            Foreground="{DynamicResource TextFaintBrush}"
-                                            FontFamily="{DynamicResource UiMonoFontFamily}"
-                                            FontSize="{DynamicResource FontSizeSmall}"
                                         />
+                                    <Border Grid.Column="2" Style="{DynamicResource KeyBadgeStyle}">
+                                        <TextBlock Text="Ctrl+O" Style="{DynamicResource KeyBadgeTextStyle}" />
+                                    </Border>
                                 </Grid>
                             </Button>
 
                             <Button
                                     x:Name="ContinueProjectButton"
                                     Click="ContinueProjectButton_Click"
-                                    Style="{DynamicResource WelcomeActionStyle}"
+                                    Style="{DynamicResource WelcomeRowStyle}"
                                     Visibility="Collapsed"
                                 >
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="28" />
+                                        <ColumnDefinition Width="30" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
@@ -570,86 +824,67 @@
                                             Source="/src/Assets/icons/continue.png"
                                             Style="{DynamicResource WelcomeIconStyle}"
                                         />
-                                    <StackPanel Grid.Column="1">
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock
                                                 Text="Continue last workspace"
+                                                FontSize="{DynamicResource FontSizeLarge}"
                                             />
                                         <TextBlock
                                                 x:Name="ContinueProjectPathText"
-                                                FontSize="{DynamicResource FontSizeSmall}"
+                                                Margin="0,1,0,0"
+                                                FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                FontSize="{DynamicResource FontSizeCaption}"
                                                 Foreground="{DynamicResource TextSubtleBrush}"
                                                 TextTrimming="CharacterEllipsis"
                                             />
                                     </StackPanel>
-                                    <TextBlock
-                                            Grid.Column="2"
-                                            Text="Enter"
-                                            VerticalAlignment="Center"
-                                            Foreground="{DynamicResource TextFaintBrush}"
-                                            FontFamily="{DynamicResource UiMonoFontFamily}"
-                                            FontSize="{DynamicResource FontSizeSmall}"
-                                        />
+                                    <Border Grid.Column="2" Style="{DynamicResource KeyBadgeStyle}">
+                                        <TextBlock Text="Enter" Style="{DynamicResource KeyBadgeTextStyle}" />
+                                    </Border>
                                 </Grid>
                             </Button>
 
                             <TextBlock
                                     Text="RECENT PROJECTS"
-                                    Margin="0,22,0,7"
-                                    FontFamily="{DynamicResource UiMonoFontFamily}"
-                                    FontSize="{DynamicResource FontSizeCaption}"
-                                    Foreground="{DynamicResource TextFaintBrush}"
-                                />
-                            <Border
-                                    Height="1"
-                                    Background="{DynamicResource BorderBrush}"
+                                    Margin="1,16,0,7"
+                                    Style="{DynamicResource SectionLabelStyle}"
                                 />
 
-                            <ItemsControl x:Name="RecentProjectItems">
+                            <ItemsControl x:Name="RecentProjectItems" Focusable="False">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Button
                                                 Click="RecentProject_Click"
                                                 Tag="{Binding Path}"
-                                                Style="{DynamicResource RecentProjectStyle}"
+                                                Style="{DynamicResource WelcomeRowStyle}"
                                             >
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition
-                                                            Width="28"
-                                                        />
-                                                    <ColumnDefinition
-                                                            Width="*"
-                                                        />
-                                                    <ColumnDefinition
-                                                            Width="Auto"
-                                                        />
+                                                    <ColumnDefinition Width="30" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <Image
                                                         Source="/src/Assets/icons/folder.png"
                                                         Style="{DynamicResource WelcomeIconStyle}"
                                                     />
-                                                <StackPanel Grid.Column="1">
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                     <TextBlock
                                                             Text="{Binding Name}"
-                                                            Foreground="{DynamicResource TextBrush}"
-                                                            FontSize="13"
+                                                            FontSize="{DynamicResource FontSizeLarge}"
                                                         />
                                                     <TextBlock
                                                             Text="{Binding Path}"
+                                                            Margin="0,1,0,0"
                                                             Foreground="{DynamicResource TextSubtleBrush}"
                                                             FontFamily="{DynamicResource UiMonoFontFamily}"
                                                             FontSize="{DynamicResource FontSizeCaption}"
                                                             TextTrimming="CharacterEllipsis"
                                                         />
                                                 </StackPanel>
-                                                <TextBlock
-                                                        Grid.Column="2"
-                                                        Text="{Binding Shortcut}"
-                                                        Foreground="{DynamicResource TextFaintBrush}"
-                                                        FontFamily="{DynamicResource UiMonoFontFamily}"
-                                                        FontSize="{DynamicResource FontSizeSmall}"
-                                                        VerticalAlignment="Center"
-                                                    />
+                                                <Border Grid.Column="2" Style="{DynamicResource KeyBadgeStyle}">
+                                                    <TextBlock Text="{Binding Shortcut}" Style="{DynamicResource KeyBadgeTextStyle}" />
+                                                </Border>
                                             </Grid>
                                         </Button>
                                     </DataTemplate>
@@ -659,17 +894,17 @@
                             <TextBlock
                                     x:Name="RecentEmptyText"
                                     Text="No recent projects yet."
-                                    Margin="10,14"
+                                    Margin="1,4,0,0"
+                                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                                    FontSize="{DynamicResource FontSizeSmall}"
                                     Foreground="{DynamicResource TextSubtleBrush}"
-                                    FontStyle="Italic"
                                 />
                             <TextBlock
                                     x:Name="WelcomeStatus"
-                                    Margin="8,20,8,0"
+                                    Margin="1,14,0,0"
                                     Foreground="{DynamicResource TextFaintBrush}"
                                     FontFamily="{DynamicResource UiMonoFontFamily}"
                                     FontSize="{DynamicResource FontSizeSmall}"
-                                    TextAlignment="Center"
                                     TextWrapping="Wrap"
                                 />
                         </StackPanel>
@@ -743,7 +978,7 @@
                                             Grid.Column="3"
                                             Width="40"
                                             Height="20"
-                                            CornerRadius="4"
+                                            CornerRadius="0"
                                             VerticalAlignment="Center"
                                             Background="{DynamicResource InteractiveBrush}"
                                             BorderBrush="{DynamicResource PressedBrush}"
@@ -754,7 +989,7 @@
                                                 Width="14"
                                                 Height="12"
                                                 Margin="3,0"
-                                                CornerRadius="2"
+                                                CornerRadius="0"
                                                 HorizontalAlignment="Left"
                                                 VerticalAlignment="Center"
                                                 Background="{DynamicResource TextSubtleBrush}"
@@ -960,101 +1195,12 @@
                                                     VerticalScrollBarVisibility="Disabled"
                                                     Focusable="False"
                                             >
-                                                <ItemsControl x:Name="EditorTabStrip">
+                                                <ItemsControl x:Name="EditorTabStrip" ItemTemplate="{StaticResource PaneTabTemplate}">
                                                     <ItemsControl.ItemsPanel>
                                                         <ItemsPanelTemplate>
                                                             <StackPanel Orientation="Horizontal" />
                                                         </ItemsPanelTemplate>
                                                     </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-<Border MouseEnter="Tab_MouseEnter" MouseLeave="Tab_MouseLeave"
-                                                                    Background="{Binding Background}"
-                                                                    Padding="9,0,4,0"
-                                                                    BorderThickness="0,0,0,2"
-                                                                    BorderBrush="{Binding Underline}"
-                                                                    ToolTip="{Binding ToolTipText}">
-                                                                <StackPanel
-                                                                        Orientation="Horizontal"
-                                                                        VerticalAlignment="Center">
-                                                                    <!-- Activation is bound to the label rather
-                                                                         than to the whole tab. With the close
-                                                                         button inside a tab that also handled
-                                                                         MouseLeftButtonUp, the two targets
-                                                                         competed and the close never fired. -->
-                                                                    <TextBlock
-                                                                            Text="{Binding Name}"
-                                                                            FontFamily="{DynamicResource UiMonoFontFamily}"
-                                                                            FontSize="{DynamicResource FontSizeSmall}"
-                                                                            Foreground="{Binding Foreground}"
-                                                                            FontWeight="{Binding Weight}"
-                                                                            MaxWidth="160"
-                                                                            Padding="0,0,6,0"
-                                                                            TextTrimming="CharacterEllipsis"
-                                                                            VerticalAlignment="Center"
-                                                                            Cursor="Hand"
-                                                                            Tag="{Binding}"
-                                                                            MouseLeftButtonUp="EditorTab_Click"
-                                                                    />
-                                                                    <!-- A real button rather than a glyph to aim
-                                                                         at, and a generous one: 16x16 was easy to
-                                                                         miss in a header row this short. -->
-                                                                    <Grid
-                                                                        Width="20"
-                                                                        Height="22"
-                                                                    >
-                                                                        <Ellipse
-                                                                            x:Name="AttentionDot"
-                                                                            Width="7"
-                                                                            Height="7"
-                                                                            Fill="{DynamicResource SuccessBrush}"
-                                                                            HorizontalAlignment="Center"
-                                                                            VerticalAlignment="Center"
-                                                                                Visibility="{Binding ShowAttentionDot, Converter={StaticResource BoolToVis}}"
-                                                                        />
-                                                                        <Button
-                                                                            x:Name="TabClose"
-                                                                            Width="20"
-                                                                            Height="22"
-                                                                            Padding="0"
-                                                                                Visibility="{Binding ShowCloseButton, Converter={StaticResource BoolToVis}}"
-                                                                            Click="EditorTab_Close"
-                                                                            Tag="{Binding}"
-                                                                            Content="×"
-                                                                            FontFamily="{DynamicResource UiMonoFontFamily}"
-                                                                            FontSize="{DynamicResource FontSizeMedium}"
-                                                                            Foreground="{Binding Foreground}"
-                                                                            Background="Transparent"
-                                                                            BorderThickness="0"
-                                                                            Cursor="Hand"
-                                                                            ToolTip="Close this tab"
-                                                                        >
-                                                                        <Button.Template>
-                                                                            <ControlTemplate TargetType="Button">
-                                                                                <Border
-                                                                                        x:Name="CloseSurface"
-                                                                                        Background="{TemplateBinding Background}"
-                                                                                        CornerRadius="2"
-                                                                                >
-                                                                                    <ContentPresenter
-                                                                                            HorizontalAlignment="Center"
-                                                                                            VerticalAlignment="Center"
-                                                                                    />
-                                                                                </Border>
-                                                                                <ControlTemplate.Triggers>
-                                                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                                                        <Setter TargetName="CloseSurface" Property="Background" Value="{DynamicResource DangerBrush}" />
-                                                                                        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
-                                                                                    </Trigger>
-                                                                                </ControlTemplate.Triggers>
-                                                                            </ControlTemplate>
-                                                                        </Button.Template>
-                                                                    </Button>
-                                                                    </Grid>
-                                                                </StackPanel>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
                                             </ScrollViewer>
                                         </Border>
@@ -1160,91 +1306,12 @@
                                                 VerticalScrollBarVisibility="Disabled"
                                                 Focusable="False"
                                         >
-                                            <ItemsControl x:Name="RunnerTabStrip" Margin="0,1,0,0">
+                                            <ItemsControl x:Name="RunnerTabStrip" ItemTemplate="{StaticResource PaneTabTemplate}">
                                                 <ItemsControl.ItemsPanel>
                                                     <ItemsPanelTemplate>
                                                         <StackPanel Orientation="Horizontal" />
                                                     </ItemsPanelTemplate>
                                                 </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-<Border MouseEnter="Tab_MouseEnter" MouseLeave="Tab_MouseLeave"
-                                                                Background="{Binding Background}"
-                                                                Padding="9,0,4,0"
-                                                                BorderThickness="0,0,0,2"
-                                                                BorderBrush="{Binding Underline}"
-                                                                ToolTip="{Binding Name}"
-                                                        >
-                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                            <TextBlock
-                                                                    Text="{Binding Name}"
-                                                                        FontFamily="{DynamicResource UiMonoFontFamily}"
-                                                                        FontSize="{DynamicResource FontSizeSmall}"
-                                                                        Foreground="{Binding Foreground}"
-                                                                        FontWeight="{Binding Weight}"
-                                                                        MaxWidth="70"
-                                                                        Padding="0,0,4,0"
-                                                                        TextTrimming="CharacterEllipsis"
-                                                                        VerticalAlignment="Center"
-                                                                        Cursor="Hand"
-                                                                        Tag="{Binding}"
-                                                                        MouseLeftButtonUp="RunnerTabStrip_Click"
-                                                                    />
-                                                                <Grid
-                                                                        Width="16"
-                                                                        Height="22"
-                                                                    >
-                                                                        <Ellipse
-                                                                            x:Name="AttentionDot"
-                                                                            Width="6"
-                                                                            Height="6"
-                                                                            Fill="{DynamicResource SuccessBrush}"
-                                                                            HorizontalAlignment="Center"
-                                                                            VerticalAlignment="Center"
-                                                                                Visibility="{Binding ShowAttentionDot, Converter={StaticResource BoolToVis}}"
-                                                                        />
-                                                                        <Button
-                                                                        x:Name="TabClose"
-                                                                        Width="16"
-                                                                        Height="22"
-                                                                        Padding="0"
-                                                                            Visibility="{Binding ShowCloseButton, Converter={StaticResource BoolToVis}}"
-                                                                        Click="RunnerTabClose_Click"
-                                                                        Tag="{Binding}"
-                                                                        Content="×"
-                                                                        FontFamily="{DynamicResource UiMonoFontFamily}"
-                                                                        FontSize="{DynamicResource FontSizeSmall}"
-                                                                        Foreground="{DynamicResource TextSubtleBrush}"
-                                                                        Background="Transparent"
-                                                                        BorderThickness="0"
-                                                                        Cursor="Hand"
-                                                                        ToolTip="Close session"
-                                                                    >
-                                                                    <Button.Template>
-                                                                        <ControlTemplate TargetType="Button">
-                                                                            <Border
-                                                                                    x:Name="CloseSurface"
-                                                                                    Background="{TemplateBinding Background}"
-                                                                                    CornerRadius="2"
-                                                                                    Width="16"
-                                                                                    Height="22"
-                                                                                >
-                                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                            </Border>
-                                                                            <ControlTemplate.Triggers>
-                                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                                    <Setter TargetName="CloseSurface" Property="Background" Value="{DynamicResource DangerBrush}" />
-                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
-                                                                                </Trigger>
-                                                                            </ControlTemplate.Triggers>
-                                                                        </ControlTemplate>
-                                                                    </Button.Template>
-                                                                </Button>
-                                                                    </Grid>
-                                                            </StackPanel>
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
                                             </ItemsControl>
                                         </ScrollViewer>
                                     </Border>
@@ -1357,91 +1424,12 @@
                                             VerticalScrollBarVisibility="Disabled"
                                             Focusable="False"
                                     >
-                                        <ItemsControl x:Name="AgentTabStrip" Margin="0,1,0,0">
+                                        <ItemsControl x:Name="AgentTabStrip" ItemTemplate="{StaticResource PaneTabTemplate}">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate>
                                                     <StackPanel Orientation="Horizontal" />
                                                 </ItemsPanelTemplate>
                                             </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-<Border MouseEnter="Tab_MouseEnter" MouseLeave="Tab_MouseLeave"
-                                                                Background="{Binding Background}"
-                                                                Padding="9,0,4,0"
-                                                                BorderThickness="0,0,0,2"
-                                                                BorderBrush="{Binding Underline}"
-                                                                ToolTip="{Binding Name}"
-                                                            >
-                                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                                <TextBlock
-                                                                        Text="{Binding Name}"
-                                                                    FontFamily="{DynamicResource UiMonoFontFamily}"
-                                                                    FontSize="{DynamicResource FontSizeSmall}"
-                                                                    Foreground="{Binding Foreground}"
-                                                                    FontWeight="{Binding Weight}"
-                                                                    MaxWidth="70"
-                                                                    Padding="0,0,4,0"
-                                                                    TextTrimming="CharacterEllipsis"
-                                                                    VerticalAlignment="Center"
-                                                                    Cursor="Hand"
-                                                                    Tag="{Binding}"
-                                                                    MouseLeftButtonUp="AgentTabStrip_Click"
-                                                                />
-                                                            <Grid
-                                                                        Width="16"
-                                                                        Height="22"
-                                                                    >
-                                                                        <Ellipse
-                                                                            x:Name="AttentionDot"
-                                                                            Width="6"
-                                                                            Height="6"
-                                                                            Fill="{DynamicResource SuccessBrush}"
-                                                                            HorizontalAlignment="Center"
-                                                                            VerticalAlignment="Center"
-                                                                                Visibility="{Binding ShowAttentionDot, Converter={StaticResource BoolToVis}}"
-                                                                        />
-                                                                        <Button
-                                                                            x:Name="TabClose"
-                                                                            Width="16"
-                                                                            Height="22"
-                                                                            Padding="0"
-                                                                                Visibility="{Binding ShowCloseButton, Converter={StaticResource BoolToVis}}"
-                                                                            Click="AgentTabClose_Click"
-                                                                    Tag="{Binding}"
-                                                                    Content="×"
-                                                                    FontFamily="{DynamicResource UiMonoFontFamily}"
-                                                                    FontSize="{DynamicResource FontSizeSmall}"
-                                                                    Foreground="{DynamicResource TextSubtleBrush}"
-                                                                    Background="Transparent"
-                                                                    BorderThickness="0"
-                                                                    Cursor="Hand"
-                                                                    ToolTip="Close session"
-                                                                >
-                                                                <Button.Template>
-                                                                    <ControlTemplate TargetType="Button">
-                                                                        <Border
-                                                                                x:Name="CloseSurface"
-                                                                                Background="{TemplateBinding Background}"
-                                                                                CornerRadius="2"
-                                                                                Width="16"
-                                                                                Height="22"
-                                                                            >
-                                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                        </Border>
-                                                                        <ControlTemplate.Triggers>
-                                                                            <Trigger Property="IsMouseOver" Value="True">
-                                                                                <Setter TargetName="CloseSurface" Property="Background" Value="{DynamicResource DangerBrush}" />
-                                                                                <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
-                                                                            </Trigger>
-                                                                        </ControlTemplate.Triggers>
-                                                                    </ControlTemplate>
-                                                                </Button.Template>
-                                                            </Button>
-                                                                    </Grid>
-                                                        </StackPanel>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
                                         </ItemsControl>
                                     </ScrollViewer>
                                 </Border>
@@ -1493,65 +1481,40 @@
                                 StaysOpen="False"
                                 AllowsTransparency="True"
                             >
+                            <!-- A menu, not a card: three short rows under the + that opened it. -->
                             <Border
-                                    Background="{DynamicResource PaneHeaderBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    Background="{DynamicResource PopoverBrush}"
+                                    BorderBrush="{DynamicResource PressedBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="2"
-                                    Padding="8"
+                                    Padding="0,3"
+                                    MinWidth="120"
                                 >
                                 <StackPanel>
-                                    <TextBlock
-                                            Text="NEW SESSION"
-                                            FontFamily="{DynamicResource UiMonoFontFamily}"
-                                            FontSize="{DynamicResource FontSizeCaption}"
-                                            Foreground="{DynamicResource TextFaintBrush}"
-                                            Margin="0,0,0,6"
-                                        />
                                     <Button
                                             x:Name="NewOpenCodeButton"
                                             Click="NewOpenCodeButton_Click"
-                                            Style="{DynamicResource WelcomeActionStyle}"
-                                            Padding="8,4"
-                                            Margin="0,0,0,4"
-                                            HorizontalContentAlignment="Left"
-                                        >
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="&#xE710;" FontFamily="Segoe Fluent Icons" Foreground="{DynamicResource AccentBrush}" Margin="0,0,6,0" />
-                                            <TextBlock Text="New OpenCode session" FontSize="{DynamicResource FontSizeBody}" />
-                                        </StackPanel>
-                                    </Button>
+                                            Style="{DynamicResource MenuRowStyle}"
+                                            Content="OpenCode"
+                                        />
                                     <Button
                                             x:Name="NewCodexButton"
                                             Click="NewCodexButton_Click"
-                                            Style="{DynamicResource WelcomeActionStyle}"
-                                            Padding="8,4"
-                                            Margin="0,0,0,4"
-                                            HorizontalContentAlignment="Left"
-                                        >
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="&#xF0A0;" FontFamily="Segoe Fluent Icons" Foreground="{DynamicResource AccentBrush}" Margin="0,0,6,0" />
-                                            <TextBlock Text="New Codex session" FontSize="{DynamicResource FontSizeBody}" />
-                                        </StackPanel>
-                                    </Button>
+                                            Style="{DynamicResource MenuRowStyle}"
+                                            Content="Codex"
+                                        />
                                     <Button
                                             x:Name="NewClaudeButton"
                                             Click="NewClaudeButton_Click"
-                                            Style="{DynamicResource WelcomeActionStyle}"
-                                            Padding="8,4"
-                                            HorizontalContentAlignment="Left"
-                                        >
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="&#xE99A;" FontFamily="Segoe Fluent Icons" Foreground="{DynamicResource AccentBrush}" Margin="0,0,6,0" />
-                                            <TextBlock Text="New Claude session" FontSize="{DynamicResource FontSizeBody}" />
-                                        </StackPanel>
-                                    </Button>
-                                    <!-- Shown instead of the buttons when none of the agents is installed. -->
+                                            Style="{DynamicResource MenuRowStyle}"
+                                            Content="Claude"
+                                        />
+                                    <!-- Shown instead of the rows when none of the agents is installed. -->
                                     <TextBlock
                                             x:Name="NoAgentsText"
                                             Text="No agent found on PATH.&#x0a;Install opencode, codex or claude."
                                             Visibility="Collapsed"
-                                            Margin="2,2,2,2"
+                                            Margin="10,4,10,4"
+                                            FontFamily="{DynamicResource UiMonoFontFamily}"
                                             FontSize="{DynamicResource FontSizeSmall}"
                                             Foreground="{DynamicResource TextSubtleBrush}"
                                         />

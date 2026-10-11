@@ -53,8 +53,24 @@ public sealed class PaletteCommand
     public Func<bool>? CanInvoke { get; }
 
     /// <summary>Shortcut text, or null when the command has no key binding.</summary>
-    public static string? Gesture(Key key, ModifierKeys modifiers = ModifierKeys.Control) =>
-        modifiers == ModifierKeys.None ? key.ToString() : $"{modifiers}+{key}";
+    /// <remarks>
+    /// Written the way it is printed on a keyboard: <c>Ctrl+1</c>, not the enum names
+    /// <c>Control+D1</c> that <see cref="ModifierKeys"/> and <see cref="Key"/> stringify to.
+    /// </remarks>
+    public static string? Gesture(Key key, ModifierKeys modifiers = ModifierKeys.Control)
+    {
+        var name = key is >= Key.D0 and <= Key.D9
+            ? ((int)key - (int)Key.D0).ToString()
+            : key.ToString();
+
+        var parts = new List<string>();
+        if (modifiers.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
+        if (modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
+        if (modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
+        parts.Add(name);
+
+        return string.Join('+', parts);
+    }
 }
 
 /// <summary>
@@ -68,16 +84,63 @@ public sealed class PaletteCommand
 /// </remarks>
 internal sealed class PaletteRow
 {
+    private static readonly string[] Modifiers = ["Ctrl", "Alt", "Shift"];
+
     private PaletteRow(string title, PaletteCommand? command)
     {
         Title = title;
         Command = command;
+        Keys = ShortcutKeys(command?.Detail);
+        Glyph = GlyphFor(command?.Group);
     }
+
+    // A shortcut is recognised by its shape -- a modifier, then keys, joined by plus
+    // signs -- so commands keep passing one plain string and need no second field.
+    private static IReadOnlyList<string> ShortcutKeys(string? detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail) || detail.Contains(' '))
+            return [];
+
+        var parts = detail.Split('+', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 && Modifiers.Contains(parts[0], StringComparer.OrdinalIgnoreCase)
+            ? parts
+            : [];
+    }
+
+    private static string GlyphFor(string? group) => group switch
+    {
+        "File" => "",      // open file
+        "Recent" => "",    // history
+        "Window" => "",    // new window
+        "New" => "",       // add
+        "Close" => "",     // cancel
+        "Focus" => "",     // open in new window / go to
+        "View" => "",      // view
+        "Navigate" => "",  // switch
+        "Run" => "",       // play
+        "Theme" => "",     // colour
+        _ => "",           // chevron
+    };
 
     public string Title { get; }
 
     /// <summary>Right-aligned hint for a command row; empty on a heading.</summary>
     public string Detail => Command?.Detail ?? string.Empty;
+
+    /// <summary>
+    /// The keys of the command's shortcut, one per cap, or empty when its hint is not a
+    /// shortcut. A hint is either a shortcut or a note, never both, and the two are
+    /// drawn differently: caps for keys, quiet text for everything else.
+    /// </summary>
+    public IReadOnlyList<string> Keys { get; }
+
+    /// <summary>The hint when it is not a shortcut: a path, or a word of explanation.</summary>
+    public string Note => Keys.Count == 0 ? Detail : string.Empty;
+
+    /// <summary>The icon for the command's group, from Segoe Fluent Icons.</summary>
+    public string Glyph { get; }
+
+    public bool IsCommand => Command is not null;
 
     /// <summary>Null for a heading row, which cannot be run.</summary>
     public PaletteCommand? Command { get; }

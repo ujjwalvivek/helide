@@ -92,6 +92,7 @@ public partial class CommandPalette : UserControl
 
         ResultsList.Visibility = _visible.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Visibility = _visible.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+        CountText.Text = matched.Count == 1 ? "1 command" : $"{matched.Count} commands";
 
         // Land on the first command rather than the first row, so Enter runs something
         // instead of trying to run a heading.

@@ -119,7 +119,10 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             StartupCommandLine = commandLine,
             WorkingDirectory = workingDirectory,
             Visibility = Visibility.Hidden,
-            Margin = new Thickness(0),
+            // A little air between the pane edge and the first column. The host behind
+            // it is the same colour, so this reads as padding, and it costs under one
+            // character cell per pane.
+            Margin = new Thickness(6, 4, 4, 2),
             Padding = new Thickness(0),
             BorderThickness = new Thickness(0),
             Background = TerminalBackgroundBrush,
@@ -158,6 +161,13 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         // holds its own palette, so it has to be told.
         if (_disposed)
             return;
+
+        // The host itself is painted with a brush taken when it was built, not looked up
+        // live, and it shows: it is the margin around the renderer. Left alone it kept
+        // the old theme's colour as a frame around every pane until a restart.
+        Background = TerminalBackgroundBrush;
+        _startupSurface.Background = TerminalBackgroundBrush;
+        _terminal.Background = TerminalBackgroundBrush;
 
         try
         {

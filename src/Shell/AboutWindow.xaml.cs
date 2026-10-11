@@ -93,6 +93,7 @@ public partial class AboutWindow : Window
         if (UpdateButton.Content.ToString() != "Check for Updates") return;
 
         UpdateButton.IsEnabled = false;
+        UpdateButton.Content = "checking";
         try
         {
             var updater = new HelideUpdater();
@@ -100,6 +101,11 @@ public partial class AboutWindow : Window
             if (!hasUpdate)
             {
                 HelideUpdateState.Clear();
+
+                // Said out loud. Going straight back to "Check for Updates" looked
+                // exactly like a click that had done nothing.
+                UpdateButton.Content = "up to date";
+                await Task.Delay(2500);
                 SyncWithUpdateState();
                 return;
             }

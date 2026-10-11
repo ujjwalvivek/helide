@@ -1672,18 +1672,218 @@ private void OpenInNewWindow(string? projectPath)
             tab.SetHovered(false);
     }
 
-    private void EditorTab_Click(object sender, MouseButtonEventArgs e)
+    // ------------------------------------------------------------------ tabs
+    //
+    // The three strips share one tab template, so they share these handlers too. What a
+    // tab is comes from its view model: an editor tab, or a session that is either in
+    // the runner's list or the agent's.
+
+    private void ActivateTab(object? tab)
     {
-        if (sender is FrameworkElement { Tag: EditorTab tab })
-            ActivateEditorTab(tab);
+        switch (tab)
+        {
+            case EditorTab editor:
+                ActivateEditorTab(editor);
+                break;
+            case AgentSessionView session when _runnerSessions.Contains(session):
+                ActivateRunnerSession(session);
+                break;
+            case AgentSessionView session:
+                ActivateAgentSession(session);
+                break;
+        }
     }
 
     // Bound to the close button rather than a right-click on the tab, which is not a
     // gesture anyone would try.
-    private void EditorTab_Close(object sender, RoutedEventArgs e)
+    private void Tab_Close(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: EditorTab tab })
-            CloseEditorTab(tab);
+        switch ((sender as FrameworkElement)?.DataContext)
+        {
+            case EditorTab editor:
+                CloseEditorTab(editor);
+                break;
+            case AgentSessionView session when _runnerSessions.Contains(session):
+                CloseRunnerSession(session);
+                break;
+            case AgentSessionView session:
+                CloseAgentSession(session);
+                break;
+        }
+    }
+
+    // A press on a tab is either a click or the start of a drag, and which one is only
+    // known once the pointer has moved or the button has come back up. So nothing
+    // happens on the press itself: a tab is activated on release, and only if it was
+    // not dragged in between.
+    private object? _pressedTab;
+    private Point _pressOrigin;
+    private bool _draggingTab;
+    private FrameworkElement? _dragElement;
+
+    // Far enough that a click with an unsteady hand is still a click.
+    private const double TabDragThreshold = 6;
+
+    private void Tab_PointerDown(object sender, MouseButtonEventArgs e)
+    {
+        // The close button is inside the tab and takes its own clicks.
+        if (IsInsideButton(e.OriginalSource as DependencyObject, sender as DependencyObject))
+            return;
+
+        _pressedTab = (sender as FrameworkElement)?.DataContext;
+        _pressOrigin = e.GetPosition(this);
+        _draggingTab = false;
+    }
+
+    private void Tab_PointerMove(object sender, MouseEventArgs e)
+    {
+        if (sender is not FrameworkElement element
+            || _pressedTab is null
+            || !ReferenceEquals(element.DataContext, _pressedTab))
+            return;
+
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            // Released somewhere this tab never heard about.
+            if (!_draggingTab)
+                _pressedTab = null;
+            return;
+        }
+
+        if (_draggingTab
+            || Math.Abs(e.GetPosition(this).X - _pressOrigin.X) < TabDragThreshold)
+            return;
+
+        // Captured only now, not on the press: a captured tab would take the mouse-up
+        // meant for its own close button.
+        _draggingTab = true;
+        _dragElement = element;
+        element.Opacity = 0.55;
+        element.Cursor = System.Windows.Input.Cursors.SizeWE;
+        element.CaptureMouse();
+    }
+
+    private void Tab_PointerUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement element)
+            return;
+
+        var tab = _pressedTab;
+        var dragged = _draggingTab;
+        var pointer = e.GetPosition(this);
+
+        EndTabDrag();
+
+        if (tab is null || !ReferenceEquals(element.DataContext, tab))
+            return;
+
+        if (dragged)
+            DropTab(element, tab, pointer);
+        else
+            ActivateTab(tab);
+
+        e.Handled = true;
+    }
+
+    private void Tab_LostCapture(object sender, MouseEventArgs e)
+    {
+        // Capture taken away mid-drag -- another window came forward, say -- is a
+        // cancelled drag, and the tab must not stay dimmed.
+        if (_draggingTab)
+            EndTabDrag();
+    }
+
+    private void EndTabDrag()
+    {
+        var element = _dragElement;
+
+        _pressedTab = null;
+        _draggingTab = false;
+        _dragElement = null;
+
+        if (element is null)
+            return;
+
+        element.Opacity = 1;
+        element.Cursor = System.Windows.Input.Cursors.Hand;
+        if (element.IsMouseCaptured)
+            element.ReleaseMouseCapture();
+    }
+
+    // Moves a tab to where it was let go. The new position is counted from the tabs it
+    // was dragged past: every other tab whose middle lies left of the pointer is one
+    // that should now come before it.
+    //
+    // The move happens on release rather than as the pointer travels. Moving an item
+    // makes the strip rebuild that tab's visual, and the visual is the thing holding
+    // the mouse, so a live reorder would end the drag on its first step.
+    private void DropTab(FrameworkElement element, object tab, Point pointer)
+    {
+        if (FindAncestor<ItemsControl>(element) is not { } strip)
+            return;
+
+        var from = strip.Items.IndexOf(tab);
+        if (from < 0)
+            return;
+
+        var to = 0;
+        for (var index = 0; index < strip.Items.Count; index++)
+        {
+            if (index == from
+                || strip.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement other)
+                continue;
+
+            var left = other.TranslatePoint(new Point(0, 0), this).X;
+            if (pointer.X > left + other.ActualWidth / 2)
+                to++;
+        }
+
+        if (to == from)
+            return;
+
+        switch (tab)
+        {
+            case EditorTab editor:
+                _editorTabs.Move(_editorTabs.IndexOf(editor), to);
+                break;
+            case AgentSessionView session when _runnerSessions.Contains(session):
+                _runnerSessions.Move(_runnerSessions.IndexOf(session), to);
+                RunnerTabStrip.Items.Refresh();
+                break;
+            case AgentSessionView session:
+                _agentSessions.Move(_agentSessions.IndexOf(session), to);
+                UpdateAgentSessionUI();
+
+                // The order is what the next launch restores, so it is saved with it.
+                PersistAgentSessions();
+                break;
+        }
+    }
+
+    private static bool IsInsideButton(DependencyObject? source, DependencyObject? boundary)
+    {
+        for (var current = source; current is not null && !ReferenceEquals(current, boundary);)
+        {
+            if (current is System.Windows.Controls.Primitives.ButtonBase)
+                return true;
+
+            current = current is Visual
+                ? VisualTreeHelper.GetParent(current)
+                : LogicalTreeHelper.GetParent(current);
+        }
+
+        return false;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? start) where T : DependencyObject
+    {
+        for (var current = start; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is T match)
+                return match;
+        }
+
+        return null;
     }
 
     private void CloseEditorTab(EditorTab tab, bool refill = true)
@@ -2466,30 +2666,6 @@ private void OpenInNewWindow(string? projectPath)
             AgentSlot.Content = CreateErrorPanel(type, exception);
         }
     }
-    private void AgentSessionButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button btn && btn.Tag is AgentSessionView session)
-        {
-            // Deactivate all, activate selected
-            foreach (var s in _agentSessions)
-                s.IsActive = ReferenceEquals(s, session);
-
-            if (session.Host is not null)
-            {
-                AgentSlot.Content = session.Host;
-                AgentPaneTitle.Text = session.TypeLabel.ToUpper();
-                _activeAgentSession = session;
-                session.ClearAttention();
-                session.Host.BringToFront();
-            }
-            UpdateAgentSessionUI();
-
-            // Which tab was showing is part of what gets restored, and a switch to another
-            // workspace reads it from the file rather than from this window.
-            PersistAgentSessions();
-        }
-    }
-
     // Update session list and title
     private void UpdateAgentSessionUI()
     {
@@ -2967,7 +3143,7 @@ private void OpenInNewWindow(string? projectPath)
         // The active tab carries an accent underline as well as a lighter fill, so
         // which one is in use reads at a glance rather than only on hover.
         public System.Windows.Media.Brush Background => IsActive
-            ? ThemePalette.Brush(ThemePalette.TabActiveBackgroundBrush)
+            ? ThemePalette.Brush(ThemePalette.TerminalBackgroundBrush)
             : System.Windows.Media.Brushes.Transparent;
 
         public System.Windows.Media.Brush Underline => IsActive
@@ -3063,9 +3239,8 @@ private void OpenInNewWindow(string? projectPath)
     private sealed record RecentProjectView(string Name, string Path, string Shortcut);
 
     // Agent tab strip click - switch sessions
-    private void AgentTabStrip_Click(object sender, MouseButtonEventArgs e)
+    private void ActivateAgentSession(AgentSessionView session)
     {
-        if (sender is TextBlock tb && tb.Tag is AgentSessionView session)
         {
             // Deactivate all, activate this one
             foreach (var s in _agentSessions)
@@ -3082,14 +3257,11 @@ private void OpenInNewWindow(string? projectPath)
             }
             UpdateAgentSessionUI();
             AgentTabStrip.Items.Refresh();
-        }
-    }
 
-    // Close agent session tab
-    private void AgentTabClose_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: AgentSessionView session })
-            CloseAgentSession(session);
+            // Which tab was showing is part of what gets restored, and a switch to
+            // another workspace reads it from the file rather than from this window.
+            PersistAgentSessions();
+        }
     }
 
     // Split out from the click handler so the command palette can close a session too.
@@ -3128,9 +3300,8 @@ private void OpenInNewWindow(string? projectPath)
         UpdateAgentSessionUI();
         PersistAgentSessions();
     }
-    private void RunnerTabStrip_Click(object sender, MouseButtonEventArgs e)
+    private void ActivateRunnerSession(AgentSessionView session)
     {
-        if (sender is TextBlock tb && tb.Tag is AgentSessionView session)
         {
             foreach (var s in _runnerSessions)
                 s.IsActive = ReferenceEquals(s, session);
@@ -3147,9 +3318,8 @@ private void OpenInNewWindow(string? projectPath)
     }
 
     // Runner session close
-    private void RunnerTabClose_Click(object sender, RoutedEventArgs e)
+    private void CloseRunnerSession(AgentSessionView session)
     {
-        if (sender is Button btn && btn.Tag is AgentSessionView session)
         {
             session.Host?.Dispose();
             _runnerSessions.Remove(session);
@@ -3250,6 +3420,9 @@ var session = new AgentSessionView(type, label);
             Name = name;
         }
 
+        // What the shared tab template shows on hover.
+        public string ToolTipText => Name;
+
         // The source polls on a timer of its own, so a pane that is closed has to stop
         // it or it keeps reading a file for a tab that is gone.
         public void DisposeStatusSource()
@@ -3259,7 +3432,7 @@ var session = new AgentSessionView(type, label);
         }
 
         public System.Windows.Media.Brush Background => IsActive
-            ? ThemePalette.Brush(ThemePalette.TabActiveBackgroundBrush)
+            ? ThemePalette.Brush(ThemePalette.TerminalBackgroundBrush)
             : System.Windows.Media.Brushes.Transparent;
 
         public System.Windows.Media.Brush Underline => IsActive

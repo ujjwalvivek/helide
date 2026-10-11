@@ -21,7 +21,7 @@
                         <Border
                             x:Name="CloseSurface"
                             Background="{TemplateBinding Background}"
-                            CornerRadius="2"
+                            CornerRadius="0"
                         >
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
@@ -50,7 +50,7 @@
                         <Border
                             x:Name="AcceptSurface"
                             Background="{TemplateBinding Background}"
-                            CornerRadius="2"
+                            CornerRadius="0"
                             Padding="{TemplateBinding Padding}"
                         >
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -75,6 +75,7 @@
              text colour on top of it. -->
         <Style x:Key="CardDeclineStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="14,7" />
@@ -87,7 +88,9 @@
                         <Border
                             x:Name="DeclineSurface"
                             Background="{TemplateBinding Background}"
-                            CornerRadius="2"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="0"
                             Padding="{TemplateBinding Padding}"
                         >
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -112,7 +115,7 @@
          with its own header, and a second box inside it reads as a dialog that happens
          to be docked. So the content sits straight on the terminal background and fills
          the pane, with the answer pinned to the bottom and the text at the top. -->
-    <Grid Margin="16">
+    <Grid Margin="14,12,14,14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -126,15 +129,24 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock
-                Grid.Column="0"
-                Text="Open files inside Helide?"
-                Foreground="{DynamicResource TextStrongBrush}"
-                FontSize="{DynamicResource FontSizeBody}"
-                FontWeight="SemiBold"
-                TextWrapping="Wrap"
-                VerticalAlignment="Center"
-            />
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <Image
+                    Source="/src/Assets/icons/project.png"
+                    Width="14"
+                    Height="14"
+                    Margin="0,0,8,0"
+                    VerticalAlignment="Center"
+                    RenderOptions.BitmapScalingMode="HighQuality"
+                />
+                <TextBlock
+                    Text="Open files inside Helide?"
+                    Foreground="{DynamicResource TextBrush}"
+                    FontSize="{DynamicResource FontSizeLarge}"
+                    FontWeight="SemiBold"
+                    TextWrapping="Wrap"
+                    VerticalAlignment="Center"
+                />
+            </StackPanel>
             <Button
                 Grid.Column="1"
                 x:Name="CloseButton"
@@ -150,19 +162,28 @@
             Margin="0,10,0,0"
             TextWrapping="Wrap"
             Foreground="{DynamicResource TextMutedBrush}"
-            FontSize="{DynamicResource FontSizeSmall}"
+            FontSize="{DynamicResource FontSizeBody}"
+            LineHeight="16"
             Text="The project browser can hand the file you select straight to Helide's editor. Doing that needs Helide's own yazi config, which replaces any you already have. Whatever is there now is backed up first."
         />
 
-        <TextBlock
+        <!-- The path it will write to, set apart the way a path in a terminal would be. -->
+        <Border
             Grid.Row="2"
-            x:Name="PathText"
-            Margin="0,10,0,0"
-            TextWrapping="Wrap"
-            Foreground="{DynamicResource TextFaintBrush}"
-            FontFamily="{DynamicResource UiMonoFontFamily}"
-            FontSize="{DynamicResource FontSizeSmall}"
-        />
+            Margin="0,12,0,0"
+            Padding="8,6"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+        >
+            <TextBlock
+                x:Name="PathText"
+                TextWrapping="Wrap"
+                Foreground="{DynamicResource TextSubtleBrush}"
+                FontFamily="{DynamicResource UiMonoFontFamily}"
+                FontSize="{DynamicResource FontSizeSmall}"
+            />
+        </Border>
 
         <!-- Stacked rather than side by side: the pane is a couple of hundred pixels
              wide, and two captions on one line would be trimmed to fragments there.
@@ -181,7 +202,7 @@
             <Button
                 x:Name="DeclineButton"
                 Click="DeclineButton_Click"
-                Margin="0,8,0,0"
+                Margin="0,6,0,0"
                 Style="{DynamicResource CardDeclineStyle}"
                 Content="No thanks"
             />

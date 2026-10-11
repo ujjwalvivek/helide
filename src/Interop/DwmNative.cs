@@ -12,7 +12,9 @@ internal static class DwmNative
     private const uint DwmwaCaptionColor = 35;
     private const uint DwmwaTextColor = 36;
     private const uint DwmwaSystemBackdropType = 38;
-    private const int DwmwcpRound = 2;
+    // Square, like everything inside it. Windows 11 rounds a window's corners itself
+    // unless told not to, whatever the window draws.
+    private const int DwmwcpDoNotRound = 1;
     private const int DwmsbtTransientWindow = 3;
 
     [DllImport("dwmapi.dll")]
@@ -25,7 +27,7 @@ internal static class DwmNative
         {
             var hwnd = new WindowInteropHelper(window).Handle;
             Set(hwnd, DwmwaUseImmersiveDarkMode, 1);
-            Set(hwnd, DwmwaWindowCornerPreference, DwmwcpRound);
+            Set(hwnd, DwmwaWindowCornerPreference, DwmwcpDoNotRound);
             Set(hwnd, DwmwaSystemBackdropType, DwmsbtTransientWindow);
             Set(hwnd, DwmwaBorderColor, ColorRef(49, 50, 68));
             Set(hwnd, DwmwaCaptionColor, ColorRef(24, 24, 37));

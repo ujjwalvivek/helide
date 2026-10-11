@@ -1,4 +1,4 @@
-﻿<Application
+<Application
     x:Class="Helide.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -15,6 +15,64 @@
                     Source="pack://application:,,,/src/Theme/Themes/CatppuccinMocha.xaml"
                 />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Everything below is shared chrome: pieces more than one window draws, kept
+                 here so they cannot drift apart. Colours are DynamicResource throughout,
+                 so a theme switch reaches them like everything else.
+
+                 Nothing in the app is rounded. Square corners are the house style, and
+                 the only curves are the three window buttons and the attention dots. -->
+
+            <!-- Hover hints. The stock tooltip is a light system-coloured box with a drop
+                 shadow, which is the one thing on screen that ignores the theme. -->
+            <Style TargetType="ToolTip">
+                <Setter Property="OverridesDefaultStyle" Value="True" />
+                <Setter Property="HasDropShadow" Value="False" />
+                <Setter Property="Placement" Value="Bottom" />
+                <Setter Property="VerticalOffset" Value="6" />
+                <Setter Property="FontFamily" Value="{DynamicResource UiMonoFontFamily}" />
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToolTip">
+                            <Border
+                                Background="{DynamicResource PopoverBrush}"
+                                BorderBrush="{DynamicResource PressedBrush}"
+                                BorderThickness="1"
+                                Padding="8,4"
+                                SnapsToDevicePixels="True"
+                            >
+                                <ContentPresenter />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- A key cap: the small bordered label a shortcut is shown in. -->
+            <Style x:Key="KeyBadgeStyle" TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource PressedBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="5,1,5,2" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+            </Style>
+
+            <Style x:Key="KeyBadgeTextStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{DynamicResource UiMonoFontFamily}" />
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeCaption}" />
+                <Setter Property="Foreground" Value="{DynamicResource MauveBrush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+
+            <!-- The small capitalised label above a group of rows. -->
+            <Style x:Key="SectionLabelStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{DynamicResource UiMonoFontFamily}" />
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeCaption}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextFaintBrush}" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

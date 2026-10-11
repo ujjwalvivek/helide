@@ -17,9 +17,16 @@ internal sealed class AppStateStore
 
     public AppStateStore()
     {
-        _stateDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Helide");
+        // HELIDE_STATE_DIR points a window at a state folder of its own. It exists so a
+        // build can be run and looked at without it reading, or writing over, the state
+        // of the Helide that is actually in use.
+        var overridden = Environment.GetEnvironmentVariable("HELIDE_STATE_DIR");
+
+        _stateDirectory = string.IsNullOrWhiteSpace(overridden)
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Helide")
+            : Path.GetFullPath(overridden);
         _statePath = Path.Combine(_stateDirectory, "state.json");
     }
 
