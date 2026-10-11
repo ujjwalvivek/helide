@@ -2195,15 +2195,11 @@ private void OpenInNewWindow(string? projectPath)
         }
         else
         {
-            var arguments = new List<string>();
-
             // Only a pane reopening a known conversation is told which one. A fresh pane
             // lets the TUI create it, which is what puts it in the right project.
-            if (resuming && resumeSessionId is { Length: > 0 } resumeId)
-                arguments.AddRange(["-s", resumeId]);
-
             commandLine = OpenCodePaneConfig.BuildLaunchCommand(
-                "opencode.cmd", arguments, QuoteArgument);
+                resuming ? resumeSessionId : null,
+                QuoteArgument);
         }
 
 

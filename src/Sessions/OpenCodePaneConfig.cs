@@ -1,5 +1,4 @@
 using System.IO;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace Helide.Sessions;
@@ -31,59 +30,59 @@ internal static class OpenCodePaneConfig
     /// </summary>
     public const string ConfigContentVariable = "OPENCODE_CLI_CONFIG_CONTENT";
 
-    private const string ScriptPrefix = "launch-";
+    private const string ScriptName = "launch.cmd";
 
     /// <summary>
-    /// Builds the launch command for a pane.
+    /// The script, which is the same for every pane. Only the argument varies, which is
+    /// what lets a single file serve every pane without them interfering.
+    /// </summary>
+    private static string Script => $"""
+        @echo off
+        set "{ConfigContentVariable}={CliOverlay}"
+        if not "%~1"=="" opencode.cmd -s %~1
+        if "%~1"=="" opencode.cmd
+
+        """;
+
+    /// <summary>
+    /// Where the script lives. One file, under Helide's own local data.
+    /// </summary>
+    public static string ScriptPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Helide",
+        ScriptName);
+
+    /// <summary>
+    /// Builds the launch command for a pane, passing <paramref name="sessionId"/> as an
+    /// argument rather than baking it into the script.
     /// </summary>
     /// <remarks>
-    /// The overlay is delivered through a small generated script rather than inline on the
-    /// command line. An inline <c>cmd /c "set ..."</c> cannot carry it: the outer quotes
-    /// make cmd re-parse the value, so the JSON's own quotes end the assignment, and the
-    /// pane starts while silently ignoring what it was told. Inside a script file the same
-    /// assignment is unambiguous, because cmd is parsing a file rather than a quoted string.
+    /// The overlay is delivered through a script rather than inline on the command line.
+    /// An inline <c>cmd /c "set ..."</c> cannot carry it: the outer quotes make cmd
+    /// re-parse the value, so the JSON's own quotes end the assignment, and the pane starts
+    /// while silently ignoring what it was told. Inside a script file the same assignment is
+    /// unambiguous, because cmd is parsing a file rather than a quoted string.
     /// <para>
-    /// The script is named after the command it runs, so panes given different arguments
-    /// get different files. Putting every pane on one shared script looked equivalent and
-    /// was not: restoring several panes at once meant each one overwrote the same file, and
-    /// a pane could end up running the last one written -- which is how panes launched with
-    /// no session argument and opened blank while their status went quiet.
+    /// The session id deliberately does not go in the file. An earlier version named a
+    /// script per command, which meant every conversation a pane was reopened onto left a
+    /// new file behind forever, and panes restored together still raced to overwrite one
+    /// shared file. Passing the id as an argument keeps the file identical for every pane:
+    /// there is nothing to overwrite, and nothing to accumulate.
     /// </para>
     /// </remarks>
     public static string BuildLaunchCommand(
-        string executable,
-        IEnumerable<string> arguments,
+        string? sessionId,
         Func<string, string> quoteArgument)
     {
-        var inner = new List<string> { executable };
-        inner.AddRange(arguments);
+        // Rewritten on every launch so a stale or partial script cannot strand a pane, and
+        // so a changed overlay reaches panes opened after an upgrade.
+        File.WriteAllText(ScriptPath, Script, new UTF8Encoding(false));
 
-        var command = string.Join(' ', inner.Select(quoteArgument));
+        var command = quoteArgument(ScriptPath);
 
-        var script = new StringBuilder();
-        script.AppendLine("@echo off");
-        script.AppendLine($"set \"{ConfigContentVariable}={CliOverlay}\"");
-        script.AppendLine("setlocal");
-        script.AppendLine();
+        if (sessionId is { Length: > 0 } id)
+            command += " " + quoteArgument(id);
 
-        // One line: a batch file treats each line as a separate command, so an argument
-        // wrapped onto its own line would be run instead of passed.
-        script.Append(command);
-
-        var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Helide");
-
-        Directory.CreateDirectory(directory);
-
-        // Keyed on the command so the same launch reuses its script and a different one
-        // gets its own: two panes restored together can no longer share a file.
-        var hash = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(command)))[..16];
-
-        var path = Path.Combine(directory, $"{ScriptPrefix}{hash}.cmd");
-        File.WriteAllText(path, script.ToString(), new UTF8Encoding(false));
-
-        return quoteArgument(path);
+        return command;
     }
 }
