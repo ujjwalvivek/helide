@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.Sqlite;
 
 namespace Helide.Sessions;
@@ -14,23 +16,17 @@ namespace Helide.Sessions;
 internal sealed record OpenCodeSessionRow(string Id, long? IdleAt);
 
 /// <summary>
-/// A session together with the project directory it belongs to.
-/// </summary>
-/// <param name="Id">The session id.</param>
-/// <param name="IdleAt">When the last turn finished, or null while one is running.</param>
-/// <param name="Directory">The project directory the session belongs to.</param>
-/// <param name="CreatedAt">When the session was created, in Unix milliseconds.</param>
-internal sealed record OpenCodeSession(string Id, long? IdleAt, string Directory, long CreatedAt);
-
-/// <summary>
 /// Reads session state out of the OpenCode database.
 /// </summary>
 /// <remarks>
 /// This is the user's own store, shared with every other opencode on the machine, so every
 /// query here is scoped to one session id the pane already holds. Nothing in this file may
-/// read the newest session in the database and call it the pane's; the single exception is
-/// <see cref="ReadCreatedIn"/>, which is filtered to one project and one start time, and
-/// exists only to adopt a session the TUI has just created for itself.
+/// read the newest session in the database and call it the pane's.
+/// <para>
+/// The pane holds that id from the start because Helide makes it up. <c>opencode -s</c>
+/// continues the session with that id, or creates it under that id if there is none, so
+/// the pane never has to find out afterwards which session the TUI made for it.
+/// </para>
 /// <para>
 /// Only the columns status needs are read. The table is OpenCode's own and can gain columns
 /// or be renamed by an upgrade, so the queries are kept to the minimum and any failure is
@@ -39,8 +35,71 @@ internal sealed record OpenCodeSession(string Id, long? IdleAt, string Directory
 /// </remarks>
 internal static class OpenCodeSessions
 {
+    private const string IdAlphabet =
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    private static readonly object IdGate = new();
+    private static long _lastIdTimestamp;
+    private static int _idCounter;
+
     /// <summary>
-    /// One session's row, or null when the database or the session is not there yet.
+    /// The user's own OpenCode database, honouring XDG_DATA_HOME the same way the agent
+    /// does.
+    /// </summary>
+    public static string DatabasePath
+    {
+        get
+        {
+            var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+            var data = string.IsNullOrWhiteSpace(xdg)
+                ? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".local", "share")
+                : xdg;
+
+            return Path.Combine(data, "opencode", "opencode.db");
+        }
+    }
+
+    /// <summary>
+    /// A new session id, in the shape OpenCode gives its own.
+    /// </summary>
+    /// <remarks>
+    /// <c>ses_</c>, then twelve hex digits holding the creation time inverted so that newer
+    /// ids sort first, then fourteen random characters. The shape is copied rather than
+    /// invented because nothing says the server accepts any other, and an id that looks
+    /// like every other one cannot be treated differently by something downstream.
+    /// </remarks>
+    public static string NewId()
+    {
+        long stamp;
+
+        lock (IdGate)
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (now != _lastIdTimestamp)
+            {
+                _lastIdTimestamp = now;
+                _idCounter = 0;
+            }
+
+            stamp = now * 0x1000 + ++_idCounter;
+        }
+
+        var inverted = ~stamp & 0xFFFF_FFFF_FFFF;
+
+        var id = new StringBuilder("ses_", 30);
+        id.Append(inverted.ToString("x12"));
+
+        for (var index = 0; index < 14; index++)
+            id.Append(IdAlphabet[RandomNumberGenerator.GetInt32(IdAlphabet.Length)]);
+
+        return id.ToString();
+    }
+
+    /// <summary>
+    /// One session's row, or null when the database or the session is not there yet. A
+    /// pane that has not been sent a message has no row: the TUI creates it on first use.
     /// </summary>
     public static OpenCodeSessionRow? Read(string databasePath, string sessionId)
     {
@@ -67,66 +126,6 @@ internal static class OpenCodeSessions
         return new OpenCodeSessionRow(
             reader.GetString(0),
             reader.IsDBNull(1) ? null : reader.GetInt64(1));
-    }
-
-    /// <summary>
-    /// Sessions created in one project directory since a given moment, newest first.
-    /// </summary>
-    /// <remarks>
-    /// Used to adopt the session a freshly launched TUI creates for itself. This cannot be
-    /// a bare "newest session overall" query: the store holds every session on the machine,
-    /// and the newest of those belongs to whatever else the user is doing. The directory
-    /// filter and the start time are what make the answer this pane's.
-    /// </remarks>
-    public static IReadOnlyList<OpenCodeSession> ReadCreatedIn(
-        string databasePath,
-        string directory,
-        DateTime createdAfterUtc)
-    {
-        if (!File.Exists(databasePath))
-            return Array.Empty<OpenCodeSession>();
-
-        using var connection = Connect(databasePath);
-
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT s.id, s.time_idle, s.time_created, pd.directory
-            FROM session_v2 s
-            JOIN project_directory pd ON pd.project_id = s.project_id
-            WHERE s.time_created >= $after
-            ORDER BY s.time_created DESC
-            LIMIT 20
-            """;
-
-        command.Parameters.AddWithValue(
-            "$after", new DateTimeOffset(createdAfterUtc).ToUnixTimeMilliseconds());
-
-        var results = new List<OpenCodeSession>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            if (reader.IsDBNull(0) || reader.IsDBNull(3))
-                continue;
-
-            var path = reader.GetString(3);
-
-            // The same path is stored with either separator depending on how it was
-            // written, so both forms are compared rather than guessing which one is in use.
-            if (!string.Equals(
-                    path.Replace('/', '\\'),
-                    directory.Replace('/', '\\'),
-                    StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            results.Add(new OpenCodeSession(
-                reader.GetString(0),
-                reader.IsDBNull(1) ? null : reader.GetInt64(1),
-                path,
-                reader.GetInt64(2)));
-        }
-
-        return results;
     }
 
     private static SqliteConnection Connect(string databasePath)

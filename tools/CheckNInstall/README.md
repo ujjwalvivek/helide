@@ -16,7 +16,7 @@ Keyboard: arrows or `1`-`6` to move, `Enter` to select, `Esc` to quit.
 
 | #   | Phase       | What it does                                                                                                        |
 | --- | ----------- | ------------------------------------------------------------------------------------------------------------------- |
-| 1   | Check       | lazygit, hx, yazi, opencode, codex -- by the executable that is on PATH                                             |
+| 1   | Check       | lazygit, hx, yazi -- by the executable that is on PATH. opencode, codex and claude are optional and only reported   |
 | 2   | Install     | `winget install` each missing one                                                                                   |
 | 3   | Repair PATH | `WinGet\Links` can be empty, so `WinGet\Packages` is added to the user PATH                                         |
 | 4   | Build       | `-r win-x64 --self-contained`, flattens its own single-file bundle up to `bin\Release\net8.0-windows\*-win-x64.exe` |

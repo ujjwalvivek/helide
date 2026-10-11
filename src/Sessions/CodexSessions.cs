@@ -40,6 +40,25 @@ internal static class CodexSessions
     // not by the final pass at close, which is the only other chance a slow pane gets.
     private static readonly HashSet<string> _consumed = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// What a rollout record says about its turn. Codex brackets every turn with
+    /// <c>task_started</c> and <c>task_complete</c>.
+    /// </summary>
+    public static TurnMark ReadTurn(JsonElement record)
+    {
+        if (!record.TryGetProperty("payload", out var payload)
+            || payload.ValueKind != JsonValueKind.Object
+            || !payload.TryGetProperty("type", out var type))
+            return TurnMark.None;
+
+        return type.GetString() switch
+        {
+            "task_started" => TurnMark.Started,
+            "task_complete" => TurnMark.Finished,
+            _ => TurnMark.None,
+        };
+    }
+
     /// <summary>A rollout that appeared after <see cref="Initialize"/> was called.</summary>
     internal readonly record struct Rollout(string Path, string SessionId, DateTime CreatedUtc);
 

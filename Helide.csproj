@@ -55,6 +55,9 @@
     <Resource Include="src\Assets\icons\project.png" />
     <Resource Include="src\Assets\icons\terminal.png" />
     <Resource Include="src\Assets\icons\agent.png" />
+    <Resource Include="src\Assets\icons\folder.png" />
+    <Resource Include="src\Assets\icons\open.png" />
+    <Resource Include="src\Assets\icons\continue.png" />
     <None Include="src\Assets\helide.svg" />
     <None Include="src\Assets\icons\git.svg" />
     <None Include="src\Assets\icons\project.svg" />

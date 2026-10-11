@@ -34,8 +34,26 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         public const uint SwpNoMove = 0x0002;
         public const uint SwpNoActivate = 0x0010;
 
+        public const int GclpHbrBackground = -10;
+
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr SetFocus(IntPtr hWnd);
+
+        [DllImport("user32.dll", EntryPoint = "SetClassLongPtrW", SetLastError = true)]
+        public static extern IntPtr SetClassLongPtr(IntPtr hWnd, int index, IntPtr value);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr CreateSolidBrush(uint colorRef);
+
+        public delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool EnumChildWindows(IntPtr parent, EnumChildProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool InvalidateRect(IntPtr hWnd, IntPtr rect, [MarshalAs(UnmanagedType.Bool)] bool erase);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -66,8 +84,10 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         string label,
         string commandLine,
         string workingDirectory,
-        string? filePath = null)
+        string? filePath = null,
+        bool revealWhenSettled = false)
     {
+        _revealWhenSettled = revealWhenSettled;
         _focusChangedHandler = Terminal_GotKeyboardFocus;
         Label = label;
         FilePath = filePath;
@@ -168,6 +188,35 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     public long LastOutputTicks => Interlocked.Read(ref _lastOutputTicks);
 
     private long _lastOutputTicks;
+    private long _outputLength;
+
+    // An agent takes a second or two to come up, and it does not arrive in one piece: the
+    // launcher's console is blank first, then the TUI paints, and a restored conversation
+    // repaints once more when its history loads. Shown as it happens that reads as a jump
+    // and a flash, so for those panes the placeholder stays up until the output has
+    // stopped moving. Everything else is revealed straight away, because helix and yazi
+    // paint in a single frame and any wait there is just the app feeling slow.
+    private readonly bool _revealWhenSettled;
+
+    // Enough to be a real first paint rather than the handful of mode-setting sequences
+    // the pseudoconsole emits on its own before the program has drawn anything.
+    private const int SettledMinimumOutput = 400;
+    private static readonly TimeSpan SettledQuiet = TimeSpan.FromMilliseconds(220);
+
+    // A pane that never settles -- a spinner, a clock -- is shown anyway.
+    private static readonly TimeSpan SettledLimit = TimeSpan.FromSeconds(4);
+
+    private bool HasSettled(DateTime readyUtc)
+    {
+        var now = DateTime.UtcNow;
+        if (now - readyUtc >= SettledLimit)
+            return true;
+
+        if (Interlocked.Read(ref _outputLength) < SettledMinimumOutput)
+            return false;
+
+        return now.Ticks - LastOutputTicks >= SettledQuiet.Ticks;
+    }
 
     public event Action<NativeTerminalHost, TerminalHostState>? StateChanged;
 
@@ -354,8 +403,11 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         }));
     }
 
-    private void ConPtyTerm_TerminalOutput(object? sender, TerminalOutputEventArgs output) =>
+    private void ConPtyTerm_TerminalOutput(object? sender, TerminalOutputEventArgs output)
+    {
         Interlocked.Exchange(ref _lastOutputTicks, DateTime.UtcNow.Ticks);
+        Interlocked.Add(ref _outputLength, output.Data?.Length ?? 0);
+    }
 
     private void ConPtyTerm_TermReady(object? sender, EventArgs e)
     {
@@ -367,13 +419,18 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             PrepareTerminalSurface();
             ApplyTheme();
 
+            var readyUtc = DateTime.UtcNow;
+
             _revealTimer?.Stop();
             _revealTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
             {
-                Interval = TimeSpan.FromMilliseconds(90),
+                Interval = TimeSpan.FromMilliseconds(_revealWhenSettled ? 40 : 90),
             };
             _revealTimer.Tick += (_, _) =>
             {
+                if (_revealWhenSettled && !_disposed && !HasSettled(readyUtc))
+                    return;
+
                 _revealTimer?.Stop();
                 if (_disposed)
                     return;
@@ -406,11 +463,66 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             HideTerminalScrollBar(scrollBar);
     }
 
-    private void ApplyTheme() => _terminal.Terminal.SetTheme(
-        BuildTheme(),
-        TerminalFont.Source,
-        (short)TerminalFontSize,
-        TerminalBackground);
+    private void ApplyTheme()
+    {
+        _terminal.Terminal.SetTheme(
+            BuildTheme(),
+            TerminalFont.Source,
+            (short)TerminalFontSize,
+            TerminalBackground);
+
+        ApplyWindowBackground();
+    }
+
+    // One brush per colour for the life of the process. A window class keeps the handle it
+    // is given, so these are never freed, and there are only ever as many as themes used.
+    private static readonly Dictionary<uint, IntPtr> BackgroundBrushes = [];
+
+    // The renderer is a native window, and until it has drawn its first frame Windows
+    // fills it with its class background, which is white. That is the flash when a pane
+    // appears, and the white strip down the right edge: the terminal only draws whole
+    // character cells, so the last few pixels of the window are never the renderer's and
+    // keep showing whatever is underneath. Giving the class the terminal's own colour
+    // makes both of those the same colour as everything around them.
+    private void ApplyWindowBackground()
+    {
+        var handle = RendererHandle();
+        if (handle == IntPtr.Zero)
+            return;
+
+        try
+        {
+            var colour = TerminalBackground;
+            var colorRef = (uint)(colour.R | (colour.G << 8) | (colour.B << 16));
+
+            if (!BackgroundBrushes.TryGetValue(colorRef, out var brush))
+            {
+                brush = NativeMethods.CreateSolidBrush(colorRef);
+                if (brush == IntPtr.Zero)
+                    return;
+
+                BackgroundBrushes[colorRef] = brush;
+            }
+
+            NativeMethods.SetClassLongPtr(handle, NativeMethods.GclpHbrBackground, brush);
+
+            // The window that paints can be a child of the one WPF hands out.
+            NativeMethods.EnumChildWindows(
+                handle,
+                (child, _) =>
+                {
+                    NativeMethods.SetClassLongPtr(child, NativeMethods.GclpHbrBackground, brush);
+                    return true;
+                },
+                IntPtr.Zero);
+
+            NativeMethods.InvalidateRect(handle, IntPtr.Zero, true);
+        }
+        catch
+        {
+            // Cosmetic. A pane that keeps the default background still works.
+        }
+    }
 
     private static void HideTerminalScrollBar(WpfScrollBar scrollBar)
     {

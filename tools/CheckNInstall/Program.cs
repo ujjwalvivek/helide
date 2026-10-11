@@ -19,8 +19,16 @@ internal static class Program
         ("lazygit",  "lazygit",  "JesseDuffield.lazygit"),
         ("helix",    "hx",       "Helix.Helix"),
         ("yazi",     "yazi",     "sxyazi.yazi"),
-        ("opencode", "opencode", "SST.opencode"),
-        ("codex",    "codex",    "OpenAI.Codex"),
+    ];
+
+    // The agents Helide can run in its agent pane. None is required: the pane is off until
+    // it is switched on from the welcome screen, and it offers whichever of these it finds.
+    // So they are reported and never installed, and a machine with none of them is ready.
+    private static readonly (string Label, string Exe)[] OptionalAgents =
+    [
+        ("opencode", "opencode"),
+        ("codex",    "codex"),
+        ("claude",   "claude"),
     ];
 
     private static readonly string[] MenuItems =
@@ -56,8 +64,8 @@ internal static class Program
             Esc        quit
 
         PHASES
-            1  Check          lazygit, hx, yazi, opencode, codex.
-            2  Install        winget install each missing one.
+            1  Check          lazygit, hx, yazi. The agents (opencode, codex, claude) are optional and only reported.
+            2  Install        winget install each missing one. Agents are never installed.
             3  Repair PATH    The real directory under WinGet\Packages is added to the user PATH, and refused past 2000 characters.
             4  Build          dotnet publish, Helide then AutoUpdater, excluded from Helide.csproj. PublishSingleFile is -time only, so a plain build cannot make it.
             5  Install        %LOCALAPPDATA%\Programs\Helide\Helide.exe, on the user PATH, with a Start Menu entry. AutoUpdater.exe beside it.
@@ -241,6 +249,9 @@ internal static class Program
                 anyMissing = true;
             }
         }
+
+        foreach (var (label, exe) in OptionalAgents)
+            Emit(IsOnPath(exe) ? "ok" : "skipped", $"{label,-9} -> {exe}  (optional agent)");
 
         return anyMissing;
     }

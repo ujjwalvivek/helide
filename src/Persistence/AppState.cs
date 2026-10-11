@@ -24,6 +24,12 @@ internal sealed class AppState
     // script's presence is the fact that decides it -- and is kept only so the palette
     // can label the command without touching the file system to find out.
     public bool YaziOpenInHelide { get; set; }
+
+    // Whether the agent pane exists at all. Off until the user turns it on from the
+    // welcome screen: Helide is an editor shell first, and no agent is required to use
+    // it. While it is off no agent is started, and the saved sessions of each workspace
+    // are left exactly as they were so turning it back on brings them back.
+    public bool AiEnabled { get; set; }
 }
 
 /// <summary>Everything describing one project's workspace, persisted per project path.</summary>
@@ -72,6 +78,11 @@ internal sealed class AgentSessionState
     // The conversation to reopen. Without this the pane comes back empty, which is
     // the whole thing this field exists to prevent.
     public string? SessionId { get; set; }
+
+    // Only set for a pane opened somewhere other than the project root. An OpenCode
+    // conversation is filed under the directory it was started in, so the pane has to
+    // be reopened there to find it.
+    public string? WorkingDirectory { get; set; }
 }
 
 internal sealed class WorkspaceLayoutState
@@ -88,5 +99,10 @@ internal sealed class WorkspaceLayoutState
     public bool LeftCollapsed { get; set; }
     public bool RunnerCollapsed { get; set; } = true;
     public bool AgentCollapsed { get; set; } = true;
+
+    // Set when the agent pane was open and got closed only because AI was switched off.
+    // AgentCollapsed has to read true while there is no pane, and without this the pane
+    // would stay closed after AI is switched back on, as if the user had closed it.
+    public bool AgentHiddenByAi { get; set; }
     public string LeftTool { get; set; } = "git";
 }

@@ -4,28 +4,50 @@ using System.Windows.Threading;
 
 namespace Helide.Sessions;
 
+/// <summary>What one transcript record says about the turn it belongs to.</summary>
+internal enum TurnMark
+{
+    /// <summary>The record says nothing about turn boundaries.</summary>
+    None,
+
+    /// <summary>A turn began.</summary>
+    Started,
+
+    /// <summary>A turn ended.</summary>
+    Finished,
+}
+
 /// <summary>
-/// Reports codex turn state by reading the turn records codex writes into its own
-/// rollout file, so a pane that finished in the background gets marked.
+/// Reports turn state for an agent that keeps a transcript on disk, by reading the
+/// records the agent itself appends to it, so a pane that finished in the background
+/// gets marked.
 /// </summary>
 /// <remarks>
-/// Codex brackets every turn in the rollout file with <c>task_started</c> and
-/// <c>task_complete</c> records. Those are the agent's own statements about what it
-/// is doing, which is what OpenCode's event stream provides for that tool.
+/// Codex brackets every turn in its rollout file with <c>task_started</c> and
+/// <c>task_complete</c>, and Claude's transcript carries the prompt that opens a turn and
+/// the reply that closes it. Those are the agent's own statements about what it is doing.
+/// Which records mean what is the only thing that differs between the two, so it is passed
+/// in and everything else is shared.
 /// <para>
 /// The alternative, <see cref="QuietPeriodStatusSource"/>, infers the same thing from
 /// silence in the terminal and cannot tell a finished reply from a build that is
 /// still running. Here the difference is explicit, so a long silent turn keeps the
-/// tab unmarked until codex actually says the turn ended.
+/// tab unmarked until the agent actually says the turn ended.
 /// </para>
 /// <para>
-/// The file is read with sharing enabled and only the tail is examined, because codex
+/// The file is read with sharing enabled and only the tail is examined, because the agent
 /// holds the file open for as long as its TUI is up and it grows by append. Anything
 /// unparseable is skipped rather than guessed at, so a torn read costs a poll instead
 /// of a wrong answer.
 /// </para>
+/// <para>
+/// A transcript that is already there when the pane starts is history: the turns in it
+/// finished before anyone could have been away, so the first read of it only establishes
+/// where things stand. A transcript that appears while the pane is being watched is the
+/// pane's first turn, and everything in it counts.
+/// </para>
 /// </remarks>
-internal sealed class RolloutStatusSource : ISessionStatusSource
+internal sealed class TranscriptStatusSource : ISessionStatusSource
 {
     /// <summary>How often the file is checked for a turn boundary.</summary>
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(700);
@@ -35,17 +57,24 @@ internal sealed class RolloutStatusSource : ISessionStatusSource
     private const int TailBytes = 64 * 1024;
 
     private readonly Func<string?> _resolvePath;
+    private readonly Func<JsonElement, TurnMark> _readTurn;
     private readonly DispatcherTimer _timer;
 
     private string? _path;
     private long _offset;
     private string _pending = string.Empty;
     private bool _busy;
-    private bool _sawTurn;
+    private bool _finished;
+    private bool _baselinePending;
+    private bool _lookedBefore;
 
-    public RolloutStatusSource(Func<string?> resolvePath, Dispatcher dispatcher)
+    public TranscriptStatusSource(
+        Func<string?> resolvePath,
+        Func<JsonElement, TurnMark> readTurn,
+        Dispatcher dispatcher)
     {
         _resolvePath = resolvePath;
+        _readTurn = readTurn;
 
         _timer = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
         {
@@ -56,7 +85,7 @@ internal sealed class RolloutStatusSource : ISessionStatusSource
     }
 
     /// <summary>
-    /// True only while codex has said a turn started and not yet that it completed.
+    /// True only while the agent has said a turn started and not yet that it ended.
     /// False when idle, and also when the file cannot be read -- unknown is reported
     /// as not-busy so an unreadable file never invents activity.
     /// </summary>
@@ -74,6 +103,10 @@ internal sealed class RolloutStatusSource : ISessionStatusSource
         // used yet has no file, and gains one the moment it does.
         if (_path is null || !File.Exists(_path))
         {
+            var replaced = _path is not null;
+            var firstLook = !_lookedBefore;
+            _lookedBefore = true;
+
             var resolved = _resolvePath();
             if (resolved is null)
                 return;
@@ -82,22 +115,33 @@ internal sealed class RolloutStatusSource : ISessionStatusSource
             _offset = 0;
             _pending = string.Empty;
             _busy = false;
+            _finished = false;
+
+            // Found on the first look, or found again after the agent replaced it: what
+            // it holds was written before this pane was being watched.
+            _baselinePending = firstLook || replaced;
         }
 
         if (!TryReadNewRecords())
             return;
 
-        if (_busy && _sawTurn)
+        var finished = _finished;
+        _finished = false;
+
+        if (_baselinePending)
         {
-            _busy = false;
-            BecameIdle?.Invoke();
+            _baselinePending = false;
+            return;
         }
+
+        if (finished)
+            BecameIdle?.Invoke();
     }
 
     /// <summary>
     /// Reads whatever has been appended since the last poll and folds the turn markers
     /// into <see cref="_busy"/>. Returns false only when the file could not be opened,
-    /// which is a transient state while codex replaces it.
+    /// which is a transient state while the agent replaces it.
     /// </summary>
     private bool TryReadNewRecords()
     {
@@ -113,8 +157,8 @@ internal sealed class RolloutStatusSource : ISessionStatusSource
             start = stream.Length;
 
             // Never re-read from the beginning: a long conversation would otherwise be
-            // re-parsed on every poll, and its oldest task_started would flip the tab
-            // back to busy. Skip forward when the tail window cannot cover the growth.
+            // re-parsed on every poll. Skip forward when the tail window cannot cover
+            // the growth.
             if (start < _offset)
                 _offset = 0;
             else if (start - _offset > TailBytes)
@@ -128,8 +172,8 @@ internal sealed class RolloutStatusSource : ISessionStatusSource
 
             // A read can stop mid-line, and the offset has to stay at the last newline
             // or the completed line's tail is never seen: advancing past it would drop
-            // the final task_complete and leave the tab stuck as busy. So the partial
-            // line is carried into the next poll instead.
+            // the record that ends the turn and leave the tab stuck as busy. So the
+            // partial line is carried into the next poll instead.
             var pending = _pending;
             var buffer = new char[8192];
             int read;
@@ -155,7 +199,7 @@ internal sealed class RolloutStatusSource : ISessionStatusSource
         }
         catch (Exception)
         {
-            // Codex rewrites the file on resume, so a failed open is momentary. Keeping
+            // The file can be replaced on resume, so a failed open is momentary. Keeping
             // the previous state means a blip cannot fake a finished turn.
             return false;
         }
@@ -167,31 +211,30 @@ internal sealed class RolloutStatusSource : ISessionStatusSource
         if (trimmed.Length == 0)
             return;
 
-        string? type;
+        TurnMark mark;
         try
         {
             using var document = JsonDocument.Parse(trimmed);
-            if (!document.RootElement.TryGetProperty("payload", out var payload))
-                return;
-            if (!payload.TryGetProperty("type", out var typeElement))
-                return;
-            type = typeElement.GetString();
+            mark = _readTurn(document.RootElement);
         }
-        catch (JsonException)
+        catch (Exception)
         {
-            // A line caught mid-append is not valid JSON yet; the next poll re-reads it.
+            // A line caught mid-append is not valid JSON yet, and a record in a shape
+            // this does not know says nothing either way.
             return;
         }
 
-        switch (type)
+        switch (mark)
         {
-            case "task_started":
+            case TurnMark.Started:
                 _busy = true;
-                _sawTurn = true;
                 break;
-            case "task_complete":
+            case TurnMark.Finished:
+                // Only a turn that was seen running can be said to have stopped, which
+                // is what keeps a reply made of several records from counting twice.
+                if (_busy)
+                    _finished = true;
                 _busy = false;
-                _sawTurn = true;
                 break;
         }
     }

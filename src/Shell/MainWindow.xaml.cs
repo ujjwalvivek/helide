@@ -228,6 +228,7 @@ public partial class MainWindow : Window
         Environment.SetEnvironmentVariable("HELIDE_OPEN_REQUEST", _openRequestPath ?? string.Empty);
 
         SyncYaziIntegration();
+        UpdateAiChrome();
 
         if (!string.IsNullOrWhiteSpace(_startupProject) && Directory.Exists(_startupProject))
             OpenWorkspace(_startupProject);
@@ -625,8 +626,19 @@ public partial class MainWindow : Window
         // --- New ---
         commands.Add(new PaletteCommand("New Editor Tab", () => CreateEditorTab(null), "New", "Ctrl+N", canInvoke: workspace));
         commands.Add(new PaletteCommand("New Runner Session", () => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit")), "New", canInvoke: workspace));
-        commands.Add(new PaletteCommand("New OpenCode Session", () => CreateAgentSession("opencode", "OpenCode"), "New", canInvoke: workspace));
-        commands.Add(new PaletteCommand("New Codex Session", () => CreateAgentSession("codex", "Codex"), "New", canInvoke: workspace));
+
+        // One entry per agent that is installed, and none at all while AI is off: an
+        // entry that could only ever fail is worse than no entry.
+        var agents = _state.AiEnabled ? AgentProviders.Installed() : [];
+
+        foreach (var agent in agents)
+        {
+            commands.Add(new PaletteCommand(
+                $"New {agent.Label} Session",
+                () => CreateAgentSession(agent.Type, agent.Label),
+                "New",
+                canInvoke: workspace));
+        }
 
         // Open in a chosen folder rather than the project root. Each picks a folder and
         // opens the session there, focused -- the creation methods already activate what
@@ -644,18 +656,15 @@ public partial class MainWindow : Window
             "New",
             "project folders",
             canInvoke: workspace));
-        commands.Add(new PaletteCommand(
-            "Open OpenCode in Folder…",
-            () => OpenFolderPicker(path => CreateAgentSession("opencode", "OpenCode", workingDirectory: path)),
-            "New",
-            "project folders",
-            canInvoke: workspace));
-        commands.Add(new PaletteCommand(
-            "Open Codex in Folder…",
-            () => OpenFolderPicker(path => CreateAgentSession("codex", "Codex", workingDirectory: path)),
-            "New",
-            "project folders",
-            canInvoke: workspace));
+        foreach (var agent in agents)
+        {
+            commands.Add(new PaletteCommand(
+                $"Open {agent.Label} in Folder…",
+                () => OpenFolderPicker(path => CreateAgentSession(agent.Type, agent.Label, workingDirectory: path)),
+                "New",
+                "project folders",
+                canInvoke: workspace));
+        }
         commands.Add(new PaletteCommand(
             "Open Runner in Folder…",
             () => OpenFolderPicker(path => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"), workingDirectory: path)),
@@ -670,17 +679,21 @@ public partial class MainWindow : Window
             "Close",
             canInvoke: () => workspace() && _editorTabs.Count > 0));
 
-        commands.Add(new PaletteCommand(
-            "Close Current Agent Session",
-            () => { if (_activeAgentSession is { } session) CloseAgentSession(session); },
-            "Close",
-            canInvoke: () => workspace() && _agentSessions.Count > 1));
+        if (_state.AiEnabled)
+        {
+            commands.Add(new PaletteCommand(
+                "Close Current Agent Session",
+                () => { if (_activeAgentSession is { } session) CloseAgentSession(session); },
+                "Close",
+                canInvoke: () => workspace() && _agentSessions.Count > 1));
+        }
 
         // --- Focus ---
         commands.Add(new PaletteCommand("Focus Left Panel", () => FocusPanel(ToolPanel.Left, ActiveLeftHost()), "Focus", PaletteCommand.Gesture(Key.D1), canInvoke: workspace));
         commands.Add(new PaletteCommand("Focus Editor", () => FocusPanel(null, ActiveEditorHost()), "Focus", PaletteCommand.Gesture(Key.D2), canInvoke: workspace));
         commands.Add(new PaletteCommand("Focus Runner", () => FocusPanel(ToolPanel.Runner, _runnerHost), "Focus", PaletteCommand.Gesture(Key.D3), canInvoke: workspace));
-        commands.Add(new PaletteCommand("Focus Agent", () => FocusPanel(ToolPanel.Agent, _activeAgentSession?.Host), "Focus", PaletteCommand.Gesture(Key.D4), canInvoke: workspace));
+        if (_state.AiEnabled)
+            commands.Add(new PaletteCommand("Focus Agent", () => FocusPanel(ToolPanel.Agent, _activeAgentSession?.Host), "Focus", PaletteCommand.Gesture(Key.D4), canInvoke: workspace));
 
         // --- Navigate ---
         commands.Add(new PaletteCommand("Show Lazygit Panel", () => ToggleLeftTool(LeftTool.Git), "View", keywords: "git left", canInvoke: workspace));
@@ -695,7 +708,8 @@ public partial class MainWindow : Window
             _state.YaziOpenInHelide ? "on · restarts Helide" : "restarts Helide",
             keywords: "yazi file tree editor helix open config"));
         commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanel(ToolPanel.Runner), "View", canInvoke: workspace));
-        commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanel(ToolPanel.Agent), "View", canInvoke: workspace));
+        if (_state.AiEnabled)
+            commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanel(ToolPanel.Agent), "View", canInvoke: workspace));
         commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
         commands.Add(new PaletteCommand("Previous Editor Tab", () => CycleEditorTab(-1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
         commands.Add(new PaletteCommand("Run Project Command", RunProjectCommand, "Run", canInvoke: workspace));
@@ -965,6 +979,15 @@ private void OpenInNewWindow(string? projectPath)
         WorkspaceRoot.Visibility = Visibility.Visible;
         var projectName = new DirectoryInfo(_currentProject).Name;
         Title = $"Helide | {projectName}";
+
+        // The welcome screen hides these, and coming back to a workspace that was kept
+        // alive behind it does not go through OpenWorkspace, which is what fills them in.
+        // Their text is still there from when it did.
+        ProjectNamePill.Visibility = Visibility.Visible;
+        ProjectPathPill.Visibility = Visibility.Visible;
+        GitBranchPill.Visibility = string.IsNullOrEmpty(GitBranchPillText.Text)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
     }
 
     private void PopulateWelcome()
@@ -995,6 +1018,116 @@ private void OpenInNewWindow(string? projectPath)
         RecentEmptyText.Visibility = recentProjects.Length == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
+
+        UpdateAiChrome();
+    }
+
+    // Everything outside the agent pane that shows whether AI is on: the banner on the
+    // welcome screen and the agent toggle in the status bar, which goes away entirely
+    // rather than sitting there greyed out.
+    private void UpdateAiChrome()
+    {
+        var installed = AgentProviders.Installed();
+
+        AiBanner.IsChecked = _state.AiEnabled;
+        AiBanner.Content = installed.Count > 0
+            ? "Found on this machine:  " + string.Join("  ·  ", installed.Select(provider => provider.Label))
+            : "No agent found on PATH. Install opencode, codex or claude to use this.";
+
+        AgentPanelToggle.Visibility = _state.AiEnabled ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void AiBanner_Click(object sender, RoutedEventArgs e)
+    {
+        var enable = AiBanner.IsChecked == true;
+        if (enable == _state.AiEnabled)
+            return;
+
+        // The open panes are written down while they still exist and while AI still
+        // counts as on. Once it is off the saved list is never rewritten, which is what
+        // keeps every workspace's conversations there for when it is turned back on.
+        if (!enable)
+            PersistAgentSessions();
+
+        _state.AiEnabled = enable;
+        _stateStore.Save(_state);
+        UpdateAiChrome();
+
+        // Turning it off takes effect now: a workspace can still be alive behind this
+        // screen, and its agents should not keep running. Turning it on waits until a
+        // workspace is on screen, because a terminal must not be started inside a pane
+        // that has no size yet.
+        if (!enable)
+            SyncAgentsWithAiState();
+    }
+
+    // Brings a workspace that is already open into line with the AI switch, which can
+    // have been flipped on the welcome screen while that workspace sat behind it.
+    private void SyncAgentsWithAiState()
+    {
+        UpdateAiChrome();
+
+        if (_currentProject is null || _terminalHosts.Count == 0)
+            return;
+
+        if (_state.AiEnabled)
+        {
+            if (_agentSessions.Count > 0)
+                return;
+
+            // Same reason as in OpenWorkspace: the snapshot has to precede the panes.
+            CodexSessions.Initialize();
+            _workspace.Layout.AgentHiddenByAi = false;
+            SetPanelCollapsed(ToolPanel.Agent, false);
+            InitializeAgentSessions(_currentProject);
+        }
+        else
+        {
+            if (_agentSessions.Count == 0 && IsPanelCollapsed(ToolPanel.Agent))
+                return;
+
+            if (!IsPanelCollapsed(ToolPanel.Agent))
+                _workspace.Layout.AgentHiddenByAi = true;
+
+            TearDownAgentSessions();
+            SetPanelCollapsed(ToolPanel.Agent, true);
+        }
+
+        SaveLayoutAfterLayoutPasses();
+    }
+
+    // Stops every agent pane and forgets it, without touching what is saved.
+    private void TearDownAgentSessions()
+    {
+        foreach (var session in _agentSessions)
+        {
+            session.DisposeStatusSource();
+
+            if (session.Host is { } host)
+            {
+                host.Dispose();
+                _terminalHosts.Remove(host);
+            }
+        }
+
+        _agentSessions.Clear();
+        _dormantAgentSessions.Clear();
+        _activeAgentSession = null;
+        AgentSlot.Content = null;
+        UpdateAgentSessionUI();
+    }
+
+    // Opens one session when the pane would otherwise be empty, on the first agent that
+    // is installed. With none installed the pane stays empty and the + menu says why.
+    private void EnsureAgentSession()
+    {
+        if (_agentSessions.Count > 0 || !_state.AiEnabled)
+            return;
+
+        if (AgentProviders.Installed().FirstOrDefault() is { } provider)
+            CreateAgentSession(provider.Type, provider.Label);
+        else
+            AgentPaneTitle.Text = "AGENT";
     }
 
     private void ContinueProjectButton_Click(object sender, RoutedEventArgs e)
@@ -1002,6 +1135,7 @@ private void OpenInNewWindow(string? projectPath)
         if (!string.IsNullOrWhiteSpace(_currentProject))
         {
             ShowWorkspace();
+            SyncAgentsWithAiState();
             return;
         }
 
@@ -1043,6 +1177,7 @@ private void OpenInNewWindow(string? projectPath)
             _terminalHosts.Count > 0)
         {
             ShowWorkspace();
+            SyncAgentsWithAiState();
             return;
         }
 
@@ -1058,17 +1193,43 @@ private void OpenInNewWindow(string? projectPath)
             // Flush the workspace being left into its own file before the project
             // changes, or the layout and tabs just captured would be written against the
             // project being opened next.
+            //
+            // The agent tabs and which of them was showing are captured here too. They
+            // used to be recorded only when the window closed, so a workspace left by
+            // switching came back on whatever the file last held -- the last tab.
             if (_currentProject is not null)
+            {
+                RecordAgentSessions();
                 _stateStore.SaveWorkspace(_workspace, _currentProject);
+            }
 
             SaveWorkspaceLayout();
             CloseWorkspace();
+            TearDownAgentSessions();
 
             _currentProject = project;
 
             // Loaded before anything reads it: RestoreWorkspaceLayout, RestoreEditorTabs
             // and InitializeAgentSessions all come further down this method.
             _workspace = _stateStore.LoadWorkspace(project);
+
+            // With AI off there is no agent pane to show, whatever this workspace last
+            // had. Its saved sessions are not touched.
+            //
+            // A pane closed that way is remembered as such, so it opens again by itself
+            // once AI is back on instead of looking like something the user closed.
+            if (!_state.AiEnabled)
+            {
+                if (!_workspace.Layout.AgentCollapsed)
+                    _workspace.Layout.AgentHiddenByAi = true;
+
+                _workspace.Layout.AgentCollapsed = true;
+            }
+            else if (_workspace.Layout.AgentHiddenByAi)
+            {
+                _workspace.Layout.AgentHiddenByAi = false;
+                _workspace.Layout.AgentCollapsed = false;
+            }
 
             // The constructor restores these too, but only for the startup project. On a
             // switch the freshly loaded project's arrangement has to be applied, or the
@@ -1097,6 +1258,7 @@ private void OpenInNewWindow(string? projectPath)
             }
             else
             {
+                GitBranchPillText.Text = string.Empty;
                 GitBranchPill.Visibility = Visibility.Collapsed;
             }
             ResetPaneStates();
@@ -1132,9 +1294,8 @@ private void OpenInNewWindow(string? projectPath)
             CodexSessions.Initialize();
 
             // Initialize agent session from saved state or create default
-            InitializeAgentSessions(project);
-            if (_agentSessions.Count == 0)
-                CreateAgentSession("opencode", "OpenCode");
+            if (_state.AiEnabled)
+                InitializeAgentSessions(project);
 
             // Requery session ids on a timer while the window is up so a restarted
             // pane re-registers. The close-time pass reads what the timer already has.
@@ -1748,6 +1909,10 @@ private void OpenInNewWindow(string? projectPath)
         if (WorkspaceRoot.Visibility != Visibility.Visible || number is < 1 or > 5)
             return;
 
+        // There is no agent pane to focus while AI is off.
+        if (number == 4 && !_state.AiEnabled)
+            return;
+
         // Ctrl+5 always means the project browser; Ctrl+1 means whichever left tool is
         // showing, so it can never focus a pane the user cannot see.
         if (number == 5)
@@ -2094,14 +2259,41 @@ private void OpenInNewWindow(string? projectPath)
     private NativeTerminalHost? ActiveEditorHost() => _activeEditorTab?.Host;
 
     // Agent new session: opens the flyout
-    private void AgentNewSessionButton_Click(object sender, RoutedEventArgs e) =>
+    //
+    // Only the agents that are installed are offered. Looked up as the flyout opens, so
+    // one installed while Helide is running shows up without a restart.
+    private void AgentNewSessionButton_Click(object sender, RoutedEventArgs e)
+    {
+        var any = false;
+
+        foreach (var (type, button) in new (string, Button)[]
+                 {
+                     (AgentProviders.OpenCode, NewOpenCodeButton),
+                     (AgentProviders.Codex, NewCodexButton),
+                     (AgentProviders.Claude, NewClaudeButton),
+                 })
+        {
+            var installed = AgentProviders.IsInstalled(type);
+            button.Visibility = installed ? Visibility.Visible : Visibility.Collapsed;
+            any |= installed;
+        }
+
+        NoAgentsText.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
         AgentNewSessionFlyout.IsOpen = true;
+    }
 
     // Create a new OpenCode session replacing the panel
     private void NewOpenCodeButton_Click(object sender, RoutedEventArgs e)
     {
         AgentNewSessionFlyout.IsOpen = false;
         CreateAgentSession("opencode", "OpenCode");
+    }
+
+    // Create a new Claude session replacing the panel
+    private void NewClaudeButton_Click(object sender, RoutedEventArgs e)
+    {
+        AgentNewSessionFlyout.IsOpen = false;
+        CreateAgentSession("claude", "Claude");
     }
 
     // Create a new Codex session replacing the panel
@@ -2111,13 +2303,13 @@ private void OpenInNewWindow(string? projectPath)
         CreateAgentSession("codex", "Codex");
     }
 
-    private void AttachStatusSource(AgentSessionView session, string type, DateTime launchedUtc)
+    private void AttachStatusSource(AgentSessionView session, string type)
     {
         if (session.Host is not { } host)
             return;
 
         // An OpenCode pane shares the user's own opencode store, so status is a read of one
-        // session row whose id the pane already knows. Codex has no HTTP surface, but it writes
+        // session row whose id the pane already knows, because Helide chose it. Codex writes
         // task_started/task_complete into the rollout file it already maintains, which
         // is the same kind of first-party signal rather than an inference.
         //
@@ -2128,17 +2320,21 @@ private void OpenInNewWindow(string? projectPath)
         // signal exists.
         session.AttachStatusSource(type switch
         {
-            "opencode" => new OpenCodeStatusSource(
-                OpenCodeService.DatabasePath,
-                session.SessionId,
-                session.WorkingDirectory,
-                launchedUtc,
-                Dispatcher),
-            "codex" => new RolloutStatusSource(
+            "opencode" when session.SessionId is { Length: > 0 } openCodeId =>
+                new OpenCodeStatusSource(OpenCodeSessions.DatabasePath, openCodeId, Dispatcher),
+            "codex" => new TranscriptStatusSource(
                 () => session.SessionId is { Length: > 0 } id
                     ? CodexSessions.FindRolloutPath(id)
                     : null,
+                CodexSessions.ReadTurn,
                 Dispatcher),
+            // Claude keeps a transcript per session id, and the pane was given its id, so
+            // the file is known by name and simply does not exist until the first message.
+            "claude" when session.SessionId is { Length: > 0 } claudeId =>
+                new TranscriptStatusSource(
+                    () => ClaudeSessions.FindTranscriptPath(claudeId),
+                    ClaudeSessions.ReadTurn,
+                    Dispatcher),
             _ => new QuietPeriodStatusSource(host),
         });
     }
@@ -2148,7 +2344,8 @@ private void OpenInNewWindow(string? projectPath)
     // longer takes a commandLine: passing one in was how they drifted apart.
     private void CreateAgentSession(string type, string typeLabel, string? resumeSessionId = null, bool resuming = false, string? workingDirectory = null)
     {
-        if (_currentProject is null)
+        // Nothing starts an agent while AI is off, whichever path asked for one.
+        if (_currentProject is null || !_state.AiEnabled)
             return;
 
         // A codex pane only has a session id left to learn when its launch carries no
@@ -2180,26 +2377,57 @@ private void OpenInNewWindow(string? projectPath)
         // store that the TUI lists in full for the current project.
         //
         // A pane runs the user's own opencode against their own data directory, so its
-        // conversations are the same ones a terminal or another client would see. A fresh
-        // pane is launched with no session id and adopts the one the TUI makes for itself.
-        // Asking the service to create one instead does not work: the session it returns
-        // belongs to the service's own working directory rather than to this project, and
-        // the TUI then opens a blank window for a conversation that is not there.
+        // conversations are the same ones a terminal or another client would see. That
+        // store holds every session on the machine, so the pane has to know which one is
+        // its own -- and it does, because Helide picks the id. `opencode -s <id>` continues
+        // that session, or creates it under that id when there is none, in the directory
+        // the pane was started in. A fresh pane is therefore handed a new id and a restored
+        // one its saved id, and both are launched the same way.
+        //
+        // Everything else that was tried had to find the pane's session after the fact,
+        // and none of it held: filtering a shared event stream, asking the service to
+        // create the session (it lands in the service's directory, and the pane opens
+        // blank), and claiming whichever session appeared in the project after launch
+        // (two fresh panes race for it).
+        //
+        // Claude takes its id the same way, so it is handled the same way. Codex is the
+        // one that cannot be told: it names its own thread, which is why it alone still
+        // has an id to learn after it starts.
+        var sessionId = resumeSessionId is { Length: > 0 }
+            ? resumeSessionId
+            : type switch
+            {
+                "opencode" => OpenCodeSessions.NewId(),
+                "claude" => ClaudeSessions.NewId(),
+                _ => resumeSessionId,
+            };
+
         string commandLine;
 
         if (type == "codex")
         {
+            // The file that was actually found on PATH: npm installs a .cmd shim and
+            // other installers an .exe, and no shell is in front of this to work out which.
+            var codex = AgentProviders.Resolve(type) ?? "codex.cmd";
+
             commandLine = codexResumeId is { } codexLaunchId
-                ? ToolCommand("codex.cmd", "resume", codexLaunchId)
-                : ToolCommand("codex.cmd");
+                ? ToolCommand(codex, "resume", codexLaunchId)
+                : ToolCommand(codex);
+        }
+        else if (type == "claude")
+        {
+            var claude = AgentProviders.Resolve(type) ?? "claude.exe";
+
+            // Resuming an id that has no conversation yet makes claude exit, and that is
+            // exactly what a pane that was opened and never typed into has. So the
+            // transcript decides: continue it if it is there, otherwise start it.
+            commandLine = ClaudeSessions.FindTranscriptPath(sessionId!) is null
+                ? ToolCommand(claude, "--session-id", sessionId!)
+                : ToolCommand(claude, "--resume", sessionId!);
         }
         else
         {
-            // Only a pane reopening a known conversation is told which one. A fresh pane
-            // lets the TUI create it, which is what puts it in the right project.
-            commandLine = OpenCodePaneConfig.BuildLaunchCommand(
-                resuming ? resumeSessionId : null,
-                QuoteArgument);
+            commandLine = OpenCodePaneConfig.BuildLaunchCommand(sessionId, QuoteArgument);
         }
 
 
@@ -2207,7 +2435,7 @@ private void OpenInNewWindow(string? projectPath)
         {
             // Create the new session host
             var paneDirectory = workingDirectory ?? _currentProject!;
-            var host = new NativeTerminalHost(type, commandLine, paneDirectory);
+            var host = new NativeTerminalHost(type, commandLine, paneDirectory, revealWhenSettled: true);
 
             // Replace the agent panel content
             AgentSlot.Content = host;
@@ -2216,10 +2444,10 @@ private void OpenInNewWindow(string? projectPath)
             var newSession = new AgentSessionView(type, typeLabel);
             newSession.Host = host;
             newSession.WorkingDirectory = paneDirectory;
-            newSession.SessionId = resumeSessionId;
+            newSession.SessionId = sessionId;
             if (startsFreshCodex)
                 newSession.AwaitingSessionSince = launchedUtc;
-            AttachStatusSource(newSession, type, launchedUtc);
+            AttachStatusSource(newSession, type);
             foreach (var s in _agentSessions)
                 s.IsActive = false;
             newSession.IsActive = true;
@@ -2229,6 +2457,9 @@ private void OpenInNewWindow(string? projectPath)
             // Update UI
             AgentPaneTitle.Text = typeLabel.ToUpper();
             UpdateAgentSessionUI();
+
+            if (!_restoringAgentSessions)
+                PersistAgentSessions();
         }
         catch (Exception exception)
         {
@@ -2252,6 +2483,10 @@ private void OpenInNewWindow(string? projectPath)
                 session.Host.BringToFront();
             }
             UpdateAgentSessionUI();
+
+            // Which tab was showing is part of what gets restored, and a switch to another
+            // workspace reads it from the file rather than from this window.
+            PersistAgentSessions();
         }
     }
 
@@ -2265,19 +2500,44 @@ private void OpenInNewWindow(string? projectPath)
 
     private void InitializeAgentSessions(string project)
     {
-        _agentSessions.Clear();
+        TearDownAgentSessions();
 
-        // Load saved sessions for this project from AppState
-        var savedSessions = _workspace.AgentSessions;
-        if (savedSessions.Count > 0)
+        // The saved list is not written back while it is being replayed: a pane that
+        // failed to come up would otherwise drop the ones after it from the file.
+        _restoringAgentSessions = true;
+        try
         {
+            // Load saved sessions for this project from AppState
+            var savedSessions = _workspace.AgentSessions.ToList();
             foreach (var saved in savedSessions)
             {
                 var sessionType = saved.Type;
                 var sessionName = string.IsNullOrEmpty(saved.Name) ? sessionType.ToUpper() : saved.Name;
+
+                // A pane opened in another folder has its conversation filed under
+                // that folder, and reopening it from the project root shows nothing.
+                var savedDirectory = saved.WorkingDirectory is { Length: > 0 } directory
+                                     && Directory.Exists(directory)
+                    ? directory
+                    : null;
+
+                // An agent that is no longer installed cannot be started, but its
+                // conversation is still there. The entry is carried along untouched
+                // so it comes back when the agent does.
+                if (!AgentProviders.IsInstalled(sessionType))
+                {
+                    _dormantAgentSessions.Add(saved);
+                    continue;
+                }
+
                 try
                 {
-                    CreateAgentSession(sessionType, sessionName, saved.SessionId, resuming: true);
+                    CreateAgentSession(
+                        sessionType,
+                        sessionName,
+                        saved.SessionId,
+                        resuming: true,
+                        workingDirectory: savedDirectory);
                 }
                 catch
                 {
@@ -2285,16 +2545,18 @@ private void OpenInNewWindow(string? projectPath)
                 }
             }
         }
-        else
+        finally
         {
-            // Default: create an OpenCode session
-            CreateAgentSession("opencode", "OpenCode");
+            _restoringAgentSessions = false;
         }
+
+        // A workspace with nothing saved gets one session to start with.
+        EnsureAgentSession();
 
         // Each newly created session is made active, so without re-asserting this on
         // restore the last-created one always wins rather than the one you left on.
         var activeIndex = _workspace.ActiveAgentIndex;
-        if (activeIndex >= 0 && activeIndex < _agentSessions.Count)
+        if (_dormantAgentSessions.Count == 0 && activeIndex >= 0 && activeIndex < _agentSessions.Count)
         {
             foreach (var s in _agentSessions)
                 s.IsActive = false;
@@ -2312,6 +2574,10 @@ private void OpenInNewWindow(string? projectPath)
             UpdateAgentSessionUI();
             AgentTabStrip.Items.Refresh();
         }
+
+        // A pane saved before ids were chosen up front has just been given one, and it is
+        // written now rather than left to depend on a clean exit.
+        PersistAgentSessions();
     }
 
     private void InitializeRunnerSessions(string project)
@@ -2531,18 +2797,10 @@ private void OpenInNewWindow(string? projectPath)
 
     private void CaptureAgentSessionIds()
     {
-        foreach (var session in _agentSessions)
-        {
-            if (session.Type == "opencode")
-            {
-                // The pane's own database wins (it is what the pane is on now); otherwise
-                // keep whatever was saved. No guessing fallback: a pane whose database has
-                // not produced a session yet is left id-less, so it restarts fresh rather
-                // than adopting a conversation that was never its own.
-                session.SessionId = session.LiveSessionId ?? session.SessionId;
-            }
-        }
+        var learned = false;
 
+        // An OpenCode pane has nothing to capture: its id was chosen when it was created.
+        //
         // Codex: a pane started with no resume argument is on a thread that does not
         // exist yet, and the rollout file it writes is the first place that thread's
         // id appears. Pair each rollout with the pane that had been waiting longest --
@@ -2579,14 +2837,31 @@ private void OpenInNewWindow(string? projectPath)
             pane.SessionId = rollout.SessionId;
             pane.AwaitingSessionSince = null;
             CodexSessions.MarkConsumed(rollout);
+            learned = true;
         }
+
+        if (learned && !_restoringAgentSessions)
+            PersistAgentSessions();
     }
 
-    private void MainWindow_Closing(object? sender, CancelEventArgs e)
-    {
-        CaptureAgentSessionIds();
+    // Set while saved panes are being reopened, when the saved list is the thing being
+    // read and must not be rewritten from a half-built set of panes.
+    private bool _restoringAgentSessions;
 
-        _workspace.AgentSessions.Clear();
+    // Saved sessions whose agent is not installed right now. They have no pane, and they
+    // are written back with the ones that do so an uninstall cannot lose a conversation.
+    private readonly List<AgentSessionState> _dormantAgentSessions = [];
+
+    // Copies the open agent panes into the workspace state.
+    //
+    // Does nothing while AI is off. There are no panes then, and writing that down would
+    // replace every saved session with an empty list -- which is how a previous attempt
+    // at the switch lost them.
+    private void RecordAgentSessions()
+    {
+        if (!_state.AiEnabled)
+            return;
+
         // IsActive is updated on every tab click, so it is the reliable witness of
         // what the user had selected. _activeAgentSession alone could be null at
         // close, which is how -1 was being written.
@@ -2594,6 +2869,7 @@ private void OpenInNewWindow(string? projectPath)
             .FirstOrDefault(x => x.session.IsActive);
         _workspace.ActiveAgentIndex = active.session is null ? -1 : active.index;
 
+        _workspace.AgentSessions.Clear();
         foreach (var session in _agentSessions)
         {
             _workspace.AgentSessions.Add(new AgentSessionState
@@ -2603,8 +2879,32 @@ private void OpenInNewWindow(string? projectPath)
                 CommandLine = session.Host is not null ? session.Host.Label : string.Empty,
                 CreatedUtc = DateTime.UtcNow,
                 SessionId = session.SessionId,
+                WorkingDirectory = string.Equals(
+                    session.WorkingDirectory, _currentProject, StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : session.WorkingDirectory,
             });
         }
+
+        _workspace.AgentSessions.AddRange(_dormantAgentSessions);
+    }
+
+    // Writes the open agent panes to disk as soon as the set changes, rather than only
+    // when the window closes: a pane's session id is the only way back to its
+    // conversation, and it should not depend on Helide exiting cleanly.
+    private void PersistAgentSessions()
+    {
+        if (_currentProject is null || !_state.AiEnabled)
+            return;
+
+        RecordAgentSessions();
+        _stateStore.SaveWorkspace(_workspace, _currentProject);
+    }
+
+    private void MainWindow_Closing(object? sender, CancelEventArgs e)
+    {
+        CaptureAgentSessionIds();
+        RecordAgentSessions();
 
         SaveEditorTabs();
         SaveWorkspaceLayout();
@@ -2798,6 +3098,7 @@ private void OpenInNewWindow(string? projectPath)
     // session from both the list and the status sources.
     private void CloseAgentSession(AgentSessionView session)
     {
+        session.DisposeStatusSource();
         session.Host?.Dispose();
 
         _agentSessions.Remove(session);
@@ -2819,12 +3120,13 @@ private void OpenInNewWindow(string? projectPath)
             else
             {
                 AgentSlot.Content = null;
-                AgentPaneTitle.Text = "OPENCODE";
+                AgentPaneTitle.Text = "AGENT";
                 _activeAgentSession = null;
             }
         }
 
         UpdateAgentSessionUI();
+        PersistAgentSessions();
     }
     private void RunnerTabStrip_Click(object sender, MouseButtonEventArgs e)
     {
@@ -2915,8 +3217,8 @@ var session = new AgentSessionView(type, label);
         // "not looked at yet".
         public bool NeedsAttention => _needsAttention;
 
-        public string Type { get; }  // "opencode" or "codex"
-        public string TypeLabel => Type == "codex" ? "Codex" : "OpenCode";
+        public string Type { get; }  // "opencode", "codex" or "claude"
+        public string TypeLabel => AgentProviders.LabelFor(Type);
         public string Name { get; }
         public NativeTerminalHost? Host { get; set; }
 
@@ -2926,15 +3228,13 @@ var session = new AgentSessionView(type, label);
         public string CommandLine { get; set; } = string.Empty;
 
         // The directory the pane's process was started in. For an OpenCode pane this is
-        // also the project its sessions belong to, which is how a fresh pane finds the
-        // conversation the TUI created for it among every session in the shared store.
+        // also the directory its conversation is filed under, so it is saved and the pane
+        // is reopened there.
         public string? WorkingDirectory { get; set; }
 
-        // What the pane's own status source says it is on. An OpenCode pane is launched onto a
-        // session it already owns, so its id is known from the start rather than learned.
-        public string? LiveSessionId => (_statusSource as OpenCodeStatusSource)?.SessionId;
-
-        // Filled in at save time so the next launch can reopen this conversation.
+        // The conversation this pane is on, saved so the next launch can reopen it. An
+        // OpenCode pane is given one when it is created; a codex pane learns its own from
+        // the rollout file it writes.
         public string? SessionId { get; set; }
 
         // Set when this pane was launched as a brand new codex conversation, i.e.
@@ -2948,6 +3248,14 @@ var session = new AgentSessionView(type, label);
         {
             Type = type;
             Name = name;
+        }
+
+        // The source polls on a timer of its own, so a pane that is closed has to stop
+        // it or it keeps reading a file for a tab that is gone.
+        public void DisposeStatusSource()
+        {
+            _statusSource?.Dispose();
+            _statusSource = null;
         }
 
         public System.Windows.Media.Brush Background => IsActive

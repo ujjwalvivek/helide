@@ -36,11 +36,15 @@ internal static class OpenCodePaneConfig
     /// The script, which is the same for every pane. Only the argument varies, which is
     /// what lets a single file serve every pane without them interfering.
     /// </summary>
+    /// <remarks>
+    /// <c>opencode</c> is named without an extension so cmd finds whichever form is
+    /// installed: npm puts a <c>.cmd</c> shim on PATH and winget an <c>.exe</c>.
+    /// </remarks>
     private static string Script => $"""
         @echo off
         set "{ConfigContentVariable}={CliOverlay}"
-        if not "%~1"=="" opencode.cmd -s %~1
-        if "%~1"=="" opencode.cmd
+        if not "%~1"=="" opencode -s %~1
+        if "%~1"=="" opencode
 
         """;
 
@@ -69,14 +73,17 @@ internal static class OpenCodePaneConfig
     /// shared file. Passing the id as an argument keeps the file identical for every pane:
     /// there is nothing to overwrite, and nothing to accumulate.
     /// </para>
+    /// <para>
+    /// The id is one Helide chose, for a fresh pane as much as a restored one.
+    /// <c>opencode -s</c> continues that session or, when there is none, creates it under
+    /// that id in the directory the pane was started in.
+    /// </para>
     /// </remarks>
     public static string BuildLaunchCommand(
         string? sessionId,
         Func<string, string> quoteArgument)
     {
-        // Rewritten on every launch so a stale or partial script cannot strand a pane, and
-        // so a changed overlay reaches panes opened after an upgrade.
-        File.WriteAllText(ScriptPath, Script, new UTF8Encoding(false));
+        EnsureScript();
 
         var command = quoteArgument(ScriptPath);
 
@@ -84,5 +91,38 @@ internal static class OpenCodePaneConfig
             command += " " + quoteArgument(id);
 
         return command;
+    }
+
+    /// <summary>
+    /// Puts the script on disk if it is missing or out of date.
+    /// </summary>
+    /// <remarks>
+    /// Checked on every launch so a changed overlay reaches panes opened after an upgrade,
+    /// but only written when the content differs. Panes restored together all pass through
+    /// here while the first of them is already reading the file, and rewriting it each time
+    /// would let one of them catch it half-written. When it does have to be written it is
+    /// moved into place whole, for the same reason.
+    /// </remarks>
+    private static void EnsureScript()
+    {
+        var path = ScriptPath;
+
+        try
+        {
+            if (File.Exists(path) && File.ReadAllText(path) == Script)
+                return;
+        }
+        catch (IOException)
+        {
+            // Unreadable is treated as out of date.
+        }
+
+        // Helide's local data folder does not exist until something is saved to it, and
+        // on a first run this is reached before anything has been.
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+        var temporary = $"{path}.{Environment.ProcessId}.tmp";
+        File.WriteAllText(temporary, Script, new UTF8Encoding(false));
+        File.Move(temporary, path, true);
     }
 }
