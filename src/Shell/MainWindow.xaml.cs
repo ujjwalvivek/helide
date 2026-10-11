@@ -2111,13 +2111,14 @@ private void OpenInNewWindow(string? projectPath)
         CreateAgentSession("codex", "Codex");
     }
 
-    private void AttachStatusSource(AgentSessionView session, string type, int port)
+    private void AttachStatusSource(AgentSessionView session, string type, DateTime launchedUtc)
     {
         if (session.Host is not { } host)
             return;
 
-        // The OpenCode TUI serves this pane's own server on the pinned port, so the
-        // source can read real turn events. Codex has no HTTP surface, but it writes
+        // An OpenCode pane runs against its own database, so its sessions are its own and
+        // status is a lookup in one known file rather than a judgement about which events
+        // on a shared server belonged here. Codex has no HTTP surface, but it writes
         // task_started/task_complete into the rollout file it already maintains, which
         // is the same kind of first-party signal rather than an inference.
         //
@@ -2128,7 +2129,7 @@ private void OpenInNewWindow(string? projectPath)
         // signal exists.
         session.AttachStatusSource(type switch
         {
-            "opencode" when port > 0 => new OpenCodeStatusSource(port, Dispatcher),
+            "opencode" => CreateOpenCodeStatusSource(session, host),
             "codex" => new RolloutStatusSource(
                 () => session.SessionId is { Length: > 0 } id
                     ? CodexSessions.FindRolloutPath(id)
@@ -2138,15 +2139,35 @@ private void OpenInNewWindow(string? projectPath)
         });
     }
 
+    // Reads this pane's own database. The database does not exist for the first moments of
+    // a pane -- OpenCode creates it on its first turn -- so the source is attached anyway
+    // and waits for the file rather than being replaced by a guess at launch time. That
+    // one-shot check was why a fresh pane showed no status at all until it was restarted.
+    private ISessionStatusSource CreateOpenCodeStatusSource(
+        AgentSessionView session,
+        NativeTerminalHost host)
+    {
+        if (session.PaneDirectory is not { Length: > 0 } paneDirectory)
+            return new QuietPeriodStatusSource(host);
+
+        // A pane resumed with an id already knows which conversation it is on. A fresh one
+        // has no id yet, so the source follows the newest session in this pane's own
+        // database, which no other pane can have written.
+        var pinned = session.SessionId is { Length: > 0 } id ? id : null;
+
+        return new OpenCodeDatabaseStatusSource(
+            OpenCodePaneStore.DatabasePath(paneDirectory),
+            pinned,
+            Dispatcher);
+    }
+
     // The command line and the status source must agree on the port, so both are
     // built together here rather than by each caller. That is also why this no
     // longer takes a commandLine: passing one in was how they drifted apart.
-    private void CreateAgentSession(string type, string typeLabel, string? resumeSessionId = null, bool resuming = false, string? workingDirectory = null)
+    private void CreateAgentSession(string type, string typeLabel, string? resumeSessionId = null, bool resuming = false, string? workingDirectory = null, string? existingPaneDirectory = null)
     {
         if (_currentProject is null)
             return;
-
-        var port = type == "codex" ? 0 : ReserveLocalPort();
 
         // A codex pane only has a session id left to learn when its launch carries no
         // resume argument, and that is decided by the id we were handed, not by whether
@@ -2169,17 +2190,44 @@ private void OpenInNewWindow(string? projectPath)
             : null;
         var startsFreshCodex = type == "codex" && codexResumeId is null;
 
-        // Taken before the host is built, so it always precedes the rollout file the
+        // Taken before the host is built, so it always precedes anything the
         // process is about to write.
         var launchedUtc = DateTime.UtcNow;
 
-        var commandLine = type == "codex"
-            ? codexResumeId is { } codexId
-                ? ToolCommand("codex.cmd", "resume", codexId)
-                : ToolCommand("codex.cmd")
-            : resuming && resumeSessionId is { Length: > 0 } id
-                ? ToolCommand("opencode.cmd", "-s", id, "--port", port.ToString())
-                : ToolCommand("opencode.cmd", "--port", port.ToString());
+        // OpenCode 2.x removed --port from the TUI, and moved every session into one
+        // shared database that the TUI lists in full for the current project. A pane is
+        // therefore given its own data directory, so its sessions are its own, and is run
+        // with --standalone so it does not attach to the user's shared background server.
+        //
+        // The directory is stable across restarts, so a reopened pane finds the database
+        // holding the conversation it was on.
+        string? paneDirectory = null;
+        string commandLine;
+
+        if (type == "codex")
+        {
+            commandLine = codexResumeId is { } codexLaunchId
+                ? ToolCommand("codex.cmd", "resume", codexLaunchId)
+                : ToolCommand("codex.cmd");
+        }
+        else
+        {
+            // A reopened pane keeps the directory it ran against last time. That directory
+            // holds its sessions, so handing it a fresh one would leave it with nothing to
+            // resume -- the pane would come back empty however correct the saved id is.
+            paneDirectory = existingPaneDirectory is { Length: > 0 } existing
+                ? existing
+                : OpenCodePaneStore.DirectoryFor(OpenCodePaneStore.NewPaneId());
+
+            OpenCodePaneStore.Prepare(paneDirectory, OpenCodePaneStore.UserDataDirectory);
+
+            var arguments = new List<string> { "--standalone" };
+            if (resuming && resumeSessionId is { Length: > 0 } resumeId)
+                arguments.AddRange(["-s", resumeId]);
+
+            commandLine = OpenCodePaneConfig.BuildLaunchCommand(
+                "opencode.cmd", arguments, paneDirectory, QuoteArgument);
+        }
 
 
         try
@@ -2193,11 +2241,11 @@ private void OpenInNewWindow(string? projectPath)
 
             var newSession = new AgentSessionView(type, typeLabel);
             newSession.Host = host;
-            newSession.StatusPort = port;
             newSession.SessionId = resumeSessionId;
+            newSession.PaneDirectory = paneDirectory;
             if (startsFreshCodex)
                 newSession.AwaitingSessionSince = launchedUtc;
-            AttachStatusSource(newSession, type, port);
+            AttachStatusSource(newSession, type, launchedUtc);
             foreach (var s in _agentSessions)
                 s.IsActive = false;
             newSession.IsActive = true;
@@ -2255,7 +2303,12 @@ private void OpenInNewWindow(string? projectPath)
                 var sessionName = string.IsNullOrEmpty(saved.Name) ? sessionType.ToUpper() : saved.Name;
                 try
                 {
-                    CreateAgentSession(sessionType, sessionName, saved.SessionId, resuming: true);
+                    CreateAgentSession(
+                        sessionType,
+                        sessionName,
+                        saved.SessionId,
+                        resuming: true,
+                        existingPaneDirectory: saved.PaneDirectory);
                 }
                 catch
                 {
@@ -2289,25 +2342,6 @@ private void OpenInNewWindow(string? projectPath)
 
             UpdateAgentSessionUI();
             AgentTabStrip.Items.Refresh();
-        }
-    }
-
-    // Asks the OS for a free loopback port by binding to 0 and immediately releasing
-    // it. There is an unavoidable race here, but the window is small and both sides
-    // bind only to loopback.
-    private static int ReserveLocalPort()
-    {
-        try
-        {
-            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
-            listener.Start();
-            var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
-            listener.Stop();
-            return port;
-        }
-        catch (Exception)
-        {
-            return 0;
         }
     }
 
@@ -2532,10 +2566,10 @@ private void OpenInNewWindow(string? projectPath)
         {
             if (session.Type == "opencode")
             {
-                // Live signal wins (it is what the pane is on now); otherwise keep
-                // whatever was saved. No HTTP fallback: a pane that has produced no
-                // events is left id-less, so it restarts fresh instead of adopting
-                // some other thread in the directory.
+                // The pane's own database wins (it is what the pane is on now); otherwise
+                // keep whatever was saved. No guessing fallback: a pane whose database has
+                // not produced a session yet is left id-less, so it restarts fresh rather
+                // than adopting a conversation that was never its own.
                 session.SessionId = session.LiveSessionId ?? session.SessionId;
             }
         }
@@ -2600,6 +2634,7 @@ private void OpenInNewWindow(string? projectPath)
                 CommandLine = session.Host is not null ? session.Host.Label : string.Empty,
                 CreatedUtc = DateTime.UtcNow,
                 SessionId = session.SessionId,
+                PaneDirectory = session.PaneDirectory,
             });
         }
 
@@ -2919,15 +2954,18 @@ var session = new AgentSessionView(type, label);
 
         // Only set for runner sessions, which are a shell running a command line and
         // can therefore be recreated from it. Agent sessions build their own command
-        // line from Type, since it has to carry the pinned status port.
+        // line from Type.
         public string CommandLine { get; set; } = string.Empty;
 
-        // The port pinned into that command line, needed again at save time to ask
-        // this pane's server which session it is on.
-        public int StatusPort { get; set; }
+        // The private data directory an OpenCode pane runs against, which is where its
+        // sessions and its status live. Null for a codex pane, which keeps its state in
+        // rollout files instead.
+        public string? PaneDirectory { get; set; }
 
-        // What the pane's own event stream says it is on.
-        public string? LiveSessionId => (_statusSource as OpenCodeStatusSource)?.SessionId;
+        // What the pane's own status source says it is on. An OpenCode pane's source knows its
+        // id when it was resumed, and otherwise reports the newest session in the private
+        // database no other pane can write to.
+        public string? LiveSessionId => (_statusSource as OpenCodeDatabaseStatusSource)?.SessionId;
 
         // Filled in at save time so the next launch can reopen this conversation.
         public string? SessionId { get; set; }

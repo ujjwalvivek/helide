@@ -10,7 +10,7 @@
     <AssemblyName>Helide</AssemblyName>
     <RootNamespace>Helide</RootNamespace>
     <Product>Helide</Product>
-    <Version>1.6.3</Version>
+    <Version>1.6.4</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <DebugType>none</DebugType>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -29,6 +29,10 @@
 
   <ItemGroup>
     <PackageReference Include="EasyWindowsTerminalControl" Version="1.0.38" />
+    <!-- Reads the per-pane session database so a pane can tell whether its own
+         conversation is still running. The database is opened read-only and is in WAL
+         mode, so these reads never contend with the agent writing to it. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>

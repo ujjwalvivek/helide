@@ -72,6 +72,12 @@ internal sealed class AgentSessionState
     // The conversation to reopen. Without this the pane comes back empty, which is
     // the whole thing this field exists to prevent.
     public string? SessionId { get; set; }
+
+    // The private data directory this pane ran against. An OpenCode pane keeps its
+    // sessions in a database of its own, so a reopened pane has to be pointed back at
+    // the same directory: given a fresh one it would have no sessions at all and the
+    // saved SessionId would point at a conversation that is not there.
+    public string? PaneDirectory { get; set; }
 }
 
 internal sealed class WorkspaceLayoutState
