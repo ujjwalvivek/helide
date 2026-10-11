@@ -34,7 +34,7 @@ Or, if you wish to build the binary yourself, see below.
 
 Note: If you have tools missing on the PATH, see [CheckNInstall Utility](#checkninstall-utility)
 
-## Build and run
+## Build and Run
 
 ```sh
 # Debug build and run
@@ -83,7 +83,7 @@ Update source:
 - Downloads `.zip` or `.exe` asset from GitHub releases
 - Extracts `.exe` from zip, installs beside `Helide.exe`
 
-#### Build and run
+#### Build and Run
 
 ```sh
 # Debug build
@@ -105,7 +105,7 @@ dotnet publish -c Release -r win-x64 --self-contained
 
 Interactive TUI that checks the CLIs Helide shells out to, installs what is missing, repairs PATH, publishes the single-file builds, and installs them. The user PATH is guarded at 2000 characters for safety.
 
-#### Build and run
+#### Build and Run
 
 ```sh
 # Debug build
@@ -148,8 +148,9 @@ Settings and configs are persisted under `%LOCALAPPDATA%\Helide`.
 | `state-ws-{hash}.json` | `EditorTabs[]`     | `Path`                                          | Open file paths                |
 | `state-ws-{hash}.json` | `ActiveAgentIndex` | `int`                                           | Which agent tab was selected   |
 | `state.json`           | `YaziOpenInHelide` | `bool`                                          | yazi config installed          |
+| `state-ws-{hash}.json` | `AgentSessions[]`  | `Type`, `Name`, `SessionId`, `PaneDirectory`    | Agent tab state                |
 
-Reset: delete the `.json` files. Per-project workspace files are named by a SHA-256 hash of the full project path (`state-ws-*.json`). `%LOCALAPPDATA%\Helide\open-request.txt` is deleted and recreated on every launch, so removing it by hand changes nothing.
+**Reset**: delete the `.json` files. Per-project workspace files are named by a SHA-256 hash of the full project path (`state-ws-*.json`). `%LOCALAPPDATA%\Helide\open-request.txt` is deleted and recreated on every launch, so removing it by hand changes nothing.
 
 ## Features
 
@@ -192,14 +193,14 @@ Accepting this will install four files in your Yazi's config directory at `%APPD
 
 Anything inside that folder is backed up to `%APPDATA%\yazi\config\helide-backup-<yyyyMMdd-HHmmss>\`, so accepting the offer costs nothing that cannot be undone. Restore by deleting the four installed files and moving the backup contents back. Deleting `open-with-helix.ps1` (or restoring a backup) makes Helide offer again.
 
-### How a file reaches the editor
+### How A File Reaches The Editor
 
 1. Yazi's `[opener]` entries (both `edit` and `open`) run `open-with-helix.ps1 %s`.
 2. The script appends the path to the file named by `HELIDE_OPEN_REQUEST`, an environment variable Helide exports to the processes it launches. That file is `%LOCALAPPDATA%\Helide\open-request.txt`.
 3. Helide watches it with a `FileSystemWatcher` and consumes it by byte offset, so two writes cannot be read as one half-line.
 4. Each drained path opens in a tab in the center editor pane.
 
-### Details worth knowing
+### Details Worth Knowing
 
 - `%s` is deliberately unquoted in `yazi.toml`. Yazi quotes substituted paths itself, and a second layer turns one path into two arguments that do not exist.
 - There is no wildcard `[open]` rule on purpose. A `{ url = "*" }` rule captures directories too, and a directory matching an opener is handed to the opener instead of being descended into -- folders stop expanding.
@@ -209,6 +210,34 @@ Anything inside that folder is backed up to `%APPDATA%\yazi\config\helide-backup
 - Standalone yazi with no Helide running just calls `hx` directly, so the config is harmless outside Helide.
 
 **Note**: This is still not a foolproof solution, there might be a slip in opening a file here or a directory there. If that happens, please raise an issue.
+
+## Agent Sessions
+
+To know agent status, and to restore conversations, Helide needs a signal the agent itself writes. `src/Sessions` holds the implementation and the shared interface.
+
+| File                            | Role                                                    |
+| ------------------------------- | ------------------------------------------------------- |
+| `ISessionStatusSource.cs`       | The contract: `IsBusy`, `BecameIdle`, `Start`           |
+| `OpenCodeService.cs`            | Locates the running service and its database            |
+| `OpenCodePaneConfig.cs`         | Builds each pane's launch script                        |
+| `OpenCodeSessions.cs`           | Reads session state out of the opencode database        |
+| `OpenCodeStatusSource.cs`       | Polls that database and decides when a turn ended       |
+| `CodexSessions.cs`              | Locates codex rollout files and reads their session ids |
+| `RolloutStatusSource.cs`        | Codex busy/idle from rollout turn markers               |
+| `QuietPeriodStatusSource.cs`    | Fallback that guesses from terminal silence             |
+
+If you wish to know why `opencode` has five files and `codex` two, read below.
+
+OpenCode 2.x removed `--port` from the TUI, and moved all sessions into one SQLite database under the data directory. It messed up with the pre 2.x work.
+
+So each pane therefore reads its status from the database rather than from an event stream, and two panes opening together cannot watch the same conversation. The config directory stay shared, so panes look and behave like the user's own opencode and nothing they configured is stranded.
+
+Each pane runs its own small generated script, `launch-<hash>.cmd`, under `%LOCALAPPDATA%\Helide`. Two things force the script. First, the environment variable that switches off OpenCode's own tab strip cannot be set inline. An inline `cmd /c "set ..."` cannot carry it, the outer quotes make cmd re-parse the value, so the JSON's own quotes end the assignment, and the pane starts silently ignoring the command. Second, The script is also named after the command it runs. Putting every pane on one shared
+script looked equivalent, but was not.
+
+`OpenCodeSessions` reads two columns from `session_v2`: `id` and `time_idle`. A turn in progress has no `time_idle`; finishing sets it, alongside `idle_outcome`. `OpenCodeDatabaseStatusSource` polls that on the UI thread and reports idle only on a transition from _was running_ to _finished_.
+
+Codex, on the other hand, needs none of this elaborate architecture. Its rollout file only contains markers written during a run, so nothing pre-existing can be mistaken for a fresh finish -- which is why the two implementations share nothing but the interface.
 
 ## FAQs
 
