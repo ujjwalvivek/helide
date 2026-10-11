@@ -213,31 +213,33 @@ Anything inside that folder is backed up to `%APPDATA%\yazi\config\helide-backup
 
 ## Agent Sessions
 
-To know agent status, and to restore conversations, Helide needs a signal the agent itself writes. `src/Sessions` holds the implementation and the shared interface.
+Agents are optional. Helide offers whichever of `opencode`, `codex` and `claude` it finds on `PATH` (as `.exe`, `.cmd` or `.bat`) and leaves the rest out of every menu. None is required.
 
-| File                            | Role                                                    |
-| ------------------------------- | ------------------------------------------------------- |
-| `ISessionStatusSource.cs`       | The contract: `IsBusy`, `BecameIdle`, `Start`           |
-| `OpenCodeService.cs`            | Locates the running service and its database            |
-| `OpenCodePaneConfig.cs`         | Builds each pane's launch script                        |
-| `OpenCodeSessions.cs`           | Reads session state out of the opencode database        |
-| `OpenCodeStatusSource.cs`       | Polls that database and decides when a turn ended       |
-| `CodexSessions.cs`              | Locates codex rollout files and reads their session ids |
-| `RolloutStatusSource.cs`        | Codex busy/idle from rollout turn markers               |
-| `QuietPeriodStatusSource.cs`    | Fallback that guesses from terminal silence             |
+The whole feature sits behind one switch, off by default: the banner on the welcome screen, or **Enable AI** / **Disable AI** in the command palette (`AiEnabled` in `state.json`). While it is off there is no agent pane and no agent commands. Saved sessions are not touched, so turning it back on reopens each workspace's conversations.
 
-If you wish to know why `opencode` has five files and `codex` two, read below.
+To restore a conversation Helide has to know which session a pane is on. Where the agent allows it, Helide chooses the id itself instead of working it out afterwards:
 
-OpenCode 2.x removed `--port` from the TUI, and moved all sessions into one SQLite database under the data directory. It messed up with the pre 2.x work.
+| Agent    | How the pane gets its session id                                                    |
+| -------- | ----------------------------------------------------------------------------------- |
+| OpenCode | Helide generates the id and launches the TUI onto it                                |
+| Claude   | Helide generates a UUID: `--session-id <id>` the first time, `--resume <id>` after  |
+| Codex    | Cannot be told an id, so it is read from the rollout file the pane writes on start  |
 
-So each pane therefore reads its status from the database rather than from an event stream, and two panes opening together cannot watch the same conversation. The config directory stay shared, so panes look and behave like the user's own opencode and nothing they configured is stranded.
+`src/Sessions` holds the implementation:
 
-Each pane runs its own small generated script, `launch-<hash>.cmd`, under `%LOCALAPPDATA%\Helide`. Two things force the script. First, the environment variable that switches off OpenCode's own tab strip cannot be set inline. An inline `cmd /c "set ..."` cannot carry it, the outer quotes make cmd re-parse the value, so the JSON's own quotes end the assignment, and the pane starts silently ignoring the command. Second, The script is also named after the command it runs. Putting every pane on one shared
-script looked equivalent, but was not.
+| File                         | Role                                                          |
+| ---------------------------- | ------------------------------------------------------------- |
+| `AgentProviders.cs`          | The known agents and which are installed                      |
+| `ISessionStatusSource.cs`    | The contract: `IsBusy`, `BecameIdle`, `Start`                 |
+| `OpenCodePaneConfig.cs`      | Builds each OpenCode pane's launch script                     |
+| `OpenCodeSessions.cs`        | Session id, and session state read from the opencode database |
+| `OpenCodeStatusSource.cs`    | Polls that database and decides when a turn ended             |
+| `CodexSessions.cs`           | Locates codex rollout files and reads their session ids       |
+| `ClaudeSessions.cs`          | Claude session ids and transcript turn markers                |
+| `TranscriptStatusSource.cs`  | Busy/idle for Codex and Claude from their own transcripts     |
+| `QuietPeriodStatusSource.cs` | Fallback that guesses from terminal silence                   |
 
-`OpenCodeSessions` reads two columns from `session_v2`: `id` and `time_idle`. A turn in progress has no `time_idle`; finishing sets it, alongside `idle_outcome`. `OpenCodeDatabaseStatusSource` polls that on the UI thread and reports idle only on a transition from _was running_ to _finished_.
-
-Codex, on the other hand, needs none of this elaborate architecture. Its rollout file only contains markers written during a run, so nothing pre-existing can be mistaken for a fresh finish -- which is why the two implementations share nothing but the interface.
+Codex and Claude both keep a transcript on disk and mark turn boundaries in it, so they share `TranscriptStatusSource`; only which record means "started" and "finished" differs. OpenCode keeps its sessions in one SQLite database, so `OpenCodeStatusSource` polls that instead, off the UI thread, and reports idle only on a transition from _was running_ to _finished_.
 
 ## FAQs
 
