@@ -920,7 +920,6 @@ private void OpenInNewWindow(string? projectPath)
         if (UpdatePillText.Text != "restart to update") return;
         try
         {
-            UpdatePillText.Text = "Restarting...";
             // Broadcast first: Helide is one process per project, so the other windows
             // will not notice this one leaving otherwise. Each restores its own
             // workspace from its own watcher.
@@ -954,6 +953,30 @@ private void OpenInNewWindow(string? projectPath)
         UpdatePill.Cursor = HelideUpdateState.IsReadyToRestart
             ? System.Windows.Input.Cursors.Hand
             : System.Windows.Input.Cursors.Arrow;
+
+        SetPillSpinning(HelideUpdateState.IsRestarting);
+    }
+
+    // A rotation animation runs on the render thread, so it keeps turning while the UI
+    // thread is busy spawning the new process -- which is exactly when a timer-driven
+    // spinner would freeze and the pill would look stuck.
+    private void SetPillSpinning(bool spinning)
+    {
+        if (spinning)
+        {
+            UpdatePillIcon.Text = ""; // Sync
+            UpdatePillSpin.BeginAnimation(
+                System.Windows.Media.RotateTransform.AngleProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(0, 360, TimeSpan.FromSeconds(1))
+                {
+                    RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever,
+                });
+        }
+        else
+        {
+            UpdatePillSpin.BeginAnimation(System.Windows.Media.RotateTransform.AngleProperty, null);
+            UpdatePillIcon.Text = "";
+        }
     }
 
     private void ApplyTheme(string key)

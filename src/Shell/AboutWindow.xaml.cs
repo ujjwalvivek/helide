@@ -37,6 +37,13 @@ public partial class AboutWindow : Window
             return;
         }
 
+        if (HelideUpdateState.IsRestarting)
+        {
+            UpdateButton.Content = BuildRestartingContent();
+            UpdateButton.IsEnabled = false;
+            return;
+        }
+
         if (HelideUpdateState.IsInProgress)
         {
             UpdateButton.Content = HelideUpdateState.Status;
@@ -57,6 +64,40 @@ public partial class AboutWindow : Window
             UpdateButton.Content = "Check for Updates";
             UpdateButton.IsEnabled = true;
         }
+    }
+
+    // A turning icon beside the label. The rotation is a render-thread animation, so it
+    // keeps moving while the UI thread is busy launching the new process.
+    private static System.Windows.Controls.StackPanel BuildRestartingContent()
+    {
+        var spin = new System.Windows.Media.RotateTransform();
+        spin.BeginAnimation(
+            System.Windows.Media.RotateTransform.AngleProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(0, 360, TimeSpan.FromSeconds(1))
+            {
+                RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever,
+            });
+
+        var panel = new System.Windows.Controls.StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+        };
+        panel.Children.Add(new System.Windows.Controls.TextBlock
+        {
+            Text = "", // Sync
+            FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons"),
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+            RenderTransformOrigin = new System.Windows.Point(0.5, 0.5),
+            RenderTransform = spin,
+        });
+        panel.Children.Add(new System.Windows.Controls.TextBlock
+        {
+            Text = "Restarting...",
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+        });
+        return panel;
     }
 
     private void OkButton_Click(object sender, RoutedEventArgs e) => Close();

@@ -368,10 +368,45 @@ public static class HelideUpdateState
         MirrorStatus(HelideUpdateBroadcast.ReadStatus());
     }
 
+    /// True from the click until the process is replaced. Both surfaces show a spinner
+    /// while it is set.
+    public static bool IsRestarting { get; private set; }
+
+    public const string RestartingStatus = "restarting...";
+
     /// The single restart path. The pill and the About window both go through it.
     public static void Restart()
     {
-        new HelideUpdater().RestartApp(PendingProjectPath);
+        // Published locally only: the other windows restart off the ticket, and echoing
+        // the label through the shared file would race their own state.
+        IsRestarting = true;
+        IsReadyToRestart = false;
+        Status = RestartingStatus;
+        Changed?.Invoke();
+
+        // Restarting blocks this thread (spawning the exe, then a settle delay), so
+        // without a paint here the label is set but never drawn, and the button looks
+        // stuck on "restart to update" until the window vanishes.
+        try
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(
+                () => { }, System.Windows.Threading.DispatcherPriority.Render);
+        }
+        catch { /* a missed repaint is cosmetic */ }
+
+        try
+        {
+            new HelideUpdater().RestartApp(PendingProjectPath);
+        }
+        catch
+        {
+            // The process is still here, so go back to offering the restart.
+            IsRestarting = false;
+            IsReadyToRestart = true;
+            Status = "restart to update";
+            Changed?.Invoke();
+            throw;
+        }
     }
 
     // ---------------------------------------------------------------- cross-process
