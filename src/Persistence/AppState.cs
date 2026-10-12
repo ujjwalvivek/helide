@@ -25,6 +25,10 @@ internal sealed class AppState
     // can label the command without touching the file system to find out.
     public bool YaziOpenInHelide { get; set; }
 
+    // Set just before the restart that follows installing the yazi config, and cleared
+    // by the window that reads it: that window opens with the project browser focused.
+    public bool FocusProjectBrowserOnStart { get; set; }
+
     // Whether the agent pane exists at all. Off until the user turns it on from the
     // welcome screen: Helide is an editor shell first, and no agent is required to use
     // it. While it is off no agent is started, and the saved sessions of each workspace

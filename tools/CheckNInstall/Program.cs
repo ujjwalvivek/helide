@@ -19,7 +19,12 @@ internal static class Program
         ("lazygit",  "lazygit",  "JesseDuffield.lazygit"),
         ("helix",    "hx",       "Helix.Helix"),
         ("yazi",     "yazi",     "sxyazi.yazi"),
+        ("pwsh",     "pwsh",     "Microsoft.PowerShell"),
     ];
+
+    // Installed like the rest, but never a reason to stop: the runner pane falls back to
+    // Windows PowerShell and then cmd, so Helide runs without it.
+    private const string PreferredOnly = "pwsh";
 
     // The agents Helide can run in its agent pane. None is required: the pane is off until
     // it is switched on from the welcome screen, and it offers whichever of these it finds.
@@ -205,6 +210,9 @@ internal static class Program
             RepairPath(unresolved);
             unresolved = FindMissing();
         }
+
+        if (unresolved.Remove(PreferredOnly))
+            Warn("pwsh is not installed; the runner pane will use Windows PowerShell or cmd");
 
         // Refuse to build against a machine the app cannot run on: every phase after
         // this would succeed and produce an install that fails on first use.

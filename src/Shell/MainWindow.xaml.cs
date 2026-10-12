@@ -233,6 +233,11 @@ public partial class MainWindow : Window
         SyncYaziIntegration();
         UpdateAiChrome();
 
+        // Asked now, on a background thread, so the answer is waiting by the time an
+        // OpenCode pane wants it instead of holding up the first one.
+        if (_state.AiEnabled)
+            OpenCodeVersion.Prewarm();
+
         // A startup project another window already owns is refused, and without the
         // fallback this one would be left exactly as the XAML declares it: no recents,
         // nothing to continue, and a title that says nothing.
@@ -299,9 +304,13 @@ public partial class MainWindow : Window
         // Decline installs nothing: yazi keeps its own config and opens files the way
         // it always has. What it does do is start the browser that was held back while
         // the question was on screen, so the pane is never left empty.
+        //
+        // No restart here, unlike accepting: nothing was installed for yazi to pick up,
+        // and the offer is driven by the config being absent, so a restart would only
+        // put the same question back on screen.
         _yaziPromptPending = false;
         DismissYaziPrompt();
-        StartLeftTool(LeftTool.Project);
+        FocusWhenReady(StartLeftTool(LeftTool.Project));
     }
 
     // The project browser opens files by appending their path to a file this window
@@ -317,11 +326,26 @@ public partial class MainWindow : Window
         {
             YaziConfig.Install();
 
+            // The restart below ends the process without the window ever closing, so
+            // nothing that is normally saved on the way out would be. The browser is
+            // what was just being set up, so it is what the new window opens on and
+            // hands the keyboard to.
             _state.YaziOpenInHelide = true;
+            _state.FocusProjectBrowserOnStart = true;
             _stateStore.Save(_state);
 
             _yaziPromptPending = false;
             DismissYaziPrompt();
+
+            if (_currentProject is not null && _ownsProject)
+            {
+                SetPanelCollapsed(ToolPanel.Left, false);
+                _workspace.Layout.LeftTool = "project";
+                RecordAgentSessions();
+                SaveEditorTabs();
+                SaveWorkspaceLayout();
+                WriteWorkspace();
+            }
 
             // Goes through the updater's restart path rather than a raw Process.Start:
             // it releases the single-instance claim first, or the replacement asks for
@@ -631,7 +655,7 @@ public partial class MainWindow : Window
 
         // --- New ---
         commands.Add(new PaletteCommand("New Editor Tab", () => CreateEditorTab(null), "New", "Ctrl+N", canInvoke: workspace));
-        commands.Add(new PaletteCommand("New Runner Session", () => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit")), "New", canInvoke: workspace));
+        commands.Add(new PaletteCommand("New Runner Session", () => CreateRunnerShell(), "New", canInvoke: workspace));
 
         // One entry per agent that is installed, and none at all while AI is off: an
         // entry that could only ever fail is worse than no entry.
@@ -673,7 +697,7 @@ public partial class MainWindow : Window
         }
         commands.Add(new PaletteCommand(
             "Open Runner in Folder…",
-            () => OpenFolderPicker(path => CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"), workingDirectory: path)),
+            () => OpenFolderPicker(path => CreateRunnerShell(workingDirectory: path)),
             "New",
             "project folders",
             canInvoke: workspace));
@@ -901,31 +925,41 @@ private void OpenInNewWindow(string? projectPath)
         {
             TogglePanel(panel);
 
-            // A collapsed pane's renderer window is hidden, and a hidden window is
-            // refused focus -- the pane opened and the keys stayed where they were.
-            // The renderer comes back some passes after the toggle, and not on any
-            // event this window is told about: one deferred call at idle priority was
-            // still too early. So the focus is asked for over the next moment instead.
-            var attempts = 0;
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-            timer.Tick += (_, _) =>
-            {
-                // Closed in the meantime: there is nothing left to focus.
-                if (!_terminalHosts.Contains(host))
-                {
-                    timer.Stop();
-                    return;
-                }
-
-                host.FocusTerminal();
-                if (++attempts >= 8)
-                    timer.Stop();
-            };
-            timer.Start();
+            FocusWhenReady(host);
             return;
         }
 
         host.FocusTerminal();
+    }
+
+    // Focus for a pane that cannot take it yet: one just revealed, or just started.
+    //
+    // A collapsed pane's renderer window is hidden, and a hidden window is refused
+    // focus -- the pane opened and the keys stayed where they were. The renderer comes
+    // back some passes after the toggle, and not on any event this window is told
+    // about: one deferred call at idle priority was still too early. So the focus is
+    // asked for over the next moment instead.
+    private void FocusWhenReady(NativeTerminalHost? host)
+    {
+        if (host is null)
+            return;
+
+        var attempts = 0;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        timer.Tick += (_, _) =>
+        {
+            // Closed in the meantime: there is nothing left to focus.
+            if (!_terminalHosts.Contains(host))
+            {
+                timer.Stop();
+                return;
+            }
+
+            host.FocusTerminal();
+            if (++attempts >= 8)
+                timer.Stop();
+        };
+        timer.Start();
     }
 
     private void CycleEditorTab(int delta)
@@ -1123,6 +1157,8 @@ private void OpenInNewWindow(string? projectPath)
 
         _state.AiEnabled = enable;
         _stateStore.Save(_state);
+        if (enable)
+            OpenCodeVersion.Prewarm();
         UpdateAiChrome();
 
         // Turning it off takes effect now: a workspace can still be alive behind the
@@ -1381,6 +1417,13 @@ private void OpenInNewWindow(string? projectPath)
             // authority over the child HWNDs that back the terminal renderer, so one of
             // them always ended up invisible-but-alive, swallowing clicks and keys.
             SetLeftTool(RestoreLeftTool(), persist: false);
+            // SetLeftTool lights the toggle of the tool it selected, which is wrong
+            // for a pane that is staying closed.
+            if (_workspace.Layout.LeftCollapsed)
+            {
+                GitPanelToggle.IsChecked = false;
+                ProjectPanelToggle.IsChecked = false;
+            }
             // The pane is not missing when the offer is on it -- the browser is simply
             // held back until the question is answered.
             if (_leftHost is null && !_yaziPromptPending)
@@ -1393,9 +1436,7 @@ private void OpenInNewWindow(string? projectPath)
             // Initialize runner session with startup message, or create default
             InitializeRunnerSessions(project);
             if (_runnerSessions.Count == 0)
-                CreateRunnerSession("runner", "pwsh", PowerShellCommand(
-                    $"Write-Host {PowerShellLiteral($" Try {_runCommand}")} -ForegroundColor DarkCyan"
-                ));
+                CreateRunnerShell($" Try {_runCommand}");
             // Take the rollout snapshot before any pane exists. A codex pane writes its
             // rollout file a moment after the process starts, so snapshotting after the
             // launches below would place the cutoff past the files those panes had
@@ -1446,6 +1487,19 @@ private void OpenInNewWindow(string? projectPath)
             }
 
             _stateStore.RecordProject(_state, project);
+
+            // Asked for by the window that restarted into this one after installing the
+            // yazi config. One-shot: the next ordinary launch opens on the editor.
+            if (_state.FocusProjectBrowserOnStart)
+            {
+                _state.FocusProjectBrowserOnStart = false;
+                _stateStore.Save(_state);
+
+                SetPanelCollapsed(ToolPanel.Left, false);
+                SetLeftTool(LeftTool.Project);
+                FocusWhenReady(ActiveLeftHost());
+            }
+
             if (failures > 0)
                 WelcomeStatus.Text = $"{failures} tool pane{(failures == 1 ? "" : "s")} failed to start.";
 
@@ -1495,7 +1549,8 @@ private void OpenInNewWindow(string? projectPath)
     {
         var label = tool == LeftTool.Project ? "yazi" : "lazygit";
         var stateText = tool == LeftTool.Project ? ProjectPaneState : GitPaneState;
-        var host = new NativeTerminalHost(label, ToolCommand($"{label}.exe"), _currentProject!);
+        var arguments = tool == LeftTool.Git ? ToolDefaults.LazygitArguments() : [];
+        var host = new NativeTerminalHost(label, ToolCommand($"{label}.exe", arguments), _currentProject!);
         host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
         LeftToolStack.Children.Add(host);
         _terminalHosts.Add(host);
@@ -1730,7 +1785,7 @@ private void OpenInNewWindow(string? projectPath)
             return null;
 
         // No path means Helix's file picker rooted at the project.
-        var command = path is null ? ToolCommand("hx.exe", ".") : ToolCommand("hx.exe", path);
+        var command = ToolCommand("hx.exe", [.. ToolDefaults.HelixArguments(), path ?? "."]);
         try
         {
             var host = new NativeTerminalHost("helix", command, workingDirectory ?? _currentProject, path);
@@ -2331,6 +2386,25 @@ private void OpenInNewWindow(string? projectPath)
         SetPanelCollapsed(ToolPanel.Left, layout.LeftCollapsed);
         SetPanelCollapsed(ToolPanel.Runner, layout.RunnerCollapsed);
         SetPanelCollapsed(ToolPanel.Agent, layout.AgentCollapsed);
+
+        // SetPanelCollapsed only moves a track when the state changes, and the state it
+        // compares against is the saved one it was just handed -- so a pane saved as
+        // collapsed never had its track closed and came back open on every launch. The
+        // runner and agent tracks are applied again in OpenWorkspace; the left one was
+        // not applied anywhere.
+        if (layout.LeftCollapsed)
+        {
+            LeftPaneColumn.Width = new GridLength(0);
+            LeftPaneColumn.MinWidth = 0;
+            LeftSplitterColumn.Width = new GridLength(0);
+            LeftPane.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            LeftPaneColumn.MinWidth = _leftPaneMinWidth;
+            LeftSplitterColumn.Width = _leftSplitterWidth;
+            LeftPane.Visibility = Visibility.Visible;
+        }
     }
 
     private void CaptureTrackDefaults()
@@ -2680,6 +2754,173 @@ private void OpenInNewWindow(string? projectPath)
     // The command line and the status source must agree on the port, so both are
     // built together here rather than by each caller. That is also why this no
     // longer takes a commandLine: passing one in was how they drifted apart.
+    // ---- OpenCode 1 --------------------------------------------------------------
+    //
+    // A held tab is an OpenCode tab with no terminal behind it. It exists so the pane,
+    // the tab strip and the saved state all look the way they will once OpenCode is
+    // updated, and the update is then a matter of starting what is already there.
+
+    private OpenCodeUpdateCard? _openCodeCard;
+    private DispatcherTimer? _openCodeUpdateWatch;
+
+    private static bool IsHeld(AgentSessionView session) =>
+        session.Host is null && session.Type == AgentProviders.OpenCode;
+
+    // What the agent pane shows for a tab: its terminal, or the notice for a held one.
+    private object? AgentContentFor(AgentSessionView session) =>
+        session.Host is not null ? session.Host : IsHeld(session) ? OpenCodeCard() : null;
+
+    private OpenCodeUpdateCard OpenCodeCard()
+    {
+        if (_openCodeCard is null)
+        {
+            _openCodeCard = new OpenCodeUpdateCard();
+            _openCodeCard.SetCommand(OpenCodeUpdateCommand());
+            _openCodeCard.UpdateRequested += StartOpenCodeUpdate;
+            _openCodeCard.CheckRequested += () => _ = RecheckOpenCode(announce: true);
+        }
+
+        return _openCodeCard;
+    }
+
+    // OpenCode 1's own updater is not relied on where npm is there to do it. Left to
+    // itself it can pick its "curl" method, which pipes an install script into a shell
+    // Windows does not have. Told to use npm it does install the package, but a recent
+    // npm only runs an install script for a package that is named to it, and this
+    // package's script is what fetches the real binary -- so the update "succeeded" and
+    // left a stand-in that Windows refuses to start. Installing it directly lets the
+    // script be allowed by name. An older npm does not know the flag and ignores it.
+    //
+    // Version 2 is its own package, so this sits beside a version 1 rather than
+    // replacing it, and OpenCodeVersion is what picks the right one of the two.
+    private static string OpenCodeUpdateCommand() => ToolDefaults.OnPath("npm.cmd")
+        ? "npm install -g @opencode/cli --allow-scripts=@opencode/cli"
+        : "opencode upgrade --major";
+
+    private void HoldOpenCodeSession(string typeLabel, string? sessionId, string paneDirectory)
+    {
+        var held = new AgentSessionView(AgentProviders.OpenCode, typeLabel)
+        {
+            WorkingDirectory = paneDirectory,
+            SessionId = sessionId,
+        };
+
+        foreach (var s in _agentSessions)
+            s.IsActive = false;
+        held.IsActive = true;
+        _agentSessions.Add(held);
+        _activeAgentSession = held;
+
+        AgentSlot.Content = OpenCodeCard();
+        AgentPaneTitle.Text = typeLabel.ToUpper();
+        UpdateAgentSessionUI();
+
+        if (!_restoringAgentSessions)
+            PersistAgentSessions();
+    }
+
+    // The update runs in a runner tab rather than out of sight: it downloads, it can ask
+    // a question, and it can fail, and all three are things the user should see. The
+    // shell is left open afterwards so what it said is still there to read.
+    private void StartOpenCodeUpdate()
+    {
+        if (_currentProject is null)
+            return;
+
+        var command = OpenCodeUpdateCommand();
+        OpenCodeCard().SetCommand(command);
+
+        SetPanelCollapsed(ToolPanel.Runner, false);
+        CreateRunnerSession("runner", "opencode update", "cmd.exe /k " + command);
+
+        OpenCodeCard().SetStatus(
+            "Updating in the runner pane below. This pane opens by itself once OpenCode 2 is there.\n\n"
+            + "If the update fails there, install OpenCode 2 yourself and check again: "
+            + "see opencode.ai/v2/docs.");
+
+        // Nothing announces that the update has finished, so the version is asked for
+        // again every few seconds until it changes or there is no tab left waiting.
+        _openCodeUpdateWatch?.Stop();
+        var checks = 0;
+        var watch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        watch.Tick += async (_, _) =>
+        {
+            if (++checks > 150 || !_agentSessions.Any(IsHeld))
+            {
+                watch.Stop();
+                return;
+            }
+
+            if (await RecheckOpenCode(announce: false))
+                watch.Stop();
+        };
+        _openCodeUpdateWatch = watch;
+        watch.Start();
+    }
+
+    private bool _recheckingOpenCode;
+
+    // Looks at the installed version again and, if it is now 2, starts every held tab.
+    // True when it did.
+    private async Task<bool> RecheckOpenCode(bool announce)
+    {
+        if (_recheckingOpenCode)
+            return false;
+
+        _recheckingOpenCode = true;
+        try
+        {
+            if (announce)
+                OpenCodeCard().SetStatus("Checking…");
+
+            if (await OpenCodeVersion.IsLegacyAsync())
+            {
+                if (announce)
+                    OpenCodeCard().SetStatus("Still OpenCode 1. Type /update to update it.");
+
+                return false;
+            }
+
+            OpenCodeCard().SetStatus(null);
+            ReleaseHeldOpenCodeSessions();
+            return true;
+        }
+        finally
+        {
+            _recheckingOpenCode = false;
+        }
+    }
+
+    // Each held tab is replaced, in place, by a real one on the id it was holding.
+    private void ReleaseHeldOpenCodeSessions()
+    {
+        var showing = _activeAgentSession is null ? -1 : _agentSessions.IndexOf(_activeAgentSession);
+
+        foreach (var held in _agentSessions.Where(IsHeld).ToList())
+        {
+            var index = _agentSessions.IndexOf(held);
+            _agentSessions.Remove(held);
+
+            var before = _agentSessions.Count;
+            CreateAgentSession(
+                AgentProviders.OpenCode,
+                held.Name,
+                held.SessionId,
+                workingDirectory: held.WorkingDirectory);
+
+            // It is appended, and belongs where the tab it replaces was. A launch that
+            // failed adds nothing, and there is then nothing to move.
+            if (_agentSessions.Count > before && index < _agentSessions.Count - 1)
+                _agentSessions.Move(_agentSessions.Count - 1, index);
+        }
+
+        if (showing >= 0 && showing < _agentSessions.Count)
+            ActivateAgentSession(_agentSessions[showing]);
+
+        UpdateAgentSessionUI();
+        PersistAgentSessions();
+    }
+
     private void CreateAgentSession(string type, string typeLabel, string? resumeSessionId = null, bool resuming = false, string? workingDirectory = null)
     {
         // Nothing starts an agent while AI is off, whichever path asked for one.
@@ -2739,6 +2980,14 @@ private void OpenInNewWindow(string? projectPath)
                 "claude" => ClaudeSessions.NewId(),
                 _ => resumeSessionId,
             };
+
+        // OpenCode 1 is not started. The tab is made all the same, holding the id and
+        // the directory it will open with, and shows the update notice until then.
+        if (type == "opencode" && OpenCodeVersion.IsLegacy())
+        {
+            HoldOpenCodeSession(typeLabel, sessionId, workingDirectory ?? _currentProject!);
+            return;
+        }
 
         string commandLine;
 
@@ -2879,9 +3128,9 @@ private void OpenInNewWindow(string? projectPath)
             target.IsActive = true;
             _activeAgentSession = target;
 
-            if (target.Host is not null)
+            if (AgentContentFor(target) is { } content)
             {
-                AgentSlot.Content = target.Host;
+                AgentSlot.Content = content;
                 AgentPaneTitle.Text = target.TypeLabel.ToUpper();
             }
 
@@ -3041,10 +3290,36 @@ private void OpenInNewWindow(string? projectPath)
     // what puts the prompt and the command history there. The panes that are on the
     // interactive path -- editor tabs and the left tool -- do not go through pwsh at
     // all any more, so they are not paying it either.
-    private static string PowerShellCommand(string script)
+    private static string PowerShellCommand(string executable, string script)
     {
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        return $"pwsh.exe -NoLogo -NoExit -EncodedCommand {encoded}";
+        return $"{executable} -NoLogo -NoExit -EncodedCommand {encoded}";
+    }
+
+    // A runner tab on whichever shell this machine has, optionally opening with a line
+    // of text. The shell is chosen per tab rather than once, so a pwsh installed while
+    // Helide is open is what the next tab gets.
+    private void CreateRunnerShell(string? greeting = null, string? workingDirectory = null)
+    {
+        var shell = ToolDefaults.RunnerShell();
+
+        string commandLine;
+        if (shell.IsPowerShell)
+        {
+            commandLine = greeting is null
+                ? $"{shell.Executable} -NoLogo"
+                : PowerShellCommand(
+                    shell.Executable,
+                    $"Write-Host {PowerShellLiteral(greeting)} -ForegroundColor DarkCyan");
+        }
+        else
+        {
+            // cmd has no encoded form, so the greeting is dropped rather than risk a
+            // project name with an ampersand in it being run as a command.
+            commandLine = QuoteArgument(shell.Executable);
+        }
+
+        CreateRunnerSession("runner", shell.Label, commandLine, workingDirectory);
     }
 
     // Single quotes are the only PowerShell literal form that takes a path verbatim,
@@ -3428,6 +3703,13 @@ private void OpenInNewWindow(string? projectPath)
                 session.ClearAttention();
                 session.Host.BringToFront();
             }
+            else if (IsHeld(session))
+            {
+                AgentSlot.Content = OpenCodeCard();
+                AgentPaneTitle.Text = session.TypeLabel.ToUpper();
+                _activeAgentSession = session;
+                OpenCodeCard().FocusInput();
+            }
             UpdateAgentSessionUI();
             AgentTabStrip.Items.Refresh();
 
@@ -3457,7 +3739,7 @@ private void OpenInNewWindow(string? projectPath)
             {
                 var nextSession = _agentSessions.Last();
                 nextSession.IsActive = true;
-                AgentSlot.Content = nextSession.Host;
+                AgentSlot.Content = AgentContentFor(nextSession);
                 AgentPaneTitle.Text = nextSession.TypeLabel.ToUpper();
                 _activeAgentSession = nextSession;
                 nextSession.Host?.BringToFront();
@@ -3521,7 +3803,7 @@ private void OpenInNewWindow(string? projectPath)
 
     private void RunnerNewSessionButton_Click(object sender, RoutedEventArgs e)
     {
-        CreateRunnerSession("pwsh", "pwsh", PowerShellCommand("pwsh -NoLogo -NoExit"));
+        CreateRunnerShell();
     }
 
     private void CreateRunnerSession(string type, string label, string commandLine, string? workingDirectory = null)

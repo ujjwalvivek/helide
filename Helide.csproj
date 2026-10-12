@@ -10,7 +10,7 @@
     <AssemblyName>Helide</AssemblyName>
     <RootNamespace>Helide</RootNamespace>
     <Product>Helide</Product>
-    <Version>1.7.0</Version>
+    <Version>1.7.1</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <DebugType>none</DebugType>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -45,6 +45,7 @@
     <EmbeddedResource Include="src\Config\Yazi\keymap.toml" LogicalName="Helide.YaziConfig.keymap.toml" />
     <EmbeddedResource Include="src\Config\Yazi\theme.toml" LogicalName="Helide.YaziConfig.theme.toml" />
     <EmbeddedResource Include="src\Config\Yazi\open-with-helix.ps1" LogicalName="Helide.YaziConfig.open-with-helix.ps1" />
+    <EmbeddedResource Include="src\Config\OpenCode\helide-oled.json" LogicalName="Helide.OpenCodeConfig.helide-oled.json" />
   </ItemGroup>
 
   <ItemGroup>
