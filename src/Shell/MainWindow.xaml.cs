@@ -2007,6 +2007,8 @@ private void OpenInNewWindow(string? projectPath)
 
         if (_draggingTab)
         {
+            MoveTabGhost(element, pointer);
+
             // Over the strip it is a reorder, and nothing is shown. Over a pane of its
             // own area it is a split, and the pane lights up where the tab would land.
             UpdateSplitDrop(_pressedTab, pointer);
@@ -2023,9 +2025,120 @@ private void OpenInNewWindow(string? projectPath)
         // meant for its own close button.
         _draggingTab = true;
         _dragElement = element;
-        element.Opacity = 0.55;
-        element.Cursor = System.Windows.Input.Cursors.SizeWE;
+
+        // Photographed before it is dimmed, so the ghost is the tab as it was.
+        BeginTabGhost(element, pointer);
+
+        // What is left behind is the place it came from, not the tab itself.
+        element.Opacity = 0.4;
+        element.Cursor = System.Windows.Input.Cursors.Arrow;
         element.CaptureMouse();
+    }
+
+    // ---- The tab under the pointer ---------------------------------------------
+    //
+    // While a tab is dragged, a picture of it travels with the pointer, held by the
+    // place it was grabbed. It is a window of its own and not something drawn in the
+    // tree: every pane is a native window, and anything WPF draws in this window goes
+    // under them the moment the tab is over one.
+
+    private System.Windows.Controls.Primitives.Popup? _tabGhost;
+    private Point _tabGhostGrab;
+
+    // Room the ghost's frame takes round the picture, so the picture sits where the
+    // tab was and the grabbed point stays under the pointer.
+    private const double TabGhostFrame = 1;
+
+    private void BeginTabGhost(FrameworkElement element, Point pointerScreen)
+    {
+        EndTabGhost();
+
+        var width = element.ActualWidth;
+        var height = element.ActualHeight;
+        if (width < 1 || height < 1)
+            return;
+
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(element);
+            var picture = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                Math.Max(1, (int)Math.Ceiling(width * dpi.DpiScaleX)),
+                Math.Max(1, (int)Math.Ceiling(height * dpi.DpiScaleY)),
+                96 * dpi.DpiScaleX,
+                96 * dpi.DpiScaleY,
+                PixelFormats.Pbgra32);
+            picture.Render(element);
+
+            _tabGhost = new System.Windows.Controls.Primitives.Popup
+            {
+                AllowsTransparency = true,
+
+                // Placed by the point it returns plus the offsets, the way the drop
+                // highlight is; see PaneSplitPanel.ShowDropPreview for why not Relative.
+                Placement = PlacementMode.Custom,
+                CustomPopupPlacementCallback = (_, _, _) =>
+                [
+                    new CustomPopupPlacement(new Point(0, 0), PopupPrimaryAxis.None),
+                ],
+                PlacementTarget = element,
+                PopupAnimation = PopupAnimation.None,
+                StaysOpen = true,
+                Focusable = false,
+                IsHitTestVisible = false,
+                Child = new Border
+                {
+                    // Something under the picture: the tab itself is partly transparent,
+                    // and over a terminal its text would be lost.
+                    Background = ThemePalette.Brush(ThemePalette.PopoverBrush),
+                    BorderBrush = ThemePalette.Brush(ThemePalette.AccentBrush),
+                    BorderThickness = new Thickness(TabGhostFrame),
+                    Opacity = 0.96,
+                    IsHitTestVisible = false,
+                    Child = new System.Windows.Controls.Image
+                    {
+                        Source = picture,
+                        Width = width,
+                        Height = height,
+                        IsHitTestVisible = false,
+                    },
+                },
+            };
+
+            // Where in the tab it was taken hold of: the press, not wherever the pointer
+            // had got to by the time the drag was recognised.
+            _tabGhostGrab = element.PointFromScreen(_pressOrigin);
+            PlaceTabGhost(element, pointerScreen);
+            _tabGhost.IsOpen = true;
+        }
+        catch (Exception)
+        {
+            // A drag without a ghost is still a drag.
+            _tabGhost = null;
+        }
+    }
+
+    private void MoveTabGhost(FrameworkElement element, Point pointerScreen) =>
+        PlaceTabGhost(element, pointerScreen);
+
+    private void PlaceTabGhost(FrameworkElement element, Point pointerScreen)
+    {
+        if (_tabGhost is null)
+            return;
+
+        // Relative to the tab, which does not move during the drag, in the units the
+        // popup's offsets are in.
+        var inTab = element.PointFromScreen(pointerScreen);
+        _tabGhost.HorizontalOffset = inTab.X - _tabGhostGrab.X - TabGhostFrame;
+        _tabGhost.VerticalOffset = inTab.Y - _tabGhostGrab.Y - TabGhostFrame;
+    }
+
+    private void EndTabGhost()
+    {
+        if (_tabGhost is null)
+            return;
+
+        _tabGhost.IsOpen = false;
+        _tabGhost = null;
     }
 
     private void Tab_PointerUp(object sender, MouseButtonEventArgs e)
@@ -2237,7 +2350,8 @@ private void OpenInNewWindow(string? projectPath)
         _draggingTab = false;
         _dragElement = null;
 
-        // The highlight belongs to the drag, however it ended.
+        // The ghost and the highlight belong to the drag, however it ended.
+        EndTabGhost();
         _splitDropPanel?.HideDropPreview();
         EditorSlot.HideDropPreview();
         RunnerSlot.HideDropPreview();
