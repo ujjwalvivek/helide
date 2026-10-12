@@ -8,9 +8,11 @@ Standalone:
 
 ```sh
 AutoUpdater.exe
-AutoUpdater.exe --check        # only check, don't install
-AutoUpdater.exe --silent       # suppress extra output
 ```
+
+It checks GitHub, downloads and installs the update if there is one, then restarts Helide. When there is nothing to install, or something fails, it holds the result on screen until a key is pressed.
+
+In the full-screen view, `T` switches between the mocha and oled palettes and `Ctrl+C` quits.
 
 From Helide app (About page):
 
