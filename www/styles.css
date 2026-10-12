@@ -32,11 +32,25 @@
     pointer-events: none;
 }
 
+/* Whatever the shader does not cover. The page is transparent over a canvas, so
+   without this anything outside the canvas -- the strips under a phone's status
+   bar and toolbar, the rubber-band overscroll, the frame before WebGL has drawn --
+   is the browser's default white. */
+html {
+    background: var(--mantle);
+}
+
+/* Taller than the screen on purpose. On a phone 100vh is the viewport with the
+   toolbars tucked away, so it is not what is on screen when they are showing, and
+   the bars float over the page; the extra runs the shader well past the top and
+   bottom so there is no edge to show. The script sizes the drawing to whatever
+   this ends up being. */
 #bg-shader {
     position: fixed;
-    inset: 0;
+    top: -120px;
+    left: 0;
     width: 100%;
-    height: 100vh;
+    height: calc(100% + 240px);
     z-index: -1;
     display: block;
 }
@@ -49,6 +63,7 @@
 
 body {
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
     align-items: center;

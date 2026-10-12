@@ -472,8 +472,10 @@ if (carousel && track && dotsBox && lightbox && SHOTS.length) {
       // has somewhere sensible to be before the pointer has moved.
       const mouse = [0.5, 0.5];
       window.addEventListener("pointermove", e => {
-        mouse[0] = e.clientX / window.innerWidth;
-        mouse[1] = 1.0 - e.clientY / window.innerHeight;
+        const view = bgCanvas.getBoundingClientRect();
+        if (!view.width || !view.height) return;
+        mouse[0] = (e.clientX - view.left) / view.width;
+        mouse[1] = 1.0 - (e.clientY - view.top) / view.height;
       });
 
       const start = performance.now();
@@ -482,7 +484,11 @@ if (carousel && track && dotsBox && lightbox && SHOTS.length) {
         const t = (performance.now() - start) / 1000;
         scale = Math.min(window.devicePixelRatio || 1, 2);
 
-        fit(bgCanvas, window.innerWidth, window.innerHeight);
+        // Sized to the canvas as laid out, not to the window: it is deliberately
+        // taller than the screen, and on a phone innerHeight is not even the
+        // same thing from one moment to the next as the toolbars come and go.
+        const view = bgCanvas.getBoundingClientRect();
+        fit(bgCanvas, view.width || window.innerWidth, view.height || window.innerHeight);
         bg.gl.viewport(0, 0, bgCanvas.width, bgCanvas.height);
         bg.gl.uniform1f(bg.iTime, t);
         bg.gl.uniform2f(bg.iResolution, bgCanvas.width, bgCanvas.height);
@@ -505,7 +511,7 @@ if (carousel && track && dotsBox && lightbox && SHOTS.length) {
           gl.uniform2f(rim.iResolution, bgCanvas.width, bgCanvas.height);
           gl.uniform2f(rim.iMouse, mouse[0], mouse[1]);
           gl.uniform2f(rim.uSize, rimCanvas.width, rimCanvas.height);
-          gl.uniform2f(rim.uOrigin, r.left * scale, (window.innerHeight - r.bottom) * scale);
+          gl.uniform2f(rim.uOrigin, (r.left - view.left) * scale, (view.bottom - r.bottom) * scale);
           gl.uniform1f(rim.uBand, band * scale);
           gl.uniform1f(rim.uScale, scale);
           gl.drawArrays(gl.TRIANGLES, 0, 3);
