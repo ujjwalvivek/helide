@@ -15,12 +15,15 @@ The workspace layout consists of:
   - Code Editor via Helix (`hx`)
   - Shell Access via Terminal (`pwsh`)
 - **Right Panel**
-  - Agent support via Opencode (`opencode`)
+  - Agent support via OpenCode (`opencode`, version 2)
   - Agent support via Codex (`codex`)
+  - Agent support via Claude Code (`claude`)
+
+Editor and terminal tabs can be split into as many panes as you like, side by side or one above another. See [Split Panes](#split-panes).
 
 ![Workspace](www/images/webp/workspace-1920x1080.webp)
 
-Each pane is its own process (`pwsh`, `hx`, `lazygit`, `yazi`, `opencode`, `codex`) running in its own Windows pseudoconsole through `ConPTY`, GPU-backed by `EasyWindowsTerminalControl`. Full-screen apps such as Helix, lazygit, and yazi retain their native alternate-screen semantics.
+Each pane is its own process (`pwsh`, `hx`, `lazygit`, `yazi`, `opencode`, `codex`, `claude`) running in its own Windows pseudoconsole through `ConPTY`, GPU-backed by `EasyWindowsTerminalControl`. Full-screen apps such as Helix, lazygit, and yazi retain their native alternate-screen semantics.
 
 Download the release executable from the [Latest Release](https://github.com/ujjwalvivek/helide/releases/latest). Application Updates are automatic, or you can use the [AutoUpdater Utility](#autoupdater-utility).
 
@@ -30,7 +33,9 @@ Or, if you wish to build the binary yourself, see below.
 
 - Windows 10 1809 or later
 - .NET 8 SDK
-- `pwsh`, `hx`, `lazygit`, `yazi`, `opencode`, and `codex` on PATH
+- `hx`, `lazygit` and `yazi` on PATH
+- `pwsh` is preferred for the runner; Helide falls back to Windows PowerShell, then `cmd`
+- Agents are optional: any of `opencode` (version 2 is required), `codex` or `claude`
 
 Note: If you have tools missing on the PATH, see [CheckNInstall Utility](#checkninstall-utility)
 
@@ -56,18 +61,19 @@ helide/
 │   ├── App/              # Startup, instance guard, activation watcher
 │   ├── Assets/           # Images (duplicated to www/images/)
 │   ├── Config/           # Bundled yazi config + opener script (embedded)
-│   ├── Interop/          # Win32 / P/Invoke helpers
+│   ├── Interop/          # Win32 / P/Invoke helpers, process tree
 │   ├── Persistence/      # AppState, WorkspaceState (JSON)
 │   ├── Projects/         # Project loader / session manager
-│   ├── Services/         # Update service
+│   ├── Services/         # Update service, per-tool defaults for clean installs
 │   ├── Sessions/         # Agent session tracking
-│   ├── Shell/            # Command palette, folder picker
+│   ├── Shell/            # Command palette, folder picker, and split panes
 │   ├── Terminal/         # Native terminal host (ConPTY)
 │   └── Theme/            # Theme palette and XAML resources
 ├── tools/
 │   ├── AutoUpdater/      # TUI updater CLI
 │   └── CheckNInstall/    # Dependency checker / installer
 ├── www/                  # Static Helide site
+├── check'n'install.ps1   # Launcher for tools/CheckNInstall
 └── README.md
 ```
 
@@ -125,9 +131,9 @@ dotnet publish -c Release -r win-x64 --self-contained
 
 It goes through 5 phases:
 
-1. Checks if lazygit, hx, yazi, opencode, codex is on PATH
-2. `winget install` each missing one
-3. `WinGet\Links` can be empty, so `WinGet\Packages` is added to the user PATH
+1. Checks that `lazygit`, `hx` and `yazi` are on PATH. `pwsh` is installed when missing but is never a blocker. The agents (`opencode`, `codex`, `claude`) are only reported
+2. `winget install` each missing one. Agents are never installed
+3. `WinGet\Links` can be empty, so `WinGet\Packages` is added to the user PATH. The user PATH is read and written as stored, a literal `%PATH%` entry is warned about, and Explorer is told the environment changed
 4. Builds with `-r win-x64 --self-contained`, into `bin\Release\net8.0-windows\*-win-x64.exe`
 5. Finally, installs into `%LOCALAPPDATA%\Programs\Helide\`, and the user PATH.
 
@@ -144,11 +150,14 @@ Settings and configs are persisted under `%LOCALAPPDATA%\Helide`.
 | `state.json`           | `RecentProjects[]` | array                                           | Up to 8 recent projects        |
 | `state-ws-{hash}.json` | `Window`           | `Left`, `Top`, `Width`, `Height`, `IsMaximized` | Window geometry                |
 | `state-ws-{hash}.json` | `Layout`           | ratios + `LeftCollapsed`, etc.                  | Pane ratios and collapse state |
-| `state-ws-{hash}.json` | `AgentSessions[]`  | `Type`, `Name`, `SessionId`                     | Agent tab state                |
+| `state-ws-{hash}.json` | `AgentSessions[]`  | `Type`, `Name`, `SessionId`, `WorkingDirectory` | Agent tab state                |
 | `state-ws-{hash}.json` | `EditorTabs[]`     | `Path`                                          | Open file paths                |
+| `state-ws-{hash}.json` | `EditorSplit`      | tree of `Tab`, `Row`, `Weight`, `Children`      | How editor tabs are split      |
+| `state-ws-{hash}.json` | `RunnerSplit`      | same tree, with `RunnerPanes[]`                 | How terminal panes are split   |
 | `state-ws-{hash}.json` | `ActiveAgentIndex` | `int`                                           | Which agent tab was selected   |
+| `state-ws-{hash}.json` | `Layout.Zen`       | `bool`                                          | Zen mode, and what to restore  |
 | `state.json`           | `YaziOpenInHelide` | `bool`                                          | yazi config installed          |
-| `state-ws-{hash}.json` | `AgentSessions[]`  | `Type`, `Name`, `SessionId`, `PaneDirectory`    | Agent tab state                |
+| `state.json`           | `AiEnabled`        | `bool`                                          | Whether the agent pane exists  |
 
 **Reset**: delete the `.json` files. Per-project workspace files are named by a SHA-256 hash of the full project path (`state-ws-*.json`). `%LOCALAPPDATA%\Helide\open-request.txt` is deleted and recreated on every launch, so removing it by hand changes nothing.
 
@@ -156,7 +165,7 @@ Settings and configs are persisted under `%LOCALAPPDATA%\Helide`.
 
 ### Familiar Workspace
 
-Every pane, left pane (`lazygit` & `yazi`), bottom runner terminal (`pwsh`), and right agents pane (`opencode` & `codex`), can be expanded or collapsed independently. This leaves you with a zen-mode like center editor (`hx`), for an uninterrupted workflow. Collapse state is part of the persisted workspace file (`state-ws-{hash}.json`), so closing and reopening a project restores the exact same panel visibility. The layout ratios and collapse flags are persisted.
+Every pane, left pane (`lazygit` & `yazi`), bottom runner terminal (`pwsh`), and right agents pane (`opencode` & `codex`), can be expanded or collapsed independently. `F11` (or **Zen Mode** in the command palette) closes every panel and folds away the title bar and the editor's tab strip, leaving only the center editor (`hx`), for an uninterrupted workflow. Collapse state is part of the persisted workspace file (`state-ws-{hash}.json`), so closing and reopening a project restores the exact same panel visibility. The layout ratios and collapse flags are persisted.
 
 ![ZenMode](www/images/webp/zen-1920x1080.webp)
 
@@ -164,9 +173,15 @@ Editor buffers, agents, and terminal runners all share the same tabbed surface m
 
 ![Palette](www/images/webp/palette-1920x1080.webp)
 
+Editor tabs and terminal tabs can be split into panes, nested as deeply as you want. The split arrangement is saved per project (`EditorSplit`, `RunnerSplit`). Closing the last terminal or agent tab closes its panel.
+
+### Tool Defaults
+
+On a machine where nobody has configured them, Helide gives the tools it hosts a look that matches it. None of it is written into a tool's own config directory, stored `%LOCALAPPDATA%\Helide` and are passed on the command line or through the environment.
+
 ### Persisted Layout
 
-The layout engine (`WorkspaceLayoutState`) divides the window into ratios, and each surface can be expanded or collapsed independently without losing its contents. Layout is saved across restarts per project in a file named by a SHA-256 hash of the full project path (`state-ws-{hash}.json` under `%LOCALAPPDATA%\Helide\`). The file includes window geometry, pane ratios and collapse flags, open editor tabs, active agent index, and agent sessions.
+The layout engine (`WorkspaceLayoutState`) divides the window into ratios, and each surface can be expanded or collapsed independently without losing its contents. Layout is saved across restarts per project in a file named by a SHA-256 hash of the full project path (`state-ws-{hash}.json` under `%LOCALAPPDATA%\Helide\`). The file includes window geometry, pane ratios and collapse flags, open editor tabs and how they are split, how the terminal panes are split, active agent index, and agent sessions.
 
 ### Working File Tree
 
@@ -222,7 +237,7 @@ To restore a conversation Helide has to know which session a pane is on. Where t
 | Agent    | How the pane gets its session id                                                    |
 | -------- | ----------------------------------------------------------------------------------- |
 | OpenCode | Helide generates the id and launches the TUI onto it                                |
-| Claude   | Helide generates a UUID: `--session-id <id>` the first time, `--resume <id>` after  |
+| Claude   | Helide generates a UUID: `--session-id <id>` the first time, `--resume <id>` after. |
 | Codex    | Cannot be told an id, so it is read from the rollout file the pane writes on start  |
 
 `src/Sessions` holds the implementation:
@@ -235,7 +250,8 @@ To restore a conversation Helide has to know which session a pane is on. Where t
 | `OpenCodeSessions.cs`        | Session id, and session state read from the opencode database |
 | `OpenCodeStatusSource.cs`    | Polls that database and decides when a turn ended             |
 | `CodexSessions.cs`           | Locates codex rollout files and reads their session ids       |
-| `ClaudeSessions.cs`          | Claude session ids and transcript turn markers                |
+| `ClaudeSessions.cs`          | Claude session ids, the live ids, and turn markers            |
+| `OpenCodeVersion.cs`         | Finds an OpenCode 2 on PATH and decides whether the pane runs |
 | `TranscriptStatusSource.cs`  | Busy/idle for Codex and Claude from their own transcripts     |
 | `QuietPeriodStatusSource.cs` | Fallback that guesses from terminal silence                   |
 
@@ -280,6 +296,7 @@ That leaves the PATH shim approach [Nucleotide](https://github.com/iainh/nucleot
 - [yazi](https://yazi-rs.github.io/): terminal file manager
 - [Opencode](https://github.com/anomalyco/opencode): agent workspace
 - [Codex](https://openai.com/index/introducing-codex/): agent assistant
+- [Claude](https://github.com/anthropics/claude-code): agent assistant
 - [EasyWindowsTerminalControl](https://github.com/claytonbd/EasyWindowsTerminalControl): ConPTY WPF control
 
 ## License
