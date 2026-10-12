@@ -200,10 +200,13 @@ void main()
     float lean = 0.76 + 0.24 * facing;
 
     // The highlight: a hair-thin line just inside the border, where the
-    // surface is steep enough to throw light straight back.
-    // This is measured from the border itself, so it stays straight; only the
-    // seam on the inside wanders.
-    float streak = exp(-pow((dist - 0.9 * uScale) / (0.8 * uScale), 2.0));
+    // surface is steep enough to throw light straight back. It is measured
+    // from the border itself, by the exact distance to the nearer edge rather
+    // than by the smooth surface above: a line a pixel in from a square
+    // window has to turn through a square corner, and the surface's contour
+    // that close to the border cuts the corner off and rounds it.
+    float edgePx = (1.0 - max(qp.x, qp.y)) * reach;
+    float streak = exp(-pow((edgePx - 0.9 * uScale) / (0.8 * uScale), 2.0));
 
     // Fresnel: the steeper the surface, the more of the light it returns
     // instead of passing. So the refracted page gives way to its own lifted
