@@ -1,24 +1,27 @@
+# Launcher for tools\CheckNInstall. With no switch it opens the interactive tool.
+#   -Check   report only, exit 0 when ready                           (CheckNInstall --check)
+#   -Full    republish the tool, then set up everything silently      (CheckNInstall --full)
 [CmdletBinding()]
-param( [switch]$Check, [switch]$Full, [switch]$Build )
+param( [switch]$Check, [switch]$Full )
 
 $ErrorActionPreference = 'Stop'
 
 $ToolPath  = Join-Path $PSScriptRoot 'tools\CheckNInstall\CheckNInstall.csproj'
 $Artifact  = Join-Path $PSScriptRoot 'tools\CheckNInstall\bin\Release\net8.0-windows\CheckNInstall-win-x64.exe'
 
-# The tool is run from a published exe, so an edit to its source does nothing until it is
-# published again -- and forgetting -Build meant running the old one and seeing a bug
-# that had already been fixed. So it is republished whenever a source file is newer.
 $Stale = $false
 if (Test-Path -LiteralPath $Artifact) {
     $built  = (Get-Item -LiteralPath $Artifact).LastWriteTimeUtc
-    $newest = Get-ChildItem -LiteralPath (Split-Path $ToolPath) -File |
-        Where-Object { $_.Extension -in '.cs', '.csproj' } |
-        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    # The mark is embedded from src\Assets, so it counts as a source file too.
+    $sources = @(Get-ChildItem -LiteralPath (Split-Path $ToolPath) -File |
+        Where-Object { $_.Extension -in '.cs', '.csproj' })
+    $mark = Join-Path $PSScriptRoot 'src\Assets\helide.txt'
+    if (Test-Path -LiteralPath $mark) { $sources += Get-Item -LiteralPath $mark }
+    $newest = $sources | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
     $Stale = $newest -and $newest.LastWriteTimeUtc -gt $built
 }
 
-if ($Build -or $Stale -or -not (Test-Path -LiteralPath $Artifact)) {
+if ($Full -or $Stale -or -not (Test-Path -LiteralPath $Artifact)) {
     Write-Host "publishing CheckNInstall..." -ForegroundColor DarkGray
     Push-Location $PSScriptRoot
     try {
@@ -32,7 +35,7 @@ if ($Build -or $Stale -or -not (Test-Path -LiteralPath $Artifact)) {
 
 if (-not (Test-Path -LiteralPath $Artifact)) {
     Write-Host "no build at $Artifact" -ForegroundColor Red
-    Write-Host 'run with -Build to publish it first.' -ForegroundColor DarkGray
+    Write-Host 'the publish did not produce the exe; check the build output above.' -ForegroundColor DarkGray
     exit 1
 }
 
