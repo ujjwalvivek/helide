@@ -92,6 +92,8 @@ if (carousel && track && dotsBox && lightbox && SHOTS.length) {
     track.style.transform = horizontal
       ? "translate3d(" + offset + "px,0,0)"
       : "translate3d(0," + offset + "px,0)";
+
+    carousel.style.setProperty("--film", offset + "px");
   }
 
   function makeSlide(shot, index, hidden) {

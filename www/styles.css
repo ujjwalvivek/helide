@@ -375,12 +375,33 @@ kbd {
     );
 }
 
+.carousel::before,
+.carousel::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    z-index: 1;
+    pointer-events: none;
+    background-image: linear-gradient(
+        to bottom,
+        rgba(205, 214, 244, 0.30) 0 6px,
+        transparent 6px
+    );
+    background-size: 6px 13px;
+    background-repeat: repeat-y;
+    background-position: 0 var(--film, 0px);
+}
+.carousel::before { left: 6px; }
+.carousel::after { right: 6px; }
+
 .carousel-track {
     display: flex;
     flex-direction: column;
     gap: 10px;
     width: 100%;
-    padding: 10px;
+    padding: 10px 18px;
     will-change: transform;
 }
 
@@ -624,12 +645,32 @@ kbd {
             transparent
         );
     }
+    .carousel::before,
+    .carousel::after {
+        top: auto;
+        bottom: auto;
+        left: 0;
+        right: 0;
+        width: auto;
+        height: 6px;
+        background-image: linear-gradient(
+            to right,
+            rgba(205, 214, 244, 0.30) 0 6px,
+            transparent 6px
+        );
+        background-size: 13px 6px;
+        background-repeat: repeat-x;
+        background-position: var(--film, 0px) 0;
+    }
+    .carousel::before { top: 6px; left: 0; }
+    .carousel::after { bottom: 6px; right: 0; }
+
     .carousel-track {
         flex-direction: row;
         align-items: center;
         width: max-content;
         height: 100%;
-        padding: 10px 0;
+        padding: 18px 0;
     }
     .carousel-slide {
         flex: 0 0 auto;
