@@ -366,11 +366,146 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     // accept LF, which is why only the file browser looked broken.
     private void Terminal_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
-        if (e.Key != Key.Enter || _disposed)
+        if (_disposed)
+            return;
+
+        if (IsPasteGesture(e) && PasteFromClipboard())
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key != Key.Enter)
             return;
 
         WriteRaw("\r");
         e.Handled = true;
+    }
+
+    // Nothing here pastes unless it is told to. Microsoft.Terminal.Wpf renders and
+    // turns keys into VT, and copies a selection out, but has no way in for the
+    // clipboard: Ctrl+V reaches the program as a bare keystroke, which only a program
+    // that reads the clipboard for itself does anything with. Helix does -- it talks to
+    // the Win32 clipboard on its own, which is why yanking and pasting worked there and
+    // nowhere else. A shell, an agent TUI or yazi do not, so the paste has to be done
+    // here, the way Windows Terminal does it.
+    private static bool IsPasteGesture(WpfKeyEventArgs e)
+    {
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var modifiers = Keyboard.Modifiers;
+
+        if (key == Key.V)
+            return modifiers == ModifierKeys.Control
+                || modifiers == (ModifierKeys.Control | ModifierKeys.Shift);
+
+        return key == Key.Insert && modifiers == ModifierKeys.Shift;
+    }
+
+    // Whether the program running in the pane has asked for bracketed paste
+    // (DECSET 2004). Written from the ConPTY reader thread, read on the UI thread.
+    private volatile bool _bracketedPaste;
+
+    // The last few characters of the previous chunk of output. The mode switch is
+    // eight characters and a read can end anywhere inside it.
+    private string _modeTail = "";
+
+    private const string BracketedPasteOn = "\u001b[?2004h";
+    private const string BracketedPasteOff = "\u001b[?2004l";
+
+    private void TrackPasteMode(object? data)
+    {
+        var text = data as string ?? (data is char[] chars ? new string(chars) : null);
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        var window = _modeTail + text;
+        var on = window.LastIndexOf(BracketedPasteOn, StringComparison.Ordinal);
+        var off = window.LastIndexOf(BracketedPasteOff, StringComparison.Ordinal);
+        if (on >= 0 || off >= 0)
+            _bracketedPaste = on > off;
+
+        _modeTail = window.Length > BracketedPasteOn.Length - 1
+            ? window[^(BracketedPasteOn.Length - 1)..]
+            : window;
+    }
+
+    // Returns whether anything was pasted. A clipboard with no text on it (an image,
+    // say) is left to the program: the key goes through untouched.
+    private bool PasteFromClipboard()
+    {
+        // The editor pane keeps its own clipboard handling, and in it pasted text lands
+        // as keystrokes: a normal-mode `d` or `:` in the middle of a paste would run as a
+        // command. Helix is not given this one.
+        if (State != TerminalHostState.Ready ||
+            string.Equals(Label, "helix", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var text = ReadClipboardText();
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        // Whatever is left of an escape sequence in the text could end the bracket early
+        // and turn the rest of the paste into input, so escapes go. Line breaks are sent
+        // as the carriage return Enter is, which is what every program in here reads as
+        // a new line.
+        var cleaned = new System.Text.StringBuilder(text.Length);
+        for (var index = 0; index < text.Length; index++)
+        {
+            var c = text[index];
+            if (c == '\r')
+            {
+                cleaned.Append('\r');
+                if (index + 1 < text.Length && text[index + 1] == '\n')
+                    index++;
+            }
+            else if (c == '\n')
+                cleaned.Append('\r');
+            else if (c == '\t' || c >= ' ' && c != '\u007f')
+                cleaned.Append(c);
+        }
+
+        if (cleaned.Length == 0)
+            return false;
+
+        var payload = cleaned.ToString();
+        WriteRaw(_bracketedPaste ? "\u001b[200~" + payload + "\u001b[201~" : payload);
+        return true;
+    }
+
+    private static string? ReadClipboardText()
+    {
+        // The clipboard is a shared resource and whoever copied may still be holding it
+        // open; a few short retries is what the framework's own helpers do.
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                if (System.Windows.Clipboard.ContainsText(System.Windows.TextDataFormat.UnicodeText))
+                    return System.Windows.Clipboard.GetText(System.Windows.TextDataFormat.UnicodeText);
+
+                // Files copied in Explorer paste as their paths, quoted, like they do in
+                // Windows Terminal.
+                if (System.Windows.Clipboard.ContainsFileDropList())
+                {
+                    var paths = System.Windows.Clipboard.GetFileDropList()
+                        .Cast<string>()
+                        .Select(path => path.Contains(' ') ? $"\"{path}\"" : path);
+                    return string.Join(' ', paths);
+                }
+
+                return null;
+            }
+            catch (COMException)
+            {
+                Thread.Sleep(10);
+            }
+            catch (ExternalException)
+            {
+                Thread.Sleep(10);
+            }
+        }
+
+        return null;
     }
 
     private void WriteRaw(string text)
