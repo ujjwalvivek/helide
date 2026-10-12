@@ -186,6 +186,31 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
 
     public TerminalHostState State { get; private set; }
 
+    // The process the pane launched, or null once it has gone or before it exists. An
+    // agent records which conversation it is currently in under its own process id, so
+    // this is how Helide asks it.
+    public int? ProcessId
+    {
+        get
+        {
+            try
+            {
+                var process = _terminal.ConPTYTerm?.Process;
+                if (process is null || process.HasExited)
+                    return null;
+
+                // IProcess has no id on it; the object behind it does. Looked up by
+                // name because the type is the package's own and not public.
+                var pid = process.GetType().GetProperty("Pid")?.GetValue(process);
+                return pid is int id && id > 0 ? id : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
     // Ticks of the last moment this host produced output, or 0 if it never has.
     // Written from the ConPTY reader thread and polled from the UI thread by the
     // attention timer.
@@ -552,6 +577,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     {
         Interlocked.Exchange(ref _lastOutputTicks, DateTime.UtcNow.Ticks);
         Interlocked.Add(ref _outputLength, output.Data?.Length ?? 0);
+        TrackPasteMode(output.Data);
     }
 
     private void ConPtyTerm_TermReady(object? sender, EventArgs e)

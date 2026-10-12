@@ -10,7 +10,9 @@ namespace Helide.Sessions;
 /// Claude takes the id of the session it should use: <c>claude --session-id &lt;uuid&gt;</c>
 /// starts a conversation under that id, and <c>claude --resume &lt;uuid&gt;</c> continues it
 /// under the same one. So, as with OpenCode, Helide makes the id up when the pane is
-/// created and there is never anything to find out afterwards.
+/// created. It is where the pane starts, not necessarily where it stays: <c>/resume</c>
+/// and <c>/clear</c> move the process onto another conversation, which is why
+/// <see cref="LiveSessionId"/> exists.
 /// <para>
 /// The two flags are not interchangeable. <c>--resume</c> exits with "No conversation
 /// found" for an id that has none, and a pane that was opened but never typed into has
@@ -59,6 +61,79 @@ internal static class ClaudeSessions
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The conversation a running Claude is in right now, or null when none of the given
+    /// processes is a Claude that has said.
+    /// </summary>
+    /// <remarks>
+    /// The id Helide hands Claude at launch is only where it starts. <c>/resume</c> and
+    /// <c>/clear</c> move the same process onto another conversation, and from then on
+    /// the id Helide made up names a transcript that is empty, or holds nothing but a
+    /// cancelled <c>/resume</c>. Reopening that is "Resume cancelled" and the real
+    /// conversation is somewhere else.
+    /// <para>
+    /// Claude says where it is: each running process keeps
+    /// <c>&lt;config&gt;/sessions/&lt;pid&gt;.json</c> with its current <c>sessionId</c>,
+    /// rewritten when the conversation changes and removed when it exits.
+    /// </para>
+    /// </remarks>
+    public static string? LiveSessionId(IReadOnlyCollection<int> processIds)
+    {
+        string? found = null;
+        var foundAt = long.MinValue;
+
+        try
+        {
+            var folder = Path.Combine(ConfigDirectory, "sessions");
+            if (!Directory.Exists(folder))
+                return null;
+
+            foreach (var pid in processIds)
+            {
+                var file = Path.Combine(folder, pid + ".json");
+                if (!File.Exists(file))
+                    continue;
+
+                try
+                {
+                    using var stream = new FileStream(
+                        file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    using var document = JsonDocument.Parse(stream);
+                    var root = document.RootElement;
+
+                    if (!root.TryGetProperty("sessionId", out var idElement)
+                        || idElement.GetString() is not { } id
+                        || !Guid.TryParse(id, out _))
+                        continue;
+
+                    // Several processes in one chain can all be there; the most recently
+                    // started is the one the user is in.
+                    var startedAt = root.TryGetProperty("startedAt", out var started)
+                        && started.ValueKind == JsonValueKind.Number
+                        && started.TryGetInt64(out var value)
+                        ? value
+                        : 0;
+
+                    if (found is null || startedAt >= foundAt)
+                    {
+                        found = id;
+                        foundAt = startedAt;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Being rewritten right now, or gone: the next poll will see it.
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // An unreadable folder says nothing.
+        }
+
+        return found;
     }
 
     /// <summary>

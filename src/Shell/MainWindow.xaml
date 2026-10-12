@@ -1329,7 +1329,6 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="27" />
                                 <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" MinHeight="32" />
                             </Grid.RowDefinitions>
                         <Border
                                 Grid.Row="0"

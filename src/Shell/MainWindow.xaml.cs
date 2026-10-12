@@ -2798,9 +2798,15 @@ private void OpenInNewWindow(string? projectPath)
                 Dispatcher),
             // Claude keeps a transcript per session id, and the pane was given its id, so
             // the file is known by name and simply does not exist until the first message.
-            "claude" when session.SessionId is { Length: > 0 } claudeId =>
+            //
+            // Read from the pane each time rather than captured, because the pane's id
+            // can move: /resume and /clear put the same process on another conversation,
+            // and the capture timer follows it (CaptureAgentSessionIds).
+            "claude" when session.SessionId is { Length: > 0 } =>
                 new TranscriptStatusSource(
-                    () => ClaudeSessions.FindTranscriptPath(claudeId),
+                    () => session.SessionId is { Length: > 0 } id
+                        ? ClaudeSessions.FindTranscriptPath(id)
+                        : null,
                     ClaudeSessions.ReadTurn,
                     Dispatcher),
             _ => new QuietPeriodStatusSource(host),
@@ -3654,6 +3660,34 @@ private void OpenInNewWindow(string? projectPath)
             pane.SessionId = rollout.SessionId;
             pane.AwaitingSessionSince = null;
             CodexSessions.MarkConsumed(rollout);
+            learned = true;
+        }
+
+        // Claude: the id a pane was launched with is only where it began. /resume and
+        // /clear move the running process onto another conversation, and without
+        // following it the saved id keeps naming the first one -- which for a pane that
+        // was opened, sent to /resume and cancelled holds nothing but "Resume cancelled",
+        // so every restart reopened that and the real conversation was lost.
+        //
+        // Claude records its current conversation under its own process id, so the pane
+        // is asked rather than the transcript folder being watched and guessed at.
+        foreach (var pane in _agentSessions)
+        {
+            if (pane.Type != "claude" || pane.Host?.ProcessId is not { } pid)
+                continue;
+
+            var live = ClaudeSessions.LiveSessionId([.. Helide.Interop.ProcessTree.SelfAndDescendants(pid)]);
+            if (live is null || string.Equals(live, pane.SessionId, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Two panes cannot be one conversation. If another already has this id, the
+            // pane has been put into it deliberately and the one that was there first
+            // keeps it.
+            if (_agentSessions.Any(other => !ReferenceEquals(other, pane)
+                && string.Equals(other.SessionId, live, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            pane.SessionId = live;
             learned = true;
         }
 
