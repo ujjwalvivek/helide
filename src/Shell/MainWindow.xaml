@@ -734,6 +734,83 @@
                                 </StackPanel>
                             </Grid>
 
+                            <!-- Only exists while a tool the panes need is missing. It sits above
+                                 everything else on purpose: a project opened without it gets a
+                                 pane that cannot start, so this is the thing to read first. The
+                                 bar is the danger colour and nothing else about it is loud. -->
+                            <Border
+                                    x:Name="ToolNotice"
+                                    Visibility="Collapsed"
+                                    Margin="0,0,0,26"
+                                    Padding="14,12"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource DangerBrush}"
+                                    BorderThickness="3,0,0,0"
+                                >
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock
+                                                x:Name="ToolNoticeTitle"
+                                                FontSize="{DynamicResource FontSizeLarge}"
+                                                FontWeight="SemiBold"
+                                                Foreground="{DynamicResource TextBrush}"
+                                                TextWrapping="Wrap"
+                                            />
+                                        <TextBlock
+                                                x:Name="ToolNoticeDetail"
+                                                Margin="0,3,0,0"
+                                                FontFamily="{DynamicResource UiMonoFontFamily}"
+                                                FontSize="{DynamicResource FontSizeSmall}"
+                                                Foreground="{DynamicResource TextSubtleBrush}"
+                                                TextWrapping="Wrap"
+                                            />
+                                    </StackPanel>
+                                    <Button
+                                            x:Name="ToolInstallButton"
+                                            Grid.Column="1"
+                                            Margin="18,0,0,0"
+                                            Padding="14,7"
+                                            VerticalAlignment="Center"
+                                            Cursor="Hand"
+                                            Click="ToolInstallButton_Click"
+                                            FocusVisualStyle="{x:Null}"
+                                            Foreground="{DynamicResource TextBrush}"
+                                        >
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border
+                                                        x:Name="Box"
+                                                        Background="Transparent"
+                                                        BorderBrush="{DynamicResource BorderBrush}"
+                                                        BorderThickness="1"
+                                                        Padding="{TemplateBinding Padding}"
+                                                    >
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                                        <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource PressedStrongBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="Box" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsEnabled" Value="False">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextFaintBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
                             <TextBlock
                                     Text="GET STARTED"
                                     Margin="1,0,0,7"
@@ -857,6 +934,22 @@
                                     FontFamily="{DynamicResource UiMonoFontFamily}"
                                     FontSize="{DynamicResource FontSizeSmall}"
                                     Foreground="{DynamicResource TextSubtleBrush}"
+                                />
+                            <!-- What the panes need, marked as found. It stays a plain line when
+                                 everything is there; the action only exists while something
+                                 is missing, and is text rather than a button. -->
+                            <TextBlock
+                                    Text="TOOLS"
+                                    Margin="1,22,0,7"
+                                    Style="{DynamicResource SectionLabelStyle}"
+                                />
+                            <TextBlock
+                                    x:Name="ToolStatusText"
+                                    Margin="1,0,0,0"
+                                    FontFamily="{DynamicResource UiMonoFontFamily}"
+                                    FontSize="{DynamicResource FontSizeSmall}"
+                                    Foreground="{DynamicResource TextSubtleBrush}"
+                                    TextWrapping="Wrap"
                                 />
                             <TextBlock
                                     x:Name="WelcomeStatus"

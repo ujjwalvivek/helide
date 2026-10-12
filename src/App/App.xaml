@@ -73,6 +73,90 @@
                 <Setter Property="FontSize" Value="{DynamicResource FontSizeCaption}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextFaintBrush}" />
             </Style>
+
+            <!-- The two answers a pane can ask for: the filled primary action and the
+                 outlined alternative under it. Shared by every card that fills a pane with a
+                 question, so they cannot drift apart. -->
+            <Style x:Key="CardAcceptStyle" TargetType="Button">
+                <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="14,7" />
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border
+                                x:Name="AcceptSurface"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="0"
+                                Padding="{TemplateBinding Padding}"
+                            >
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="AcceptSurface" Property="Background" Value="{DynamicResource MauveBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="AcceptSurface" Property="Background" Value="{DynamicResource PressedStrongBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="AcceptSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFaintBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Not BasedOn the accept style. A derived style keeps the base triggers, and
+                 those paint the surface the accent's hover colour: light mauve under grey
+                 muted text, which is not readable. So this one carries its own template and
+                 its own hover, the pane's interactive colour with the strong text colour on
+                 top of it. -->
+            <Style x:Key="CardDeclineStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="14,7" />
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border
+                                x:Name="DeclineSurface"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="0"
+                                Padding="{TemplateBinding Padding}"
+                            >
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="DeclineSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="DeclineSurface" Property="Background" Value="{DynamicResource PressedStrongBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFaintBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -1,0 +1,80 @@
+<UserControl x:Class="Helide.Shell.MissingToolCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource TerminalBrush}">
+
+    <!-- Fills the pane the missing tool would have filled, text at the top and the
+         actions pinned to the bottom, like the yazi offer. -->
+    <Grid Margin="14,12,14,14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock
+            x:Name="TitleText"
+            Grid.Row="0"
+            Foreground="{DynamicResource TextBrush}"
+            FontSize="{DynamicResource FontSizeLarge}"
+            FontWeight="SemiBold"
+            TextWrapping="Wrap"
+        />
+
+        <TextBlock
+            x:Name="BodyText"
+            Grid.Row="1"
+            Margin="0,10,0,0"
+            TextWrapping="Wrap"
+            Foreground="{DynamicResource TextMutedBrush}"
+            FontSize="{DynamicResource FontSizeBody}"
+            LineHeight="16"
+        />
+
+        <Border
+            Grid.Row="2"
+            Margin="0,12,0,0"
+            Padding="8,6"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+        >
+            <TextBlock
+                x:Name="CommandText"
+                TextWrapping="Wrap"
+                Foreground="{DynamicResource TextSubtleBrush}"
+                FontFamily="{DynamicResource UiMonoFontFamily}"
+                FontSize="{DynamicResource FontSizeSmall}"
+            />
+        </Border>
+
+        <TextBlock
+            x:Name="StatusText"
+            Grid.Row="3"
+            Margin="0,10,0,0"
+            TextWrapping="Wrap"
+            Foreground="{DynamicResource DangerBrush}"
+            FontFamily="{DynamicResource UiMonoFontFamily}"
+            FontSize="{DynamicResource FontSizeSmall}"
+            Visibility="Collapsed"
+        />
+
+        <StackPanel Grid.Row="5" Margin="0,12,0,0" Orientation="Vertical">
+            <Button
+                x:Name="InstallButton"
+                Click="InstallButton_Click"
+                Style="{DynamicResource CardAcceptStyle}"
+            />
+            <Button
+                x:Name="RecheckButton"
+                Click="RecheckButton_Click"
+                Margin="0,6,0,0"
+                Style="{DynamicResource CardDeclineStyle}"
+                Content="Check again"
+            />
+        </StackPanel>
+    </Grid>
+</UserControl>

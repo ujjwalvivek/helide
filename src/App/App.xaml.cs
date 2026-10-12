@@ -28,6 +28,11 @@ public partial class App : Application
         // that can actually delete them.
         HelideUpdater.DeleteStaleOldExecutables();
 
+        // Before any pane can start. A tool installed since this process's PATH was
+        // copied, or one winget left in its package folder, is found here and added to
+        // that copy, so the panes launch it by name like any other.
+        ToolLocator.SyncProcessPath();
+
         // Before any window exists, so the first layout pass already sees the
         // resolved family rather than swapping under a live renderer.
         ThemePalette.ApplyFonts();

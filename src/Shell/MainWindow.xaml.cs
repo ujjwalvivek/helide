@@ -1215,6 +1215,127 @@ private void OpenInNewWindow(string? projectPath)
             : Visibility.Collapsed;
 
         UpdateAiChrome();
+        RefreshToolStatus();
+    }
+
+    private bool _toolInstallWatched;
+
+    // The install state is shared with the panes, so a start or an end that happens in a
+    // card, or while a project is open, has to be reflected here without being asked.
+    private void WatchToolInstalls()
+    {
+        if (_toolInstallWatched)
+            return;
+
+        _toolInstallWatched = true;
+        ToolLocator.InstallStateChanged += () => Dispatcher.BeginInvoke(RefreshToolStatus);
+    }
+
+    // The marks, plus the notice that appears at the top when something required is
+    // missing. Found is a quiet check; a missing required tool is a cross, and only then
+    // does anything ask for attention.
+    private void RefreshToolStatus()
+    {
+        WatchToolInstalls();
+
+        ToolLocator.SyncProcessPath();
+
+        var icons = new System.Windows.Media.FontFamily("Segoe Fluent Icons");
+        var found = ThemePalette.Brush(ThemePalette.SuccessBrush);
+        var danger = ThemePalette.Brush(ThemePalette.DangerBrush);
+        var faint = ThemePalette.Brush(ThemePalette.TextFaintBrush);
+
+        ToolStatusText.Inlines.Clear();
+
+        var missingRequired = new List<ManagedTool>();
+        var first = true;
+        foreach (var tool in ToolLocator.Tools)
+        {
+            var present = ToolLocator.IsInstalled(tool);
+            if (!present && tool.Required)
+                missingRequired.Add(tool);
+
+            if (!first)
+                ToolStatusText.Inlines.Add(new System.Windows.Documents.Run("    "));
+            first = false;
+
+            ToolStatusText.Inlines.Add(new System.Windows.Documents.Run(
+                present ? "" : tool.Required ? "" : "")
+            {
+                FontFamily = icons,
+                FontSize = 11,
+                Foreground = present ? found : tool.Required ? danger : faint,
+            });
+
+            // pwsh has a fallback, so its absence is stated as that rather than as a fault.
+            ToolStatusText.Inlines.Add(new System.Windows.Documents.Run(
+                " " + tool.Label + (present || tool.Required ? string.Empty : " (optional)")));
+        }
+
+        var installing = ToolLocator.IsInstalling;
+        ToolNotice.Visibility = missingRequired.Count > 0 || installing
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        if (missingRequired.Count > 0)
+        {
+            var names = string.Join(", ", missingRequired.Select(tool => tool.Label));
+            ToolNoticeTitle.Text = missingRequired.Count == 1
+                ? $"{names} is not installed"
+                : $"{missingRequired.Count} tools are not installed";
+            ToolNoticeDetail.Text = missingRequired.Count == 1
+                ? "Helide opens panes for it, and they cannot start without it."
+                : $"{names}. Helide opens panes for these, and they cannot start without them.";
+        }
+        else if (installing)
+        {
+            ToolNoticeTitle.Text = "Installing tools";
+            ToolNoticeDetail.Text = "Open a project once it finishes.";
+        }
+
+        ToolInstallButton.IsEnabled = !installing;
+        ToolInstallButton.Content = installing
+            ? $"Installing {(ToolLocator.Current?.Label ?? "…")}…"
+            : missingRequired.Count == 1
+                ? $"Install {missingRequired[0].Label}"
+                : $"Install {missingRequired.Count} tools";
+    }
+
+    private async void ToolInstallButton_Click(object sender, RoutedEventArgs e)
+    {
+        var missing = ToolLocator.Missing().Where(tool => tool.Required).ToArray();
+        if (missing.Length == 0 || ToolLocator.IsInstalling)
+        {
+            RefreshToolStatus();
+            return;
+        }
+
+        WelcomeStatus.Text = string.Empty;
+
+        try
+        {
+            var failed = await ToolLocator.InstallAsync(missing);
+
+            if (failed.Count == 0)
+                WelcomeStatus.Text = "Tools installed. Open a project to use them.";
+            else if (ToolLocator.WingetMissing)
+                // Said with the command, so the next step is a paste rather than a search.
+                WelcomeStatus.Text = "winget is not available here. Install: "
+                    + string.Join(" ; ", failed.Select(tool => $"winget install -e --id {tool.WingetId}"));
+            else
+                WelcomeStatus.Text = "Could not install "
+                    + string.Join(", ", failed.Select(tool => tool.Label))
+                    + ". Run: "
+                    + string.Join(" ; ", failed.Select(tool => $"winget install -e --id {tool.WingetId}"));
+        }
+        catch (Exception exception)
+        {
+            WelcomeStatus.Text = $"Could not install the missing tools.\n{exception.Message}";
+        }
+        finally
+        {
+            RefreshToolStatus();
+        }
     }
 
     // Everything outside the agent pane that shows whether AI is on: the banner on the
@@ -1644,6 +1765,16 @@ private void OpenInNewWindow(string? projectPath)
     {
         var label = tool == LeftTool.Project ? "yazi" : "lazygit";
         var stateText = tool == LeftTool.Project ? ProjectPaneState : GitPaneState;
+
+        // A pane whose executable is missing never fails: it sits on "Starting…" for
+        // good. So the question is asked here, and the pane says what it needs instead.
+        var managed = ToolLocator.Tools.First(candidate => candidate.Label == label);
+        if (!ToolLocator.IsInstalled(managed))
+        {
+            ShowMissingLeftTool(tool, managed, stateText);
+            return null;
+        }
+
         var arguments = tool == LeftTool.Git ? ToolDefaults.LazygitArguments() : [];
         var host = new NativeTerminalHost(label, ToolCommand($"{label}.exe", arguments), _currentProject!);
         host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
@@ -1659,6 +1790,31 @@ private void OpenInNewWindow(string? projectPath)
                 DispatcherPriority.ContextIdle,
                 new Action(() => host.BringToFront()));
             return host;
+    }
+
+    // Takes the place of the pane the missing tool would have filled. When the tool turns
+    // up -- installed from the card, from the welcome screen, or by hand -- the card goes
+    // and the real pane starts, as long as that pane is still the one being shown.
+    private void ShowMissingLeftTool(LeftTool tool, ManagedTool managed, TextBlock stateText)
+    {
+        var purpose = tool == LeftTool.Project
+            ? "The project browser is yazi, and it was not found on this machine."
+            : "Git control is lazygit, and it was not found on this machine.";
+
+        var card = new MissingToolCard(managed, purpose);
+        card.Resolved += () => Dispatcher.BeginInvoke(() =>
+        {
+            if (!LeftToolStack.Children.Contains(card))
+                return;
+
+            LeftToolStack.Children.Remove(card);
+            if (_activeLeftTool == tool && _leftHost is null && _currentProject is not null)
+                FocusWhenReady(StartLeftTool(tool));
+        });
+
+        LeftToolStack.Children.Add(card);
+        stateText.Text = "missing";
+        stateText.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
     }
 
     private void StopLeftTool()
@@ -1885,6 +2041,13 @@ private void OpenInNewWindow(string? projectPath)
         if (_currentProject is null)
             return null;
 
+        var helix = ToolLocator.Tools.First(candidate => candidate.Label == "helix");
+        if (!ToolLocator.IsInstalled(helix))
+        {
+            ShowMissingEditorTool(helix, path, workingDirectory);
+            return null;
+        }
+
         // No path means Helix's file picker rooted at the project.
         var command = ToolCommand("hx.exe", [.. ToolDefaults.HelixArguments(), path ?? "."]);
         try
@@ -1915,6 +2078,39 @@ private void OpenInNewWindow(string? projectPath)
             EditorSlot.Children.Add(CreateErrorPanel("helix", exception));
             return null;
         }
+    }
+
+    private MissingToolCard? _missingEditorCard;
+    private readonly List<(string? Path, string? WorkingDirectory)> _pendingEditorOpens = [];
+
+    // One card for however many tabs were asked for while Helix was missing. What was
+    // asked for is kept, so installing it opens the files rather than an empty editor.
+    private void ShowMissingEditorTool(ManagedTool helix, string? path, string? workingDirectory)
+    {
+        _pendingEditorOpens.Add((path, workingDirectory));
+
+        // A card left over from a workspace that has since closed is not this one's.
+        if (_missingEditorCard is not null && EditorSlot.Children.Contains(_missingEditorCard))
+            return;
+
+        var card = new MissingToolCard(
+            helix, "The editor is Helix (hx), and it was not found on this machine.");
+        _missingEditorCard = card;
+
+        card.Resolved += () => Dispatcher.BeginInvoke(() =>
+        {
+            EditorSlot.Children.Remove(card);
+            if (ReferenceEquals(_missingEditorCard, card))
+                _missingEditorCard = null;
+
+            var pending = _pendingEditorOpens.Distinct().ToArray();
+            _pendingEditorOpens.Clear();
+
+            foreach (var (pendingPath, pendingDirectory) in pending)
+                CreateEditorTab(pendingPath, pendingDirectory);
+        });
+
+        EditorSlot.Children.Add(card);
     }
 
     private void ActivateEditorTab(EditorTab tab)
