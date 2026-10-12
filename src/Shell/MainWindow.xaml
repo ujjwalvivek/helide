@@ -32,6 +32,27 @@
              a DataTrigger on the tab Border would throw as soon as a strip renders. -->
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
+        <!-- Zen mode's mark: the four corners of a frame around a single point. Drawn
+             rather than taken from the icon font, whose nearest glyph is the generic
+             full-screen arrows and says "bigger", not "only this". -->
+        <DataTemplate x:Key="ZenIconTemplate">
+            <Grid Width="12" Height="12">
+                <Path
+                    Data="M1.5,4.5 V1.5 H4.5 M7.5,1.5 H10.5 V4.5 M10.5,7.5 V10.5 H7.5 M4.5,10.5 H1.5 V7.5"
+                    Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                    StrokeThickness="1.3"
+                    StrokeStartLineCap="Square"
+                    StrokeEndLineCap="Square"
+                    SnapsToDevicePixels="True"
+                />
+                <Rectangle
+                    Width="3"
+                    Height="3"
+                    Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                />
+            </Grid>
+        </DataTemplate>
+
         <!-- The x on a tab. Drawn rather than typed, so it sits on the pixel grid at this
              size instead of wherever the font's glyph happens to land. -->
         <Style x:Key="TabCloseStyle" TargetType="Button">
@@ -453,12 +474,29 @@
         />
         <Grid x:Name="MaximizeInset" Margin="0">
         <Grid.RowDefinitions>
-            <RowDefinition Height="32" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!-- All that is left of the chrome in zen mode: a sliver along the top edge.
+             Touching it opens the zen bar, which is a popup laid over the editor rather
+             than a row above it, so the editor is not resized every time the pointer
+             brushes the top of the screen. It has to be asked to take the mouse, because
+             this strip of the window is otherwise caption. -->
         <Border
+                x:Name="ZenReveal"
                 Grid.Row="0"
+                Height="4"
+                Visibility="Collapsed"
+                Background="{DynamicResource PaneHeaderBrush}"
+                MouseEnter="ZenReveal_MouseEnter"
+                shell:WindowChrome.IsHitTestVisibleInChrome="True"
+            />
+
+        <Border
+                x:Name="TitleBar"
+                Grid.Row="0"
+                Height="32"
                 Background="Transparent"
                 BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,0,1"
@@ -596,6 +634,18 @@
                                 />
                         </StackPanel>
                     </Border>
+                    <!-- Zen mode: every panel closed, and this bar and the editor's tab
+                         strip with them. Only offered while a workspace is showing. -->
+                    <ToggleButton
+                            x:Name="ZenToggle"
+                            Click="ZenToggle_Click"
+                            Visibility="Collapsed"
+                            Margin="12,0,6,0"
+                            VerticalAlignment="Center"
+                            Style="{DynamicResource PanelToggleStyle}"
+                            ToolTip="Zen mode (F11)"
+                            ContentTemplate="{StaticResource ZenIconTemplate}"
+                        />
                     <!-- A panel of their own: the hover that reveals the signs is this
                          panel's, and it must not include the update pill beside it. -->
                     <StackPanel
@@ -928,7 +978,7 @@
                 >
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" MinHeight="300" />
-                    <RowDefinition Height="28" />
+                    <RowDefinition x:Name="StatusBarRow" Height="28" />
                 </Grid.RowDefinitions>
 
                 <Grid
@@ -1044,12 +1094,12 @@
                         </Grid.RowDefinitions>
                         <Grid Grid.Row="0">
                             <Grid.RowDefinitions><RowDefinition
-                                        Height="27"
+                                        x:Name="EditorHeaderRow" Height="27"
                                     /><RowDefinition
                                         Height="*"
                                     /></Grid.RowDefinitions>
                             <Border
-                                    Grid.Row="0"
+                                    x:Name="EditorHeader" Grid.Row="0"
                                     Style="{DynamicResource PaneHeaderStyle}"
                                 >
                                 <!-- A Grid rather than a DockPanel: the strip has to be the
@@ -1433,6 +1483,7 @@
                 </Grid>
 
                 <Border
+                        x:Name="StatusBar"
                         Grid.Row="1"
                         Background="{DynamicResource SurfaceBrush}"
                         BorderBrush="{DynamicResource BorderBrush}"
@@ -1519,6 +1570,126 @@
              HwndHost-backed terminal renderer, and WPF has no z-order authority over a
              child HWND: anything drawn in-tree would slide under the editor and agent
              panes. A Popup is a real layered window and sits above them. -->
+        <!-- The zen bar. In zen mode the title bar and the editor's tab strip are both
+             gone, and this is what the top edge brings back: the tabs, the way out of
+             zen, and the window buttons, in one strip over the editor. A popup for the
+             same reason as the palette below, and because laying it over the editor is
+             the point: a bar that pushed the editor down would reflow the terminal on
+             every reveal. -->
+        <Popup x:Name="ZenBarPopup"
+               Placement="Relative"
+               AllowsTransparency="False"
+               Focusable="False"
+               StaysOpen="True"
+               PopupAnimation="None">
+            <Border
+                    x:Name="ZenBar"
+                    Height="32"
+                    Background="{DynamicResource PaneHeaderBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    MouseLeave="ZenBar_MouseLeave"
+                    TextElement.FontFamily="{DynamicResource UiFontFamily}"
+                    TextElement.Foreground="{DynamicResource TextBrush}"
+                    UseLayoutRounding="True"
+                    SnapsToDevicePixels="True"
+                >
+                <Grid Margin="8,0,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button
+                            Click="HomeButton_Click"
+                            Style="{DynamicResource ChromeButtonStyle}"
+                            Width="26"
+                            Height="26"
+                            Padding="1"
+                            VerticalAlignment="Center"
+                            ToolTip="Command palette (Ctrl+P)"
+                        >
+                        <Image
+                                Source="/src/Assets/helide.png"
+                                Width="18"
+                                Height="18"
+                                RenderOptions.BitmapScalingMode="HighQuality"
+                            />
+                    </Button>
+                    <!-- The editor's tabs: the same list and the same template as the
+                         strip in the editor's header, which zen mode has folded away. -->
+                    <ScrollViewer
+                            Grid.Column="1"
+                            Margin="8,0,4,0"
+                            PreviewMouseWheel="TabStrip_MouseWheel"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollBarVisibility="Disabled"
+                            Focusable="False"
+                        >
+                        <ItemsControl x:Name="ZenTabStrip" ItemTemplate="{StaticResource PaneTabTemplate}" Focusable="False">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <Button
+                            Grid.Column="2"
+                            Click="EditorTabSplitButton_Click"
+                            Style="{DynamicResource ChromeButtonStyle}"
+                            Width="24"
+                            Height="26"
+                            Padding="0"
+                            VerticalAlignment="Center"
+                            Content="+"
+                            FontFamily="{DynamicResource UiMonoFontFamily}"
+                            FontSize="{DynamicResource FontSizeMedium}"
+                            ToolTip="New empty editor tab"
+                        />
+                    <StackPanel Grid.Column="3" Orientation="Horizontal">
+                        <ToggleButton
+                                Click="ZenToggle_Click"
+                                IsChecked="True"
+                                Margin="10,0,6,0"
+                                VerticalAlignment="Center"
+                                Style="{DynamicResource PanelToggleStyle}"
+                                ToolTip="Leave zen mode (F11)"
+                                ContentTemplate="{StaticResource ZenIconTemplate}"
+                            />
+                        <StackPanel
+                                Orientation="Horizontal"
+                                Margin="10,0,10,0"
+                                Background="Transparent"
+                            >
+                            <Button
+                                    Click="MinimizeCaptionButton_Click"
+                                    Style="{DynamicResource TrafficLightStyle}"
+                                    Background="#FEBC2E"
+                                    Tag="M3.5,6 H8.5"
+                                    ToolTip="Minimize"
+                                />
+                            <Button
+                                    Click="ZenToggle_Click"
+                                    Style="{DynamicResource TrafficLightStyle}"
+                                    Background="#28C840"
+                                    Tag="M3.5,6 H8.5 M6,3.5 V8.5"
+                                    ToolTip="Leave zen mode"
+                                />
+                            <Button
+                                    Click="CloseCaptionButton_Click"
+                                    Style="{DynamicResource TrafficLightStyle}"
+                                    Background="#FF5F57"
+                                    Tag="M4,4 L8,8 M8,4 L4,8"
+                                    ToolTip="Close"
+                                />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Popup>
+
         <Popup x:Name="CommandPalettePopup"
                Placement="Center"
                AllowsTransparency="True"

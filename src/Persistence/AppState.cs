@@ -25,6 +25,11 @@ internal sealed class AppState
     // can label the command without touching the file system to find out.
     public bool YaziOpenInHelide { get; set; }
 
+    // Where the last window was and whether it was maximised. Each workspace keeps its
+    // own, and this is what a window uses when it has none: a project opened for the
+    // first time, or a window that starts on the welcome screen.
+    public WindowGeometryState Window { get; set; } = new();
+
     // Set just before the restart that follows installing the yazi config, and cleared
     // by the window that reads it: that window opens with the project browser focused.
     public bool FocusProjectBrowserOnStart { get; set; }
@@ -109,4 +114,16 @@ internal sealed class WorkspaceLayoutState
     // would stay closed after AI is switched back on, as if the user had closed it.
     public bool AgentHiddenByAi { get; set; }
     public string LeftTool { get; set; } = "git";
+
+    // Zen mode: every panel closed, with the title bar and the editor's tab strip. The
+    // three flags are which panels were open when it was switched on, so switching it
+    // off puts back the arrangement it replaced -- after a restart as much as before.
+    public bool Zen { get; set; }
+    public bool ZenLeftWasOpen { get; set; }
+    public bool ZenRunnerWasOpen { get; set; }
+    public bool ZenAgentWasOpen { get; set; }
+
+    // Zen mode fills the screen. This is whether the window already did, so leaving
+    // zen mode gives back the size it took rather than staying maximised.
+    public bool ZenWasMaximized { get; set; }
 }

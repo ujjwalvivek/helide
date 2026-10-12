@@ -140,11 +140,23 @@ public partial class MainWindow : Window
         // which is what left the strip showing a single tab while the pane was
         // displaying a different file.
         EditorTabStrip.ItemsSource = _editorTabs;
+        ZenTabStrip.ItemsSource = _editorTabs;
+
+        // A popup is a topmost window of its own, so one left open would sit over
+        // whatever application was switched to.
+        Deactivated += (_, _) => ZenBarPopup.IsOpen = false;
         CaptureTrackDefaults();
         RestoreWindowGeometry();
         RestoreWorkspaceLayout();
 
-        SourceInitialized += (_, _) => DwmNative.Apply(this);
+        SourceInitialized += (_, _) =>
+        {
+            DwmNative.Apply(this);
+
+            // A window restored as maximised got there before the handler that insets
+            // it was attached, so the inset is applied once here.
+            MainWindow_StateChanged(this, EventArgs.Empty);
+        };
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
@@ -738,6 +750,13 @@ public partial class MainWindow : Window
             _state.YaziOpenInHelide ? "on · restarts Helide" : "restarts Helide",
             keywords: "yazi file tree editor helix open config"));
         commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanel(ToolPanel.Runner), "View", canInvoke: workspace));
+        commands.Add(new PaletteCommand(
+            _workspace.Layout.Zen ? "Leave Zen Mode" : "Zen Mode",
+            ToggleZen,
+            "View",
+            "F11",
+            keywords: "focus fullscreen distraction hide panels",
+            canInvoke: workspace));
         if (_state.AiEnabled)
             commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanel(ToolPanel.Agent), "View", canInvoke: workspace));
         commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
@@ -1037,6 +1056,9 @@ private void OpenInNewWindow(string? projectPath)
 
         WorkspaceRoot.Visibility = Visibility.Collapsed;
         WelcomeRoot.Visibility = Visibility.Visible;
+        // The welcome screen always has its title bar, whatever the workspace was in.
+        ApplyZenChrome(false);
+        ZenToggle.Visibility = Visibility.Collapsed;
         ProjectNamePill.Visibility = Visibility.Collapsed;
         ProjectPathPill.Visibility = Visibility.Collapsed;
         GitBranchPill.Visibility = Visibility.Collapsed;
@@ -1091,6 +1113,9 @@ private void OpenInNewWindow(string? projectPath)
         GitBranchPill.Visibility = string.IsNullOrEmpty(GitBranchPillText.Text)
             ? Visibility.Collapsed
             : Visibility.Visible;
+
+        ZenToggle.Visibility = Visibility.Visible;
+        ApplyZenChrome(_workspace.Layout.Zen);
     }
 
     private void PopulateWelcome()
@@ -1886,7 +1911,7 @@ private void OpenInNewWindow(string? projectPath)
     // happens on the press itself: a tab is activated on release, and only if it was
     // not dragged in between.
     private object? _pressedTab;
-    private Point _pressOrigin;
+    private Point _pressOrigin;   // in screen pixels
     private bool _draggingTab;
     private FrameworkElement? _dragElement;
 
@@ -1899,8 +1924,11 @@ private void OpenInNewWindow(string? projectPath)
         if (IsInsideButton(e.OriginalSource as DependencyObject, sender as DependencyObject))
             return;
 
-        _pressedTab = (sender as FrameworkElement)?.DataContext;
-        _pressOrigin = e.GetPosition(this);
+        if (sender is not FrameworkElement pressed)
+            return;
+
+        _pressedTab = pressed.DataContext;
+        _pressOrigin = pressed.PointToScreen(e.GetPosition(pressed));
         _draggingTab = false;
     }
 
@@ -1920,7 +1948,7 @@ private void OpenInNewWindow(string? projectPath)
         }
 
         if (_draggingTab
-            || Math.Abs(e.GetPosition(this).X - _pressOrigin.X) < TabDragThreshold)
+            || Math.Abs(element.PointToScreen(e.GetPosition(element)).X - _pressOrigin.X) < TabDragThreshold)
             return;
 
         // Captured only now, not on the press: a captured tab would take the mouse-up
@@ -1939,7 +1967,7 @@ private void OpenInNewWindow(string? projectPath)
 
         var tab = _pressedTab;
         var dragged = _draggingTab;
-        var pointer = e.GetPosition(this);
+        var pointer = element.PointToScreen(e.GetPosition(element));
 
         EndTabDrag();
 
@@ -2002,8 +2030,11 @@ private void OpenInNewWindow(string? projectPath)
                 || strip.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement other)
                 continue;
 
-            var left = other.TranslatePoint(new Point(0, 0), this).X;
-            if (pointer.X > left + other.ActualWidth / 2)
+            // Screen coordinates on both sides: the strip may be the one in the zen bar,
+            // which is a popup and has no position relative to this window.
+            var left = other.PointToScreen(new Point(0, 0)).X;
+            var right = other.PointToScreen(new Point(other.ActualWidth, 0)).X;
+            if (pointer.X > (left + right) / 2)
                 to++;
         }
 
@@ -2252,6 +2283,14 @@ private void OpenInNewWindow(string? projectPath)
                 return;
             }
 
+            return;
+        }
+
+        if (modifiers == ModifierKeys.None && e.Key == Key.F11
+            && WorkspaceRoot.Visibility == Visibility.Visible)
+        {
+            ToggleZen();
+            e.Handled = true;
             return;
         }
 
@@ -3219,7 +3258,12 @@ private void OpenInNewWindow(string? projectPath)
 
     private void RestoreWindowGeometry()
     {
+        // The workspace's own, or failing that wherever the last window was: a project
+        // opened for the first time and a window starting on the welcome screen have
+        // nothing saved of their own.
         var geometry = _workspace.Window;
+        if (geometry.Width < MinWidth || geometry.Height < MinHeight)
+            geometry = _state.Window;
         if (geometry.Width < MinWidth || geometry.Height < MinHeight)
             return;
 
@@ -3235,6 +3279,10 @@ private void OpenInNewWindow(string? projectPath)
         Top = geometry.Top;
         Width = geometry.Width;
         Height = geometry.Height;
+
+        // After the bounds, which are then what the window restores down to.
+        if (geometry.IsMaximized)
+            WindowState = WindowState.Maximized;
     }
 
     private void SaveWindowGeometry()
@@ -3246,8 +3294,128 @@ private void OpenInNewWindow(string? projectPath)
         _workspace.Window.Top = bounds.Top;
         _workspace.Window.Width = bounds.Width;
         _workspace.Window.Height = bounds.Height;
-        // Always reopen restored
-        _workspace.Window.IsMaximized = false;
+        _workspace.Window.IsMaximized = WindowState == WindowState.Maximized;
+
+        // The same again for the app as a whole, as the default for a window that has
+        // no workspace geometry to go by.
+        _state.Window.Left = bounds.Left;
+        _state.Window.Top = bounds.Top;
+        _state.Window.Width = bounds.Width;
+        _state.Window.Height = bounds.Height;
+        _state.Window.IsMaximized = _workspace.Window.IsMaximized;
+    }
+
+    // ---- Zen mode ----------------------------------------------------------------
+    //
+    // The editor and nothing else: the three panels closed, and the title bar and the
+    // editor's own tab strip folded away with them. It is part of the workspace's
+    // layout, so a project left in zen mode opens in it.
+
+    private void ZenToggle_Click(object sender, RoutedEventArgs e) => ToggleZen();
+
+    private void ToggleZen()
+    {
+        if (_currentProject is null || WorkspaceRoot.Visibility != Visibility.Visible)
+            return;
+
+        var layout = _workspace.Layout;
+
+        if (!layout.Zen)
+        {
+            // What was open is written down first, so leaving zen mode puts back this
+            // arrangement rather than opening everything.
+            layout.ZenLeftWasOpen = !layout.LeftCollapsed;
+            layout.ZenRunnerWasOpen = !layout.RunnerCollapsed;
+            layout.ZenAgentWasOpen = !layout.AgentCollapsed;
+            layout.ZenWasMaximized = WindowState == WindowState.Maximized;
+            layout.Zen = true;
+
+            SetPanelCollapsed(ToolPanel.Left, true);
+            SetPanelCollapsed(ToolPanel.Runner, true);
+            SetPanelCollapsed(ToolPanel.Agent, true);
+        }
+        else
+        {
+            layout.Zen = false;
+
+            if (layout.ZenLeftWasOpen)
+                SetPanelCollapsed(ToolPanel.Left, false);
+            if (layout.ZenRunnerWasOpen)
+                SetPanelCollapsed(ToolPanel.Runner, false);
+            // There is no agent pane to bring back while AI is off.
+            if (layout.ZenAgentWasOpen && _state.AiEnabled)
+                SetPanelCollapsed(ToolPanel.Agent, false);
+
+            // Back to the size zen mode took over, unless it was already maximised.
+            if (!layout.ZenWasMaximized && WindowState == WindowState.Maximized)
+                WindowState = WindowState.Normal;
+        }
+
+        ApplyZenChrome(layout.Zen);
+        ActiveEditorHost()?.FocusTerminal();
+
+        // Saved once the tracks have settled, and written now rather than left for the
+        // window closing: zen mode should survive a crash like any other layout change.
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+        {
+            SaveWorkspaceLayout();
+            WriteWorkspace();
+        }));
+    }
+
+    // The chrome only: which bars are showing. Kept apart from the panels so the
+    // welcome screen can have its title bar back without the workspace behind it
+    // leaving zen mode.
+    //
+    // In zen mode nothing is left but the editor: the title bar, the editor's tab strip
+    // and the status bar all go, and the window fills the screen whatever size it was.
+    // What they held is one touch of the top edge away, in the zen bar.
+    private void ApplyZenChrome(bool zen)
+    {
+        TitleBar.Visibility = zen ? Visibility.Collapsed : Visibility.Visible;
+        ZenReveal.Visibility = zen ? Visibility.Visible : Visibility.Collapsed;
+
+        EditorHeader.Visibility = zen ? Visibility.Collapsed : Visibility.Visible;
+        EditorHeaderRow.Height = new GridLength(zen ? 0 : 27);
+
+        StatusBar.Visibility = zen ? Visibility.Collapsed : Visibility.Visible;
+        StatusBarRow.Height = new GridLength(zen ? 0 : 28);
+
+        ZenToggle.IsChecked = zen;
+
+        if (zen)
+        {
+            if (WindowState != WindowState.Maximized)
+                WindowState = WindowState.Maximized;
+        }
+        else
+        {
+            ZenBarPopup.IsOpen = false;
+        }
+    }
+
+    // The top edge opens the zen bar. It is placed over the reveal strip, so the
+    // pointer that opened it is already inside it and it stays for as long as the
+    // pointer does.
+    private void ZenReveal_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (!_workspace.Layout.Zen || ZenBarPopup.IsOpen)
+            return;
+
+        ZenBarPopup.PlacementTarget = ZenReveal;
+        ZenBarPopup.HorizontalOffset = 0;
+        ZenBarPopup.VerticalOffset = 0;
+        ZenBar.Width = ZenReveal.ActualWidth;
+        ZenBarPopup.IsOpen = true;
+    }
+
+    private void ZenBar_MouseLeave(object sender, MouseEventArgs e)
+    {
+        // A tab being dragged holds the mouse, and the bar must not vanish from under it.
+        if (_draggingTab)
+            return;
+
+        ZenBarPopup.IsOpen = false;
     }
 
     private void CloseWorkspace()
