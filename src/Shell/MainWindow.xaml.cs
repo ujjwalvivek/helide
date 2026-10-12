@@ -2012,6 +2012,9 @@ private void OpenInNewWindow(string? projectPath)
             // Over the strip it is a reorder, and nothing is shown. Over a pane of its
             // own area it is a split, and the pane lights up where the tab would land.
             UpdateSplitDrop(_pressedTab, pointer);
+
+            // The other tabs make way for it, unless it is on its way into a pane.
+            UpdateStripShift(pointer, splitting: _splitDrop is not null);
             return;
         }
 
@@ -2029,10 +2032,131 @@ private void OpenInNewWindow(string? projectPath)
         // Photographed before it is dimmed, so the ghost is the tab as it was.
         BeginTabGhost(element, pointer);
 
-        // What is left behind is the place it came from, not the tab itself.
-        element.Opacity = 0.4;
+        // Where every tab is, before any of them is moved out of place.
+        BeginStripShift(element);
+
+        // The tab itself is the ghost now. What is left behind is only its room, kept
+        // so the strip does not close up under the pointer; the others slide into it
+        // when the tab is carried past them.
+        element.Opacity = 0;
         element.Cursor = System.Windows.Input.Cursors.Arrow;
         element.CaptureMouse();
+    }
+
+    // ---- Making room ----------------------------------------------------------
+    //
+    // As a tab is carried along the strip, the tabs it has passed slide aside to show
+    // where it would go. Only how they are drawn changes: nothing is reordered until the
+    // tab is let go, because moving an item rebuilds the tab that is holding the mouse
+    // and the drag would end on its first step.
+
+    private sealed class StripSlot
+    {
+        public required FrameworkElement Container;
+
+        // Where the middle of the tab was when the drag began, in screen pixels. Taken
+        // once: read live, it would move with the very shift it decides.
+        public required double Middle;
+
+        public double Offset;
+    }
+
+    private List<StripSlot>? _stripSlots;
+    private int _stripFrom;
+    private double _stripShift;
+
+    private void BeginStripShift(FrameworkElement element)
+    {
+        _stripSlots = null;
+
+        if (FindAncestor<ItemsControl>(element) is not { } strip)
+            return;
+
+        var from = strip.Items.IndexOf(element.DataContext);
+        if (from < 0)
+            return;
+
+        var slots = new List<StripSlot>();
+        for (var index = 0; index < strip.Items.Count; index++)
+        {
+            if (strip.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement container)
+                return;
+
+            var left = container.PointToScreen(new Point(0, 0)).X;
+            var right = container.PointToScreen(new Point(container.ActualWidth, 0)).X;
+            slots.Add(new StripSlot { Container = container, Middle = (left + right) / 2 });
+        }
+
+        // What the dragged tab takes up, with its margin: how far each tab it passes
+        // has to move to fill the room it leaves and open the room it arrives in.
+        _stripFrom = from;
+        _stripShift = slots[from].Container.ActualWidth;
+        _stripSlots = slots;
+    }
+
+    private void UpdateStripShift(Point pointer, bool splitting)
+    {
+        if (_stripSlots is not { } slots)
+            return;
+
+        // Where it would be put: after every other tab whose middle is left of the pointer.
+        var to = _stripFrom;
+        if (!splitting)
+        {
+            to = 0;
+            for (var index = 0; index < slots.Count; index++)
+                if (index != _stripFrom && pointer.X > slots[index].Middle)
+                    to++;
+        }
+
+        for (var index = 0; index < slots.Count; index++)
+        {
+            double offset = 0;
+            if (index != _stripFrom)
+            {
+                if (_stripFrom < to && index > _stripFrom && index <= to)
+                    offset = -_stripShift;
+                else if (_stripFrom > to && index >= to && index < _stripFrom)
+                    offset = _stripShift;
+            }
+
+            var slot = slots[index];
+            if (slot.Offset == offset)
+                continue;
+
+            slot.Offset = offset;
+            if (slot.Container.RenderTransform is not TranslateTransform translate)
+                slot.Container.RenderTransform = translate = new TranslateTransform();
+
+            translate.BeginAnimation(
+                TranslateTransform.XProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(
+                    offset,
+                    TimeSpan.FromMilliseconds(130))
+                {
+                    EasingFunction = new System.Windows.Media.Animation.CubicEase
+                    {
+                        EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut,
+                    },
+                });
+        }
+    }
+
+    // Puts every tab back where it is drawn from. Done however the drag ended, and
+    // before the move is committed, so what is committed is laid out from scratch.
+    private void EndStripShift()
+    {
+        if (_stripSlots is not { } slots)
+            return;
+
+        _stripSlots = null;
+        foreach (var slot in slots)
+        {
+            if (slot.Container.RenderTransform is TranslateTransform translate)
+                translate.BeginAnimation(TranslateTransform.XProperty, null);
+
+            slot.Container.RenderTransform = Transform.Identity;
+        }
     }
 
     // ---- The tab under the pointer ---------------------------------------------
@@ -2350,8 +2474,10 @@ private void OpenInNewWindow(string? projectPath)
         _draggingTab = false;
         _dragElement = null;
 
-        // The ghost and the highlight belong to the drag, however it ended.
+        // The ghost, the highlight and the room made in the strip belong to the drag,
+        // however it ended.
         EndTabGhost();
+        EndStripShift();
         _splitDropPanel?.HideDropPreview();
         EditorSlot.HideDropPreview();
         RunnerSlot.HideDropPreview();
