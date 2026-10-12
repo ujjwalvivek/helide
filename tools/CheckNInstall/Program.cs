@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace Helide.Tooling;
@@ -496,13 +497,44 @@ internal static class Program
     {
         if (string.IsNullOrWhiteSpace(directory)) return "failed";
 
-        var current = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? string.Empty;
+        // The value as it is stored, not as it expands. The user PATH is an expandable
+        // string and routinely holds references such as %USERPROFILE%; reading it through
+        // Environment expands them, so writing the result back would bake every one of
+        // them in for good. It also made the length check below measure the wrong thing:
+        // a stored "%PATH%;C:\tools" is 14 characters, but expands to the whole PATH and
+        // was refused as four thousand.
+        string current;
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey("Environment");
+            current = key?.GetValue(
+                "Path", string.Empty,
+                Microsoft.Win32.RegistryValueOptions.DoNotExpandEnvironmentNames) as string ?? string.Empty;
+        }
+        catch (Exception)
+        {
+            return "failed";
+        }
+
         var entries = current
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
 
-        if (entries.Any(entry => string.Equals(entry, directory, StringComparison.OrdinalIgnoreCase)))
+        // Compared after expansion and without a trailing slash, so an entry written as
+        // %LOCALAPPDATA%\Programs\Helide\ still counts as the directory it names.
+        static string Normalise(string entry) =>
+            Environment.ExpandEnvironmentVariables(entry).TrimEnd('\\', '/');
+
+        if (entries.Any(entry => string.Equals(
+                Normalise(entry), Normalise(directory), StringComparison.OrdinalIgnoreCase)))
             return "present";
+
+        // A PATH that refers to itself is somebody's shell command gone wrong -- "%PATH%"
+        // typed where it was not expanded -- and it doubles every entry in each new
+        // shell. It is reported, not removed: it is the user's value, and what the rest
+        // of it should have been is not something this tool can know.
+        if (entries.Any(entry => string.Equals(entry, "%PATH%", StringComparison.OrdinalIgnoreCase)))
+            Warn("user PATH contains a literal %PATH% entry, which repeats the whole PATH; worth removing by hand");
 
         // Guard the length before writing. A truncated PATH breaks every shell on the
         // machine, so refuse rather than write something partial.
@@ -513,8 +545,44 @@ internal static class Program
             return "failed";
         }
 
-        Environment.SetEnvironmentVariable("PATH", combined, EnvironmentVariableTarget.User);
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey("Environment");
+            key.SetValue("Path", combined, Microsoft.Win32.RegistryValueKind.ExpandString);
+        }
+        catch (Exception)
+        {
+            return "failed";
+        }
+
+        // Written to the registry directly, so the notification Environment would have
+        // sent has to be sent here: without it Explorer keeps handing the old PATH to
+        // everything it starts until the next sign-in.
+        BroadcastEnvironmentChange();
         return "added";
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(
+        IntPtr window, uint message, UIntPtr wParam, string lParam,
+        uint flags, uint timeoutMilliseconds, out UIntPtr result);
+
+    private static void BroadcastEnvironmentChange()
+    {
+        const uint settingChange = 0x001A;
+        const uint abortIfHung = 0x0002;
+        var everyTopLevelWindow = new IntPtr(0xFFFF);
+
+        try
+        {
+            SendMessageTimeout(
+                everyTopLevelWindow, settingChange, UIntPtr.Zero, "Environment",
+                abortIfHung, 2000, out _);
+        }
+        catch (Exception)
+        {
+            // A window that never answers costs the notification, not the change.
+        }
     }
 
     private static bool WingetAvailable()

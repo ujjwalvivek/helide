@@ -6,7 +6,19 @@ $ErrorActionPreference = 'Stop'
 $ToolPath  = Join-Path $PSScriptRoot 'tools\CheckNInstall\CheckNInstall.csproj'
 $Artifact  = Join-Path $PSScriptRoot 'tools\CheckNInstall\bin\Release\net8.0-windows\CheckNInstall-win-x64.exe'
 
-if ($Build -or -not (Test-Path -LiteralPath $Artifact)) {
+# The tool is run from a published exe, so an edit to its source does nothing until it is
+# published again -- and forgetting -Build meant running the old one and seeing a bug
+# that had already been fixed. So it is republished whenever a source file is newer.
+$Stale = $false
+if (Test-Path -LiteralPath $Artifact) {
+    $built  = (Get-Item -LiteralPath $Artifact).LastWriteTimeUtc
+    $newest = Get-ChildItem -LiteralPath (Split-Path $ToolPath) -File |
+        Where-Object { $_.Extension -in '.cs', '.csproj' } |
+        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    $Stale = $newest -and $newest.LastWriteTimeUtc -gt $built
+}
+
+if ($Build -or $Stale -or -not (Test-Path -LiteralPath $Artifact)) {
     Write-Host "publishing CheckNInstall..." -ForegroundColor DarkGray
     Push-Location $PSScriptRoot
     try {
