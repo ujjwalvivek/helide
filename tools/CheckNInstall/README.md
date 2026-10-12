@@ -10,7 +10,13 @@ dotnet run --project tools/CheckNInstall -- --check   # report only, exit 0 when
 dotnet run --project tools/CheckNInstall -- --full    # every phase, no prompts
 ```
 
-Keyboard: arrows or `1`-`6` to move, `Enter` to select, `Esc` to quit.
+It opens on a status screen (required tools, optional agents, what is installed) and offers three workflows. While a workflow runs, the result stays on screen until a key is pressed.
+
+| # | Workflow               | Does                                                     |
+| - | ---------------------- | -------------------------------------------------------- |
+| 1 | Set up everything      | Fix tools, then build and install Helide and AutoUpdater |
+| 2 | Fix tools              | Check, `winget install` what is missing, repair PATH     |
+| 3 | Build & install Helide | Publish Helide and AutoUpdater, then install both        |
 
 ## Phases
 

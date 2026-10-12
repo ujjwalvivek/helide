@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 
 namespace Helide.Tooling;
@@ -37,37 +38,48 @@ internal static class Program
         ("claude",   "claude"),
     ];
 
-    private static readonly string[] MenuItems =
+    // The five phases are still the unit of work; the menu offers them in the groups people
+    // actually want. Installing tools without repairing the PATH they land on, or building
+    // without installing, were two separate trips through the menu for one intention.
+    private enum Workflow { Setup, FixTools, BuildInstall, BuildOnly, CheckOnly }
+
+    private static readonly (string Label, Workflow Flow)[] MenuItems =
     [
-        "Check dependencies",
-        "Install missing tools",
-        "Repair PATH",
-        "Build Helide + AutoUpdater",
-        "Install Helide + AutoUpdater",
-        "Full run  (all of the above)",
-        "Manual",
-        "Exit",
+        ("Set up everything",      Workflow.Setup),
+        ("Fix tools",              Workflow.FixTools),
+        ("Build & install Helide", Workflow.BuildInstall),
     ];
 
-    private const int ExitItem = 7;
+    private const string StepCheck = "Check tools";
+    private const string StepInstall = "Install missing tools";
+    private const string StepPath = "Repair PATH";
+    private const string StepBuildApp = "Build Helide";
+    private const string StepBuildUpdater = "Build AutoUpdater";
+    private const string StepInstallApp = "Install Helide";
+    private const string StepInstallUpdater = "Install AutoUpdater";
 
     // Shorter than the shell manual it replaces, because the pane it renders into is a
-    // fixed height and only the tail of anything longer would be visible.
+    // fixed height and the rest is reached by scrolling.
     private const string Manual = """
         Helide check & install
 
         Checks the CLIs Helide shells out to, installs what is missing, repairs the user PATH, publishes the single-file builds, and installs them.
 
         USAGE
-            CheckNInstall            interactive menu (this one)
+            CheckNInstall            interactive (this one)
             CheckNInstall --check    report only, exit 0 when ready
-            CheckNInstall --full     every phase, no prompts
-            CheckNInstall --help     this text
+            CheckNInstall --full     set up everything, no prompts
 
-        CONTROLS
-            up / down  move        1 - 7  jump to an item
-            Enter      select      T      switch theme, mocha / oled
-            Esc        quit
+        WORKFLOWS
+            Set up everything        check, install missing tools, repair PATH, build, install
+            Fix tools                check, winget install what is missing, repair PATH
+            Build & install Helide   publish Helide and AutoUpdater, then install both
+
+        KEYS
+            Up / Down  move          Enter    run the selected workflow
+            1 - 3      run directly  B        build only, without installing
+            R          re-check      ?        this manual
+            T          theme         Esc      quit
 
         PHASES
             1  Check          lazygit, hx, yazi. The agents (opencode, codex, claude) are optional and only reported.
@@ -82,6 +94,7 @@ internal static class Program
 
     private static string _repoRoot = AppContext.BaseDirectory;
     private static bool _selfContained = true;
+    private static bool _shellRestartNeeded;
 
     private static string AppProject => Path.Combine(_repoRoot, "Helide.csproj");
 
@@ -104,48 +117,67 @@ internal static class Program
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         _repoRoot = FindRepoRoot();
 
-        // Non-interactive entry points. These stay line-oriented on purpose: they are
-        // for build scripts and pipes, where a repainting TUI is worse than useless --
-        // and where reading the window size is not possible at all.
+        // The two non-interactive entry points. In a real console they draw the same
+        // frame as the menu and run one workflow in it; without one -- a pipe, a build
+        // script, CI -- they fall back to plain lines, where a repainting TUI is worse
+        // than useless and reading the window size is not possible at all.
         if (args.Contains("--check", StringComparer.OrdinalIgnoreCase))
-            return RunCheck();
+            return RunHeadless(Workflow.CheckOnly);
 
         if (args.Contains("--full", StringComparer.OrdinalIgnoreCase))
-            return RunAllPhases();
+            return RunHeadless(Workflow.Setup);
 
-        if (args.Contains("--help", StringComparer.OrdinalIgnoreCase) || args.Contains("-h"))
-            return ShowManual();
-
+        // No --help: `dotnet run --help` is answered by dotnet itself and never reaches
+        // this exe. The manual is in the interactive view, on `?`.
         return RunInteractive();
     }
 
-    private static int RunCheck()
+    // One workflow, no menu. Drawn when there is a console to draw in, plain otherwise.
+    private static int RunHeadless(Workflow flow)
     {
-        Banner(showLogo: false);
-        var missing = Check();
-        Ok(missing ? "one or more tools are missing" : "ready to install");
-        return missing ? ExitFailed : ExitOk;
-    }
-
-    private static int ShowManual()
-    {
-        if (_tui)
+        if (!TryEnterTui())
         {
-            // Rendered through the pane rather than printed, so opening it in the
-            // interactive window does not push the frame off the top.
-            ClearLog();
-            Emit("·", "manual");
-        }
-        else
-        {
-            Banner();
+            if (flow == Workflow.CheckOnly) Banner(showLogo: false);
+            return RunWorkflow(flow);
         }
 
-        foreach (var line in Manual.Split('\n'))
-            Emit("·", line.TrimEnd('\r'));
+        _theme = LoadTheme() == "oled" ? Theme.Oled : Theme.Mocha;
+        _headless = true;
+        _mode = Mode.Run;
+        _running = true;
+        _title = flow == Workflow.CheckOnly ? "Check" : "Set up everything";
+        ClearLog();
 
-        return ExitOk;
+        var code = RunWorkflow(flow);
+
+        lock (_renderLock)
+        {
+            _running = false;
+            _succeeded = code == ExitOk;
+            SkipPending();
+            _dirty = true;
+        }
+
+        // Held for a key so the result can be read, but only when someone is there to
+        // press one: redirected input means a script, and a script must never block.
+        if (!Console.IsInputRedirected)
+        {
+            try { while (Console.KeyAvailable) Console.ReadKey(intercept: true); } catch { }
+            Browse();
+        }
+
+        LeaveTui();
+
+        // The frame went with the alternate screen, so the verdict is left behind in the
+        // scrollback in the same form the plain output uses.
+        if (_verdict.Length > 0) Console.WriteLine($"  [{(_succeeded ? "ok" : "FAILED")}] {_verdict}");
+        if (_shellRestartNeeded) Console.WriteLine("  restart your shell for PATH changes to apply");
+
+        return code;
     }
+
+    private static bool _headless;
+    private static string _verdict = string.Empty;
 
     // ------------------------------------------------------------------ interactive
 
@@ -161,84 +193,240 @@ internal static class Program
         }
 
         _theme = LoadTheme() == "oled" ? Theme.Oled : Theme.Mocha;
+        _snapshot = TakeSnapshot();
 
         while (true)
         {
-            var choice = Menu();
-            if (choice == ExitItem) break;
+            var flow = Menu();
+            if (flow is null) break;
 
-            _mode = Mode.Log;
-            ClearLog();
-            Emit("·", MenuItems[choice]);
-
-            switch (choice)
-            {
-                case 0: Check(); break;
-                case 1:
-                    // Reports first, so the user sees what the installer is about to act
-                    // on rather than a silent winget run.
-                    var missing = FindMissing();
-                    if (missing.Count == 0) Note("nothing to install");
-                    else InstallTools(missing);
-                    break;
-                case 2: RepairPath(FindMissing()); break;
-                case 3: Build(); break;
-                case 4: InstallApp(); InstallUpdater(); break;
-                case 5: RunAllPhases(); break;
-                case 6: ShowManual(); break;
-            }
-
-            WaitForMenuKey();
+            Execute(flow.Value);
         }
 
         LeaveTui();
+
+        // The frame is gone with the alternate screen, so the one thing the user has to
+        // act on is said again where they will see it.
+        if (_shellRestartNeeded)
+            Console.WriteLine("restart your shell for PATH changes to apply");
+
         return ExitOk;
     }
 
-    private static int RunAllPhases()
+    private static void Execute(Workflow flow)
     {
-        var missing = Check();
-        if (missing)
+        _mode = Mode.Run;
+        _running = true;
+        _scroll = 0;
+        _title = flow == Workflow.BuildOnly
+            ? "Build only"
+            : MenuItems.First(item => item.Flow == flow).Label;
+        ClearLog();
+
+        var code = RunWorkflow(flow);
+
+        lock (_renderLock)
         {
-            Emit("·", "Install missing tools");
-            InstallTools(FindMissing());
+            _running = false;
+            _succeeded = code == ExitOk;
+            SkipPending();
+            _snapshot = TakeSnapshot();
+            _dirty = true;
         }
+
+        // Keys pressed while it worked would otherwise dismiss the result unread.
+        try { while (Console.KeyAvailable) Console.ReadKey(intercept: true); } catch { }
+
+        Browse();
+    }
+
+    // ------------------------------------------------------------------ workflows
+
+    private static int RunWorkflow(Workflow flow)
+    {
+        switch (flow)
+        {
+            case Workflow.CheckOnly:
+            {
+                // Report only: nothing is installed, repaired or built.
+                Plan(StepCheck);
+                var missing = false;
+                Do(StepCheck, () => { missing = Check(); return true; });
+
+                if (missing) Error("one or more tools are missing");
+                else Ok("ready to install");
+                return missing ? ExitFailed : ExitOk;
+            }
+
+            case Workflow.FixTools:
+            {
+                Plan(StepCheck, StepInstall, StepPath);
+                var unresolved = FixTools();
+
+                if (unresolved.Remove(PreferredOnly))
+                    Warn("pwsh is not installed; the runner pane will use Windows PowerShell or cmd");
+
+                if (unresolved.Count > 0)
+                {
+                    foreach (var label in unresolved)
+                        Emit("·", $"winget install -e --id {WingetFor(label)}");
+                    Error("still missing");
+                    return ExitFailed;
+                }
+
+                Ok("all required tools are on PATH");
+                return ExitOk;
+            }
+
+            case Workflow.BuildInstall:
+                Plan(StepBuildApp, StepBuildUpdater, StepInstallApp, StepInstallUpdater);
+                return BuildAndInstall();
+
+            case Workflow.BuildOnly:
+                Plan(StepBuildApp, StepBuildUpdater);
+                if (!BuildSteps()) { Error("publish failed"); return ExitFailed; }
+                Ok("publish succeeded");
+                return ExitOk;
+
+            default:
+            {
+                Plan(StepCheck, StepInstall, StepPath,
+                    StepBuildApp, StepBuildUpdater, StepInstallApp, StepInstallUpdater);
+
+                var unresolved = FixTools();
+
+                if (unresolved.Remove(PreferredOnly))
+                    Warn("pwsh is not installed; the runner pane will use Windows PowerShell or cmd");
+
+                // Refuse to build against a machine the app cannot run on: every phase after
+                // this would succeed and produce an install that fails on first use.
+                if (unresolved.Count > 0)
+                {
+                    foreach (var label in unresolved)
+                        Emit("·", $"winget install -e --id {WingetFor(label)}");
+                    Error("still missing, so the install would not run");
+                    return ExitFailed;
+                }
+
+                return BuildAndInstall();
+            }
+        }
+    }
+
+    // Check, then install and repair only what that found missing. Returns the labels
+    // that are still unresolved afterwards.
+    private static List<string> FixTools()
+    {
+        var anyMissing = false;
+        Do(StepCheck, () => { anyMissing = Check(); return true; });
+
+        if (!anyMissing)
+        {
+            Skip(StepInstall, "nothing missing");
+            Skip(StepPath, "nothing to repair");
+            return [];
+        }
+
+        Do(StepInstall, () => InstallTools(FindMissing()));
 
         var unresolved = FindMissing();
-        if (unresolved.Count > 0)
+        if (unresolved.Count == 0)
         {
-            Emit("·", "Repair PATH");
-            RepairPath(unresolved);
-            unresolved = FindMissing();
+            Skip(StepPath, "already resolved");
+            return unresolved;
         }
 
-        if (unresolved.Remove(PreferredOnly))
-            Warn("pwsh is not installed; the runner pane will use Windows PowerShell or cmd");
+        Do(StepPath, () => RepairPath(unresolved));
+        return FindMissing();
+    }
 
-        // Refuse to build against a machine the app cannot run on: every phase after
-        // this would succeed and produce an install that fails on first use.
-        if (unresolved.Count > 0)
+    private static bool BuildSteps()
+    {
+        if (!Do(StepBuildApp, BuildApp)) return false;
+        return Do(StepBuildUpdater, BuildUpdater);
+    }
+
+    private static int BuildAndInstall()
+    {
+        if (!BuildSteps())
         {
-            foreach (var label in unresolved)
-                Emit("·", $"winget install -e --id {WingetFor(label)}");
-            Error("still missing, so the install would not run");
+            Error("publish failed");
             return ExitFailed;
         }
 
-        Emit("·", "Build");
-        if (!Build()) { Error("publish failed"); return ExitFailed; }
         Ok("publish succeeded");
 
-        Emit("·", "Install Helide");
-        var installedApp = InstallApp();
-
-        Emit("·", "Install updater");
-        var installedUpdater = InstallUpdater();
+        var installedApp = Do(StepInstallApp, InstallApp);
+        var installedUpdater = Do(StepInstallUpdater, InstallUpdater);
 
         if (!installedApp || !installedUpdater) return ExitFailed;
 
         Ok("done. restart your shell, then run: helide");
         return ExitOk;
+    }
+
+    // ------------------------------------------------------------------ steps
+
+    private enum StepState { Pending, Active, Done, Failed, Skipped }
+
+    private sealed class Step
+    {
+        public string Label = string.Empty;
+        public StepState State;
+        public string Detail = string.Empty;
+    }
+
+    private static readonly List<Step> _steps = [];
+
+    private static void Plan(params string[] labels)
+    {
+        lock (_renderLock)
+        {
+            _steps.Clear();
+            foreach (var label in labels) _steps.Add(new Step { Label = label });
+            _dirty = true;
+        }
+    }
+
+    private static void SetStep(string label, StepState state, string detail = "")
+    {
+        lock (_renderLock)
+        {
+            var step = _steps.FirstOrDefault(s => s.Label == label);
+            if (step is null) return;
+
+            step.State = state;
+            step.Detail = detail;
+            _dirty = true;
+        }
+    }
+
+    private static void Skip(string label, string reason) => SetStep(label, StepState.Skipped, reason);
+
+    // Steps that will not run now read as skipped rather than as work still to come.
+    private static void SkipPending()
+    {
+        lock (_renderLock)
+        {
+            foreach (var step in _steps.Where(s => s.State == StepState.Pending))
+                step.State = StepState.Skipped;
+            _dirty = true;
+        }
+    }
+
+    // Runs one phase under its checklist row. Without a TUI the phase name is printed, as
+    // the plain output always did.
+    private static bool Do(string label, Func<bool> body)
+    {
+        SetStep(label, StepState.Active);
+        if (!_tui) Emit("·", label);
+
+        var ok = false;
+        try { ok = body(); }
+        catch (Exception ex) { Emit("FAILED", ex.Message); }
+
+        SetStep(label, ok ? StepState.Done : StepState.Failed);
+        return ok;
     }
 
     // ------------------------------------------------------------------ phases
@@ -280,15 +468,15 @@ internal static class Program
         return label;
     }
 
-    private static void InstallTools(List<string> labels)
+    private static bool InstallTools(List<string> labels)
     {
-        if (labels.Count == 0) { Note("nothing to install"); return; }
+        if (labels.Count == 0) { Note("nothing to install"); return true; }
 
         if (!WingetAvailable())
         {
             Error("winget is not available, so nothing can be installed automatically");
             Note("install App Installer from the Microsoft Store, then re-run");
-            return;
+            return false;
         }
 
         foreach (var label in labels)
@@ -298,15 +486,19 @@ internal static class Program
                 $"install -e --id {WingetFor(label)} --accept-package-agreements --accept-source-agreements");
         }
 
+        _shellRestartNeeded = true;
         Note("restart your shell for the new installs to reach PATH");
+        return true;
     }
 
     /// winget exposes portable packages through %LOCALAPPDATA%\Microsoft\WinGet\Links,
     /// which can end up empty even when the package installed correctly. The install
     /// directory is added to the user PATH instead of chasing that.
-    private static void RepairPath(List<string> labels)
+    private static bool RepairPath(List<string> labels)
     {
-        if (labels.Count == 0) { Note("nothing to repair"); return; }
+        if (labels.Count == 0) { Note("nothing to repair"); return true; }
+
+        var allFixed = true;
 
         foreach (var label in labels)
         {
@@ -314,11 +506,17 @@ internal static class Program
             if (IsOnPath(exe)) { Emit("ok", $"{label,-9} resolved elsewhere"); continue; }
 
             var dir = FindWingetInstallDir(exe);
-            if (dir is null) { Emit("FAILED", $"{label,-9} not found under WinGet\\Packages"); continue; }
+            if (dir is null)
+            {
+                Emit("FAILED", $"{label,-9} not found under WinGet\\Packages");
+                allFixed = false;
+                continue;
+            }
 
             switch (AddToUserPath(dir))
             {
                 case "added":
+                    _shellRestartNeeded = true;
                     Emit("fixed", $"{label,-9} + {dir}");
                     break;
                 case "present":
@@ -326,11 +524,13 @@ internal static class Program
                     break;
                 default:
                     Emit("FAILED", $"{label,-9} could not add {dir}");
+                    allFixed = false;
                     break;
             }
         }
 
         Note("restart your shell for PATH changes to apply");
+        return allFixed;
     }
 
     private static string ExeFor(string label)
@@ -340,7 +540,7 @@ internal static class Program
         return label;
     }
 
-    private static bool Build()
+    private static bool BuildApp()
     {
         if (!File.Exists(AppProject))
         {
@@ -353,9 +553,11 @@ internal static class Program
         var selfContained = _selfContained ? "--self-contained" : "--self-contained:false";
 
         Emit("build", $"dotnet publish Helide.csproj -c Release -r win-x64 {selfContained}");
-        if (Run("dotnet", $"publish \"{AppProject}\" -c Release -r win-x64 {selfContained}", _repoRoot) != 0)
-            return false;
+        return Run("dotnet", $"publish \"{AppProject}\" -c Release -r win-x64 {selfContained}", _repoRoot) == 0;
+    }
 
+    private static bool BuildUpdater()
+    {
         // The updater is its own project and is excluded from Helide.csproj, so nothing
         // above built it.
         if (!File.Exists(UpdaterProject))
@@ -363,6 +565,8 @@ internal static class Program
             Note("no AutoUpdater.csproj under tools\\, skipping");
             return true;
         }
+
+        var selfContained = _selfContained ? "--self-contained" : "--self-contained:false";
 
         Emit("build", $"dotnet publish AutoUpdater.csproj -c Release -r win-x64 {selfContained}");
         return Run("dotnet",
@@ -391,6 +595,7 @@ internal static class Program
         switch (AddToUserPath(InstallDir))
         {
             case "added":
+                _shellRestartNeeded = true;
                 Emit("fixed", $"added to user PATH: {InstallDir}");
                 break;
             case "present":
@@ -435,6 +640,47 @@ internal static class Program
         // Deliberately no PATH entry and no Start Menu shortcut: it is an internal tool
         // that finds the app by looking next to itself, so it needs nothing else.
         return true;
+    }
+
+    // ------------------------------------------------------------------ snapshot
+
+    // What the menu shows before anything is run, so the first screen answers "what state
+    // is this machine in" instead of making the user pick "Check" to find out.
+    private sealed record Snapshot(
+        List<(string Label, string Exe, bool Found)> Tools,
+        List<(string Label, bool Found)> Agents,
+        string? AppVersion,
+        bool UpdaterInstalled,
+        bool Built);
+
+    private static Snapshot _snapshot = new([], [], null, false, false);
+
+    private static Snapshot TakeSnapshot()
+    {
+        var tools = Requirements.Select(r => (r.Label, r.Exe, IsOnPath(r.Exe))).ToList();
+        var agents = OptionalAgents.Select(a => (a.Label, IsOnPath(a.Exe))).ToList();
+
+        string? version = null;
+        try
+        {
+            var exe = Path.Combine(InstallDir, "Helide.exe");
+            if (File.Exists(exe))
+            {
+                version = FileVersionInfo.GetVersionInfo(exe).FileVersion ?? "?";
+                var plus = version.IndexOf('+');
+                if (plus >= 0) version = version[..plus];
+                if (version.EndsWith(".0", StringComparison.Ordinal) && version.Count(c => c == '.') == 3)
+                    version = version[..^2];
+            }
+        }
+        catch { version = "?"; }
+
+        return new Snapshot(
+            tools,
+            agents,
+            version,
+            File.Exists(Path.Combine(InstallDir, "AutoUpdater.exe")),
+            File.Exists(AppArtifact));
     }
 
     // ------------------------------------------------------------------ helpers
@@ -704,7 +950,20 @@ internal static class Program
 
     // ------------------------------------------------------------------ TUI
 
-    private enum Mode { Menu, Log }
+    private enum Mode { Menu, Run, Manual }
+
+    // Every glyph below is ASCII, Latin-1, single-line box drawing or a block element.
+    // Rounded corners, braille, arrows and the geometric circles are missing from common
+    // terminal fonts and come out as a "?" or as nothing at all.
+    private static readonly string[] Spinner = ["|", "/", "-", "\\"];
+
+    private const string Bold = "\x1b[1m";
+    private const int FrameRows = 2;
+    private const int FrameColumns = 4;
+    private const int LogoMargin = 4;
+    private const int Pad = 2;
+    private const int MinimumRightInner = 46;
+    private const int MaximumContent = 76;
 
     private static bool _tui;
     private static Mode _mode = Mode.Menu;
@@ -716,23 +975,20 @@ internal static class Program
     private static int _width;
     private static int _height;
     private static int _selected;
-    private static string _footer = string.Empty;
-
-    // The art is 64 columns at its widest and there is no point in a content pane
-    // narrower than this, so the left pane is fixed at the art's width and only the
-    // window being too narrow ever shrinks it. Sizing it from the window instead (half
-    // of it, say) clips the mark on exactly the widths that could have shown it whole.
-    private const int PaneWidth = 64;
-    private const int MinimumRightInner = 44;
-
-    private static readonly string[] Wordmark = ["helide"];
-
-    private const string Tagline = "A terminal workspace that brings the project tools you need";
+    private static int _frame;
+    private static bool _dirty = true;
+    private static bool _running;
+    private static bool _succeeded;
+    private static string _title = string.Empty;
 
     private static readonly List<(string Tag, string Message)> _log = [];
     private static readonly object _renderLock = new();
-
     private static string[] _logo = [];
+    private static int _logoWidth;
+    private static Timer? _ticker;
+
+    // Held only so it can be unsubscribed on the way out.
+    private static ConsoleCancelEventHandler? _cancelHandler;
 
     private static bool TryEnterTui()
     {
@@ -748,8 +1004,17 @@ internal static class Program
             return false;
         }
 
-        _logo = EmbeddedLogo().Split('\n');
+        _logo = CropMark(EmbeddedLogo().Split('\n'));
+        _logoWidth = _logo.Length == 0 ? 0 : _logo[0].Length;
         _tui = true;
+
+        // The frame is drawn on the terminal's alternate screen, which is what a full
+        // screen program is meant to use: nothing scrolls behind it, and leaving throws
+        // it away and puts the shell's own scrollback back exactly as it was.
+        Console.Write("\x1b[?1049h");
+        Console.Write(Background.Sequence(Theme.Mocha.WindowAsRgb));
+        Console.Write("\x1b[2J\x1b[H");
+        Console.CursorVisible = false;
 
         // Ctrl-C is delivered as a console event rather than a key, and the default
         // behaviour tears the process down on the spot -- so the cursor stays hidden, the
@@ -759,12 +1024,12 @@ internal static class Program
         _cancelHandler = OnCancelKeyPress;
         Console.CancelKeyPress += _cancelHandler;
 
-        Console.CursorVisible = false;
+        // One heartbeat for spinner animation and for lines produced on other threads.
+        // A winget install can be silent for a minute, and a frame that only repainted
+        // on output looked frozen for exactly that long.
+        _ticker = new Timer(Tick, null, 80, 80);
         return true;
     }
-
-    // Held only so it can be unsubscribed on the way out.
-    private static ConsoleCancelEventHandler? _cancelHandler;
 
     private static void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
     {
@@ -778,8 +1043,14 @@ internal static class Program
 
     private static void LeaveTui()
     {
-        if (!_tui) return;
-        _tui = false;
+        lock (_renderLock)
+        {
+            if (!_tui) return;
+            _tui = false;
+        }
+
+        _ticker?.Dispose();
+        _ticker = null;
 
         if (_cancelHandler is not null)
         {
@@ -787,18 +1058,40 @@ internal static class Program
             _cancelHandler = null;
         }
 
-        // The pane background was set with a raw escape sequence, which ResetColor knows
-        // nothing about, so it is undone before the screen is repainted with whatever the
-        // terminal was using before.
+        // The brush was set with a raw escape, which ResetColor knows nothing about, so it
+        // is undone first. Dropping the alternate screen then discards the frame and
+        // restores whatever the shell had before.
         Console.Write(Ansi.Reset);
         Console.ResetColor();
-        Console.Clear();
         Console.CursorVisible = true;
+        Console.Write("\x1b[?1049l");
     }
 
-    /// Collapses the buffer to the window so the terminal has nothing to scroll, and
-    /// never writes the bottom-right cell -- which is what forces a scroll even when
-    /// the buffer already matches.
+    // Cuts the mark out of its frame and trims the empty margin around the hourglass.
+    private static string[] CropMark(string[] source)
+    {
+        var rows = source
+            .Select(line => line.TrimEnd('\r'))
+            .Skip(FrameRows)
+            .Take(Math.Max(0, source.Length - 2 * FrameRows))
+            .Select(line => line.Length > 2 * FrameColumns
+                ? line[FrameColumns..^FrameColumns]
+                : string.Empty)
+            .ToList();
+
+        while (rows.Count > 0 && rows[0].Trim().Length == 0) rows.RemoveAt(0);
+        while (rows.Count > 0 && rows[^1].Trim().Length == 0) rows.RemoveAt(rows.Count - 1);
+        if (rows.Count == 0) return [];
+
+        var inked = rows.Where(row => row.Trim().Length > 0).ToList();
+        var left = inked.Min(row => row.Length - row.TrimStart().Length);
+        var right = inked.Max(row => row.TrimEnd().Length);
+        if (right <= left) return [];
+
+        return rows.Select(row => row.PadRight(right)[left..right]).ToArray();
+    }
+
+    /// Collapses the buffer to the window so the terminal has nothing to scroll.
     private static void LockViewport()
     {
         try
@@ -818,61 +1111,410 @@ internal static class Program
         }
     }
 
-    private static int LeftInner =>
-        _width - 3 >= PaneWidth + MinimumRightInner ? PaneWidth : Math.Max(20, _width - 3 - MinimumRightInner);
-
-    private static int RightInner => Math.Max(12, _width - 3 - LeftInner);
-
-    // One column between the panes, which is where the vertical rule runs.
-    private static int DividerColumn => LeftInner + 1;
-
-    private static int TitleRow => 0;
-    private static int DividerRow => _height - 2;
-    private static int StatusRow => _height - 1;
-
-    // Rows available between the title and the rule above the status bar.
-    private static int PaneRows => DividerRow - TitleRow - 1;
-
-    private static void Render()
+    private static void Tick(object? _)
     {
-        if (!_tui) return;
-
         lock (_renderLock)
         {
-            LockViewport();
+            if (!_tui) return;
 
-            // The window brush paints the whole viewport, so the box sits on the theme's
-            // background rather than the terminal's own.
-            Console.Write(Background.Sequence(_theme.WindowAsRgb));
-            Console.Clear();
+            _frame++;
 
-            var left = LeftPaneLines();
-            var right = RightPaneLines();
+            var animating = _running && _steps.Any(step => step.State == StepState.Active);
+            var resized = false;
+            try { resized = Console.WindowWidth != _width || Console.WindowHeight != _height; } catch { }
 
-            for (var row = TitleRow + 1; row < DividerRow; row++)
-            {
-                var index = row - TitleRow - 1;
-                var (leftText, leftColour) = index < left.Count ? left[index] : (string.Empty, _theme.Mauve);
-                var (rightText, rightColour) = index < right.Count ? right[index] : (string.Empty, _theme.TextMuted);
-
-                WriteRow(row, _theme.Border + "║" + Ansi.Reset
-                    + leftColour + Fit(leftText, LeftInner) + Ansi.Reset
-                    + _theme.Border + "║" + Ansi.Reset
-                    + rightColour + Fit(rightText, RightInner) + Ansi.Reset
-                    + _theme.Border + "║" + Ansi.Reset);
-            }
-
-            WriteRow(TitleRow, TitleRowLine());
-            WriteRow(DividerRow, DividerRowLine());
-            WriteRow(StatusRow, StatusRowLine());
-
-            // Parked inside the box on purpose. A cursor left on the final cell is what
-            // makes a console scroll, even when the buffer already fits the window.
-            Console.SetCursorPosition(0, 0);
+            if (_dirty || animating || resized) Render();
         }
     }
 
-    
+    private static void Render()
+    {
+        lock (_renderLock)
+        {
+            if (!_tui) return;
+
+            LockViewport();
+            _dirty = false;
+
+            // One write per frame, positioned with escapes.
+            Console.Write(BuildFrame());
+        }
+    }
+
+    // ------------------------------------------------------------------ layout
+
+    private readonly record struct Cell(string Text, string Style);
+
+    private static readonly Cell[] Blank = [];
+
+    private static int LogoPane => _logoWidth + 2 * LogoMargin;
+
+    private static string BuildFrame()
+    {
+        var sb = new StringBuilder(_width * _height * 4);
+        sb.Append("\x1b[0m").Append(Background.Sequence(_theme.WindowAsRgb));
+
+        if (_width < 40 || _height < 9)
+        {
+            for (var row = 0; row < _height; row++)
+            {
+                MoveTo(sb, row);
+                AppendCell(sb, _width, row == 0 ? [new Cell("helide check & install", _theme.Mauve)] : Blank, 0);
+            }
+
+            sb.Append("\x1b[1;1H");
+            return sb.ToString();
+        }
+
+        var border = _theme.Border;
+        var withLogo = _logoWidth > 0
+            && _width - 3 - LogoPane >= MinimumRightInner
+            && _height - 3 >= _logo.Length;
+
+        var leftInner = withLogo ? LogoPane : 0;
+        var rightInner = withLogo ? _width - 3 - leftInner : _width - 2;
+        var rows = _height - 3;
+
+        var pane = BuildPane(Math.Min(rightInner - 2 * Pad, MaximumContent), rows);
+        var offset = withLogo ? Math.Max(0, (rows - _logo.Length) / 2) : 0;
+
+        // Top rule: brand on the left, the palette on the right.
+        MoveTo(sb, 0);
+        var title = new[]
+        {
+            new Cell("┌─ ", border),
+            new Cell("helide", Bold + _theme.Mauve),
+            new Cell(" check & install ", _theme.TextMuted),
+        };
+        var palette = new[]
+        {
+            new Cell(" " + _theme.Name + " ", _theme.TextFaint),
+            new Cell("─┐", border),
+        };
+        var gap = Math.Max(1, _width - title.Sum(c => c.Text.Length) - palette.Sum(c => c.Text.Length));
+        foreach (var cell in title) AppendRun(sb, cell);
+        AppendRun(sb, new Cell(new string('─', gap), border));
+        foreach (var cell in palette) AppendRun(sb, cell);
+
+        for (var row = 0; row < rows; row++)
+        {
+            MoveTo(sb, row + 1);
+            AppendRun(sb, new Cell("│", border));
+
+            if (withLogo)
+            {
+                var index = row - offset;
+                var mark = index >= 0 && index < _logo.Length
+                    ? new[] { new Cell(_logo[index], Gradient(_logo.Length <= 1 ? 0 : index / (double)(_logo.Length - 1))) }
+                    : Blank;
+
+                AppendCell(sb, leftInner, mark, LogoMargin);
+                AppendRun(sb, new Cell("│", border));
+            }
+
+            AppendCell(sb, rightInner, row < pane.Count ? pane[row] : Blank, Pad);
+            AppendRun(sb, new Cell("│", border));
+        }
+
+        MoveTo(sb, _height - 2);
+        AppendRun(sb, new Cell(
+            withLogo
+                ? "└" + new string('─', leftInner) + "┴" + new string('─', rightInner) + "┘"
+                : "└" + new string('─', rightInner) + "┘",
+            border));
+
+        // Keyboard hints sit outside the frame, so the box stays a pure status surface.
+        MoveTo(sb, _height - 1);
+        AppendCell(sb, _width, Hints(), 0);
+
+        // Parked on the first cell on purpose: a cursor left on the final cell is what
+        // makes a console scroll, even when the buffer already fits.
+        sb.Append("\x1b[1;1H");
+        return sb.ToString();
+    }
+
+    private static Cell[] Hints()
+    {
+        var key = _theme.TextMuted;
+        var text = _theme.TextFaint;
+
+        if (_mode == Mode.Run && _running)
+            return [new Cell(" working", key), new Cell("   Ctrl+C", key), new Cell(" quit", text)];
+
+        if (_mode != Mode.Menu)
+        {
+            var more = _scroll > 0 ? $"   [ {_scroll} more above ]" : string.Empty;
+            return
+            [
+                new Cell(" Up/Down", key), new Cell(" scroll   ", text),
+                new Cell("PgUp/PgDn", key), new Cell(" page   ", text),
+                new Cell("any other key", key), new Cell((_headless ? " close" : " back") + more, text),
+            ];
+        }
+
+        return
+        [
+            new Cell(" Up/Down", key), new Cell(" move   ", text),
+            new Cell("Enter", key), new Cell(" run   ", text),
+            new Cell("1-" + MenuItems.Length, key), new Cell(" jump   ", text),
+            new Cell("R", key), new Cell(" recheck   ", text),
+            new Cell("?", key), new Cell(" manual   ", text),
+            new Cell("T", key), new Cell(" theme   ", text),
+            new Cell("Esc", key), new Cell(" quit", text),
+        ];
+    }
+
+    private static List<Cell[]> BuildPane(int width, int rows) => _mode switch
+    {
+        Mode.Menu => MenuPane(width),
+        Mode.Manual => ManualPane(width, rows),
+        _ => RunPane(width, rows),
+    };
+
+    private static Cell[] Rule(string label, int width) =>
+    [
+        new Cell(label + " ", _theme.TextFaint),
+        new Cell(new string('─', Math.Max(0, width - label.Length - 1)), _theme.Border),
+    ];
+
+    private static (string Glyph, string Style) Glyph(bool ok, bool required = true) =>
+        ok ? ("√", _theme.Success)
+           : required ? ("×", _theme.Danger) : ("-", _theme.TextFaint);
+
+    // What the machine looks like and what can be done about it, in that order of need:
+    // the verdict, the actions, then the detail behind the verdict.
+    private static List<Cell[]> MenuPane(int width)
+    {
+        var lines = new List<Cell[]> { Blank };
+        var snap = _snapshot;
+
+        var missing = snap.Tools.Where(t => !t.Found && t.Label != PreferredOnly).Select(t => t.Label).ToList();
+
+        lines.Add([new Cell("Helide check & install", Bold + _theme.Accent)]);
+        lines.Add(missing.Count == 0
+            ? [new Cell("√ ", _theme.Success), new Cell("every required tool is on PATH", _theme.TextMuted)]
+            : [new Cell("× ", _theme.Danger),
+               new Cell($"{missing.Count} required tool{(missing.Count == 1 ? "" : "s")} missing: {string.Join(", ", missing)}", _theme.Danger)]);
+        lines.Add(Blank);
+
+        for (var index = 0; index < MenuItems.Length; index++)
+        {
+            var selected = index == _selected;
+            var label = MenuItems[index].Label.PadRight(24);
+
+            lines.Add(
+            [
+                new Cell(selected ? "> " : "  ", _theme.Accent),
+                new Cell($"{index + 1}  ", selected ? _theme.Text : _theme.TextFaint),
+                new Cell(label, selected ? Bold + _theme.Text : _theme.TextMuted),
+                new Cell(Hint(MenuItems[index].Flow, missing), _theme.TextFaint),
+            ]);
+        }
+
+        lines.Add(Blank);
+        lines.Add(Rule("tools", width));
+
+        foreach (var (label, exe, found) in snap.Tools)
+        {
+            var required = label != PreferredOnly;
+            var (glyph, style) = Glyph(found, required);
+            lines.Add(
+            [
+                new Cell(glyph + "  ", style),
+                new Cell(label.PadRight(10), found ? _theme.TextMuted : _theme.Text),
+                new Cell(exe.PadRight(10), _theme.TextFaint),
+                new Cell(found ? string.Empty : required ? "missing" : "optional, not installed",
+                    required ? _theme.Danger : _theme.TextFaint),
+            ]);
+        }
+
+        var agents = new List<Cell>();
+        foreach (var (label, found) in snap.Agents)
+        {
+            var (glyph, style) = Glyph(found, required: false);
+            agents.Add(new Cell(glyph + " ", style));
+            agents.Add(new Cell(label.PadRight(10), found ? _theme.TextMuted : _theme.TextFaint));
+        }
+
+        lines.Add(Blank);
+        lines.Add(Rule("agents (optional)", width));
+        lines.Add(agents.ToArray());
+
+        lines.Add(Blank);
+        lines.Add(Rule("helide", width));
+
+        lines.Add(
+        [
+            new Cell((snap.AppVersion is null ? "-" : "√") + "  ", snap.AppVersion is null ? _theme.TextFaint : _theme.Success),
+            new Cell("app".PadRight(10), _theme.TextMuted),
+            new Cell(snap.AppVersion is null ? "not installed" : $"v{snap.AppVersion}", _theme.TextFaint),
+        ]);
+        lines.Add(
+        [
+            new Cell((snap.UpdaterInstalled ? "√" : "-") + "  ", snap.UpdaterInstalled ? _theme.Success : _theme.TextFaint),
+            new Cell("updater".PadRight(10), _theme.TextMuted),
+            new Cell(snap.UpdaterInstalled ? "installed" : "not installed", _theme.TextFaint),
+        ]);
+        lines.Add(
+        [
+            new Cell((snap.Built ? "√" : "-") + "  ", snap.Built ? _theme.Success : _theme.TextFaint),
+            new Cell("build".PadRight(10), _theme.TextMuted),
+            new Cell(snap.Built ? "published exe present" : "not built yet", _theme.TextFaint),
+        ]);
+        lines.Add(
+        [
+            new Cell("   ", _theme.TextFaint),
+            new Cell("source".PadRight(10), _theme.TextMuted),
+            new Cell(_repoRoot, _theme.TextFaint),
+        ]);
+
+        return lines;
+    }
+
+    private static string Hint(Workflow flow, List<string> missing) => flow switch
+    {
+        Workflow.Setup => missing.Count > 0
+            ? "fix tools, then build and install"
+            : _snapshot.AppVersion is null ? "build and install Helide" : "rebuild and reinstall",
+        Workflow.FixTools => missing.Count > 0 ? "install + repair PATH" : "nothing to fix",
+        Workflow.BuildInstall => _snapshot.AppVersion is null ? "first install" : $"installed v{_snapshot.AppVersion}",
+        _ => string.Empty,
+    };
+
+    private static List<Cell[]> RunPane(int width, int rows)
+    {
+        var lines = new List<Cell[]> { Blank };
+
+        var (headline, tone) = _running
+            ? (_title, _theme.Accent)
+            : _succeeded ? ($"{_title}: done", _theme.Success) : ($"{_title}: stopped, see the log", _theme.Danger);
+        lines.Add([new Cell(headline, Bold + tone)]);
+        lines.Add(Blank);
+
+        foreach (var step in _steps)
+        {
+            var (glyph, glyphStyle, labelStyle) = step.State switch
+            {
+                StepState.Active => (Spinner[_frame / 2 % Spinner.Length], _theme.Accent, Bold + _theme.Text),
+                StepState.Done => ("√", _theme.Success, _theme.TextMuted),
+                StepState.Failed => ("×", _theme.Danger, Bold + _theme.Danger),
+                StepState.Skipped => ("-", _theme.TextFaint, _theme.TextFaint),
+                _ => ("·", _theme.TextFaint, _theme.TextFaint),
+            };
+
+            lines.Add(
+            [
+                new Cell(glyph + "  ", glyphStyle),
+                new Cell(step.Label.PadRight(24), labelStyle),
+                new Cell(step.Detail, _theme.TextFaint),
+            ]);
+        }
+
+        lines.Add(Blank);
+        lines.Add(Rule("activity", width));
+
+        // The log is the only part that grows, so it takes whatever rows are left and
+        // shows its tail, which is where a build log is always wanted.
+        var entries = new List<Cell[]>();
+        foreach (var (tag, message) in _log)
+        {
+            var (glyph, colour, body) = tag switch
+            {
+                "ok" or "fixed" => ("√", _theme.Success, _theme.TextMuted),
+                "missing" or "FAILED" => ("×", _theme.Danger, _theme.Danger),
+                "skipped" => ("-", _theme.TextFaint, _theme.TextFaint),
+                "!" => ("!", _theme.Mauve, _theme.TextMuted),
+                "build" or "install" or "copied" or "link" => (">", _theme.Accent, _theme.TextMuted),
+                _ => ("·", _theme.TextFaint, _theme.TextMuted),
+            };
+
+            var first = true;
+            foreach (var wrapped in Wrap(message, Math.Max(4, width - 2)))
+            {
+                entries.Add([new Cell(first ? glyph + " " : "  ", colour), new Cell(wrapped, body)]);
+                first = false;
+            }
+        }
+
+        Page(lines, entries, rows);
+        return lines;
+    }
+
+    private static List<Cell[]> ManualPane(int width, int rows)
+    {
+        var lines = new List<Cell[]> { Blank, new[] { new Cell("Manual", Bold + _theme.Accent) }, Blank };
+
+        var entries = new List<Cell[]>();
+        foreach (var line in Manual.Split('\n'))
+        {
+            var text = line.TrimEnd('\r');
+            var isHeading = text.Length > 0 && text.All(c => char.IsUpper(c) || c == ' ');
+
+            foreach (var wrapped in Wrap(text, width))
+                entries.Add([new Cell(wrapped, isHeading ? Bold + _theme.Mauve : _theme.TextMuted)]);
+
+            if (text.Length == 0) entries.Add(Blank);
+        }
+
+        Page(lines, entries, rows);
+        return lines;
+    }
+
+    // Appends the visible window of a scrollable list. Zero is the tail; anything higher
+    // has been moved up, and without that nothing longer than the pane is reachable.
+    private static void Page(List<Cell[]> lines, List<Cell[]> entries, int rows)
+    {
+        var available = Math.Max(1, rows - lines.Count);
+        var maxScroll = Math.Max(0, entries.Count - available);
+        _scroll = Math.Clamp(_scroll, 0, maxScroll);
+
+        var start = Math.Max(0, entries.Count - available - _scroll);
+        lines.AddRange(entries.Skip(start).Take(available));
+    }
+
+    // ------------------------------------------------------------------ drawing
+
+    private static string Gradient(double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        var (fromR, fromG, fromB) = _theme.GradientFrom;
+        var (toR, toG, toB) = _theme.GradientTo;
+
+        int Lerp(int from, int to) => (int)Math.Round(from + (to - from) * t);
+        return Ansi.Rgb(Lerp(fromR, toR), Lerp(fromG, toG), Lerp(fromB, toB));
+    }
+
+    private static void MoveTo(StringBuilder sb, int row) =>
+        sb.Append("\x1b[").Append(row + 1).Append(";1H");
+
+    // Colour is set and then only the foreground and weight are reset, so the window
+    // brush written at the top of the frame stays on every cell it passes through.
+    private static void AppendRun(StringBuilder sb, Cell cell) =>
+        sb.Append(cell.Style).Append(cell.Text).Append("\x1b[22;39m");
+
+    // Writes exactly `width` cells: the margin, the runs clipped to what is left, and
+    // blanks to the edge. Clipping marks itself so nothing is cut silently.
+    private static void AppendCell(StringBuilder sb, int width, Cell[] runs, int pad)
+    {
+        var room = Math.Max(0, width - 2 * pad);
+        sb.Append(' ', Math.Min(pad, width));
+
+        var written = 0;
+        foreach (var run in runs)
+        {
+            var remaining = room - written;
+            if (remaining <= 0) break;
+
+            var text = run.Text;
+            if (text.Length > remaining)
+                text = remaining > 2 ? text[..(remaining - 2)] + ".." : text[..remaining];
+
+            AppendRun(sb, new Cell(text, run.Style));
+            written += text.Length;
+        }
+
+        sb.Append(' ', Math.Max(0, width - Math.Min(pad, width) - written));
+    }
 
     // Wraps to the pane and keeps indentation, because the manual is laid out with it and
     // a wrapping that drops it leaves each row flush against the border. A token with no
@@ -884,8 +1526,6 @@ internal static class Program
         if (width < 4) return [text];
 
         var lines = new List<string>();
-
-        // Room for the indent on every row, including the first.
         var budget = Math.Max(8, width - 8);
 
         foreach (var raw in text.Split('\n'))
@@ -897,8 +1537,16 @@ internal static class Program
             var indent = line[..^trimmed.Length];
             var current = string.Empty;
 
-            foreach (var word in trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            // Empty tokens are the extra spaces of an aligned column; dropping them is
+            // what flattened "name      description" into "name description".
+            foreach (var word in trimmed.Split(' '))
             {
+                if (word.Length == 0)
+                {
+                    if (current.Length > 0) current += " ";
+                    continue;
+                }
+
                 foreach (var piece in Chunk(word, budget))
                 {
                     if (current.Length == 0) current = indent + piece;
@@ -921,159 +1569,37 @@ internal static class Program
             yield return text.Substring(start, Math.Min(size, text.Length - start));
     }
 
-    // The two panes are built first and then drawn row by row, so a pane's contents can
-    // never be written over the frame -- which is what made the rule drift.
-    private static List<(string Text, string Colour)> LeftPaneLines()
-    {
-        var rows = PaneRows;
-        var offset = Math.Max(0, (rows - _logo.Length) / 2);
-        var lines = new List<(string, string)>();
-
-        for (var index = 0; index < rows; index++)
-        {
-            var source = index - offset;
-            lines.Add(source >= 0 && source < _logo.Length ? (_logo[source], _theme.Mauve) : (string.Empty, _theme.Mauve));
-        }
-
-        return lines;
-    }
-
-    private static List<(string Text, string Colour)> RightPaneLines()
-    {
-        var lines = new List<(string, string)>();
-        var width = RightInner - 2;
-
-        if (_mode == Mode.Menu)
-        {
-            // The line the product puts above the menu: what Helide is, rather than only
-            // what this tool is about to do.
-            foreach (var line in Wrap(Tagline, width))
-                lines.Add((line, _theme.TextFaint));
-
-            lines.Add((string.Empty, _theme.TextFaint));
-            lines.Add(($"{_repoRoot}", _theme.TextFaint));
-            lines.Add((string.Empty, _theme.TextFaint));
-
-            for (var index = 0; index < MenuItems.Length; index++)
-            {
-                var colour = index == _selected ? _theme.TextStrong : _theme.TextMuted;
-                lines.Add((index == _selected ? $"❯ {MenuItems[index]}" : $"  {index + 1}  {MenuItems[index]}", colour));
-            }
-        }
-        else
-        {
-            var theme = _theme;
-            var entries = new List<(string Text, string Colour)>();
-
-            foreach (var (tag, message) in _log)
-            {
-                var colour = tag switch
-                {
-                    "ok" or "fixed" => theme.Success,
-                    "missing" => theme.TextMuted,
-                    "FAILED" or "!" => theme.Danger,
-                    "build" or "install" or "copied" or "link" => theme.TextFaint,
-                    _ => theme.TextMuted,
-                };
-
-                var prefix = tag == "·" ? string.Empty : $"[{tag,-7}] ";
-                foreach (var wrapped in Wrap(prefix + message, width))
-                    entries.Add((wrapped, colour));
-            }
-
-            // The pane is a fixed height and the log is not, so it scrolls: zero is the
-            // tail, where a build log is always wanted, and anything higher has been
-            // moved up. Without this nothing longer than the pane is reachable at all --
-            // the top of the manual simply cannot be seen.
-            var available = PaneRows;
-            var maxScroll = Math.Max(0, entries.Count - available);
-            _scroll = Math.Clamp(_scroll, 0, maxScroll);
-
-            var start = Math.Max(0, entries.Count - available - _scroll);
-            lines.AddRange(entries.Skip(start).Take(available));
-        }
-
-        return lines;
-    }
-
-    // Every boxed row is assembled once, at exactly _width cells, with each segment
-    // padded or truncated to its own column budget. Nothing is written over anything
-    // else, so the corners cannot drift apart the way a repaint stack does.
-    private static string TitleRowLine()
-    {
-        var inner = _width - 2;
-        var brand = $" {Wordmark[0]} ";
-        var tool = "check & install";
-        var theme = _theme == Theme.Mocha ? "mocha" : "oled";
-
-        var gap = Math.Max(1, inner - brand.Length - tool.Length - $"{theme}  {_repoRoot}".Length);
-        var detailWidth = inner - brand.Length - tool.Length - gap;
-
-        var head = _theme.Mauve + brand + Ansi.Reset
-            + _theme.TextMuted + tool + Ansi.Reset
-            + _theme.Border + new string('═', gap) + Ansi.Reset;
-
-        var detail = detailWidth > 0
-            ? _theme.TextFaint + Fit($"{theme}  {_repoRoot}", detailWidth) + Ansi.Reset
-            : _theme.Border + new string('═', detailWidth < 0 ? 0 : 0) + Ansi.Reset;
-
-        return _theme.Border + "╔" + head + detail + "╗" + Ansi.Reset;
-    }
-
-    private static string DividerRowLine() =>
-        _theme.Border + "╠" + new string('═', LeftInner) + "╬" + new string('═', RightInner) + "╣" + Ansi.Reset;
-
-    // The bottom rule is also the status bar, so the frame closes without spending a row
-    // of its own, and the footer still gets the full width.
-    private static string StatusRowLine()
-    {
-        var content = Fit($" {_footer} ", _width - 2);
-        return _theme.Border + "╚" + Ansi.Reset + _theme.TextFaint + content + Ansi.Reset + _theme.Border + "╝" + Ansi.Reset;
-    }
-
-    private static void WriteRow(int row, string line)
-    {
-        Console.SetCursorPosition(0, row);
-        Console.Write(line);
-    }
-
-    // Every column budget is honoured exactly -- padded when short, truncated when long
-    // -- because the frame is assembled from these widths and a single overflow shifts
-    // every row that follows it.
-    private static string Fit(string text, int width)
-    {
-        if (width <= 0) return string.Empty;
-        if (string.IsNullOrEmpty(text)) return new string(' ', width);
-        return text.Length <= width ? text.PadRight(width) : text[..width];
-    }
-
-    
-
     private static void ClearLog()
     {
         lock (_renderLock)
         {
             _log.Clear();
             _scroll = 0;
-            Render();
+            _dirty = true;
         }
     }
 
     // ------------------------------------------------------------------ input
 
-    private static int Menu()
+    // Returns the workflow to run, or null to quit.
+    private static Workflow? Menu()
     {
         _mode = Mode.Menu;
-        _footer = "↑↓ move · Enter select · 1-7 jump · T theme · Esc quit";
+        _scroll = 0;
+        _dirty = true;
         Render();
-
-        Console.CursorVisible = false;
 
         while (true)
         {
-            var key = Console.ReadKey(intercept: true).Key;
+            var key = Console.ReadKey(intercept: true);
 
-            switch (key)
+            if (key.KeyChar >= '1' && key.KeyChar < '1' + MenuItems.Length)
+            {
+                _selected = key.KeyChar - '1';
+                return MenuItems[_selected].Flow;
+            }
+
+            switch (key.Key)
             {
                 case ConsoleKey.UpArrow:
                     _selected = (_selected - 1 + MenuItems.Length) % MenuItems.Length;
@@ -1082,106 +1608,84 @@ internal static class Program
                     _selected = (_selected + 1) % MenuItems.Length;
                     break;
                 case ConsoleKey.Enter:
-                    if (_selected == ExitItem) return ExitItem;
-                    return _selected;
+                    return MenuItems[_selected].Flow;
                 case ConsoleKey.Escape:
-                    return ExitItem;
+                case ConsoleKey.Q:
+                    return null;
+                case ConsoleKey.B:
+                    return Workflow.BuildOnly;
+                case ConsoleKey.R:
+                    _snapshot = TakeSnapshot();
+                    break;
                 case ConsoleKey.T:
                     _theme = _theme == Theme.Mocha ? Theme.Oled : Theme.Mocha;
                     break;
-                case ConsoleKey.D1:
-                case ConsoleKey.NumPad1:
-                    if (_selected != 0) return 0;
+                case ConsoleKey.F1:
+                case ConsoleKey.H:
+                    ShowManualView();
+                    _mode = Mode.Menu;
                     break;
-                case ConsoleKey.D2:
-                case ConsoleKey.NumPad2:
-                    if (_selected != 1) return 1;
-                    break;
-                case ConsoleKey.D3:
-                case ConsoleKey.NumPad3:
-                    if (_selected != 2) return 2;
-                    break;
-                case ConsoleKey.D4:
-                case ConsoleKey.NumPad4:
-                    if (_selected != 3) return 3;
-                    break;
-                case ConsoleKey.D5:
-                case ConsoleKey.NumPad5:
-                    if (_selected != 4) return 4;
-                    break;
-                case ConsoleKey.D6:
-                case ConsoleKey.NumPad6:
-                    if (_selected != 5) return 5;
-                    break;
-                case ConsoleKey.D7:
-                case ConsoleKey.NumPad7:
-                    if (_selected != 6) return 6;
-                    break;
-                case ConsoleKey.D8:
-                case ConsoleKey.NumPad8:
-                    return ExitItem;
                 default:
-                    continue;
+                    if (key.KeyChar == '?')
+                    {
+                        ShowManualView();
+                        _mode = Mode.Menu;
+                    }
+                    else continue;
+                    break;
             }
 
+            _dirty = true;
             Render();
         }
     }
 
-    private static void WaitForMenuKey()
+    private static void ShowManualView()
     {
-        SetFooter();
+        _mode = Mode.Manual;
+        _running = false;
+
+        // The pane pins to its tail by default, and a manual is read from the top, so it
+        // starts scrolled as far up as it goes; the first draw clamps that to the real top.
+        _scroll = int.MaxValue;
+        Browse();
+    }
+
+    // Scrolls the current pane until a key that is not a scroll key is pressed.
+    private static void Browse()
+    {
+        _dirty = true;
         Render();
 
         while (true)
         {
             var key = Console.ReadKey(intercept: true).Key;
-            var step = Math.Max(1, PaneRows / 2);
+            var step = Math.Max(1, (_height - 3) / 2);
 
             switch (key)
             {
-                case ConsoleKey.UpArrow:
-                    _scroll++;
-                    break;
-                case ConsoleKey.DownArrow:
-                    _scroll--;
-                    break;
-                case ConsoleKey.PageUp:
-                    _scroll += step;
-                    break;
+                case ConsoleKey.UpArrow: _scroll++; break;
+                case ConsoleKey.DownArrow: _scroll--; break;
+                case ConsoleKey.PageUp: _scroll += step; break;
                 case ConsoleKey.PageDown:
                 case ConsoleKey.Spacebar:
                     _scroll -= step;
                     break;
-                case ConsoleKey.Home:
-                    _scroll = int.MaxValue;
-                    break;
-                case ConsoleKey.End:
-                    _scroll = 0;
-                    break;
-                default:
-                    return;
+                case ConsoleKey.Home: _scroll = int.MaxValue; break;
+                case ConsoleKey.End: _scroll = 0; break;
+                default: return;
             }
 
-            SetFooter();
+            _dirty = true;
             Render();
         }
     }
 
-    private static void SetFooter()
-    {
-        var hints = "↑↓ scroll · PgUp/PgDn page · Home/End · any key → menu";
-
-        // Stating the offset without saying how many rows are above is a number that
-        // means nothing.
-        _footer = _scroll > 0 ? $"{hints}   [ {_scroll} more above ]" : hints;
-    }
-
     // ------------------------------------------------------------------ output
 
-    // One sink for every line the phases produce. In the TUI it lands in the log pane
-    // and triggers a repaint; without a console it goes straight to stdout, which is
-    // what the --check and --full entry points want.
+    // One sink for every line the phases produce. In the TUI it lands in the log pane;
+    // without a console it goes straight to stdout, which is what the --check and --full
+    // entry points want.
     private static void Emit(string tag, string message)
     {
         if (!_tui)
@@ -1193,13 +1697,21 @@ internal static class Program
         lock (_renderLock)
         {
             _log.Add((tag, message));
-            Render();
+            _dirty = true;
         }
     }
 
-    private static void Ok(string message) => Emit("·", $"✓ {message}");
+    private static void Ok(string message)
+    {
+        _verdict = message;
+        Emit("ok", message);
+    }
 
-    private static void Error(string message) => Emit("·", $"✗ {message}");
+    private static void Error(string message)
+    {
+        _verdict = message;
+        Emit("FAILED", message);
+    }
 
     private static void Warn(string message) => Emit("!", message);
 
@@ -1240,7 +1752,6 @@ internal sealed record Theme
     public required string Name { get; init; }
     public required string Mauve { get; init; }
     public required string Text { get; init; }
-    public required string TextStrong { get; init; }
     public required string TextMuted { get; init; }
     public required string TextFaint { get; init; }
     public required string Accent { get; init; }
@@ -1249,14 +1760,17 @@ internal sealed record Theme
     public required string Border { get; init; }
     public required string WindowAsRgb { get; init; }
 
+    // The mark runs from one end of this pair to the other, top to bottom.
+    public required (int R, int G, int B) GradientFrom { get; init; }
+    public required (int R, int G, int B) GradientTo { get; init; }
+
     public static readonly Theme Mocha = new()
     {
         Name = "mocha",
         // Catppuccin Mocha. Window #D9191724, surfaces lifted from that base.
         WindowAsRgb = "25;23;36",
-        Border = Ansi.Rgb(0x31, 0x32, 0x44),
+        Border = Ansi.Rgb(0x45, 0x47, 0x5a),
         Text = Ansi.Rgb(0xcd, 0xd6, 0xf4),
-        TextStrong = Ansi.Rgb(0xba, 0xc2, 0xde),
         TextMuted = Ansi.Rgb(0xa6, 0xad, 0xc8),
         TextFaint = Ansi.Rgb(0x6c, 0x70, 0x86),
         Accent = Ansi.Rgb(0x89, 0xb4, 0xfa),
@@ -1265,6 +1779,8 @@ internal sealed record Theme
         // The Helide mark is mauve, so the palette's secondary column uses the same
         // value rather than a grey.
         Mauve = Ansi.Rgb(0xcb, 0xa6, 0xf7),
+        GradientFrom = (0xcb, 0xa6, 0xf7),
+        GradientTo = (0x89, 0xb4, 0xfa),
     };
 
     public static readonly Theme Oled = new()
@@ -1272,9 +1788,8 @@ internal sealed record Theme
         Name = "oled",
         // Near-black rather than true black, with the chrome in small greyscale steps.
         WindowAsRgb = "14;14;14",
-        Border = Ansi.Rgb(0x1e, 0x1e, 0x1e),
+        Border = Ansi.Rgb(0x34, 0x34, 0x34),
         Text = Ansi.Rgb(0xf2, 0xf2, 0xf2),
-        TextStrong = Ansi.Rgb(0xd9, 0xd9, 0xd9),
         TextMuted = Ansi.Rgb(0xb0, 0xb0, 0xb0),
         TextFaint = Ansi.Rgb(0x6e, 0x6e, 0x6e),
         // Pure white: nothing depends on telling the accent apart from anything else.
@@ -1284,6 +1799,8 @@ internal sealed record Theme
         // Muted relative to Catppuccin, where a full-strength mauve would read as a
         // third accent rather than as the secondary tone.
         Mauve = Ansi.Rgb(0xb7, 0x9a, 0xcb),
+        GradientFrom = (0xb7, 0x9a, 0xcb),
+        GradientTo = (0xf2, 0xf2, 0xf2),
     };
 }
 
