@@ -747,7 +747,7 @@ public partial class MainWindow : Window
                 "Close Current Agent Session",
                 () => { if (_activeAgentSession is { } session) CloseAgentSession(session); },
                 "Close",
-                canInvoke: () => workspace() && _agentSessions.Count > 1));
+                canInvoke: () => workspace() && _agentSessions.Count > 0));
         }
 
         // --- Focus ---
@@ -957,19 +957,32 @@ private void OpenInNewWindow(string? projectPath)
     // so focusing it must not toggle a panel that happens to be collapsed.
     private void FocusPanel(ToolPanel? reveal, NativeTerminalHost? host)
     {
-        if (host is null)
+        var revealing = reveal is { } wanted && IsPanelCollapsed(wanted);
+
+        // A panel with no tab in it has no host to hand over, and is exactly the one
+        // that has to open: opening it is what puts a tab there.
+        if (host is null && !revealing)
             return;
 
-        if (reveal is { } panel && IsPanelCollapsed(panel))
+        if (revealing && reveal is { } panel)
         {
             TogglePanel(panel);
 
-            FocusWhenReady(host);
+            FocusWhenReady(host ?? HostFor(panel));
             return;
         }
 
-        host.FocusTerminal();
+        host?.FocusTerminal();
     }
+
+    // The host a panel is showing now, which is not the one it was showing before it was
+    // opened if opening it started one.
+    private NativeTerminalHost? HostFor(ToolPanel panel) => panel switch
+    {
+        ToolPanel.Runner => _activeRunnerSession?.Host,
+        ToolPanel.Agent => _activeAgentSession?.Host,
+        _ => ActiveLeftHost(),
+    };
 
     // Focus for a pane that cannot take it yet: one just revealed, or just started.
     //
@@ -3076,9 +3089,48 @@ private void OpenInNewWindow(string? projectPath)
     private void TogglePanel(ToolPanel panel)
     {
         SetPanelCollapsed(panel, !IsPanelCollapsed(panel));
+
+        if (!IsPanelCollapsed(panel))
+            EnsurePanelHasTab(panel);
+
         // Save synchronously so persistence works immediately (not async)
         SaveWorkspaceLayout();
         _stateStore.Save(_state);
+    }
+
+    // A panel opened by hand with nothing in it would be an empty rectangle, so it opens
+    // with a tab: a shell for the terminal, and for the agents the first one installed,
+    // which is OpenCode when it is there.
+    //
+    // Here and not in SetPanelCollapsed, which restoring a workspace also calls, with
+    // the panes it is about to bring back not made yet.
+    private void EnsurePanelHasTab(ToolPanel panel)
+    {
+        if (_currentProject is null)
+            return;
+
+        switch (panel)
+        {
+            case ToolPanel.Runner when _runnerSessions.Count == 0:
+                CreateRunnerShell();
+                break;
+
+            case ToolPanel.Agent when _state.AiEnabled && _agentSessions.Count == 0:
+                EnsureAgentSession();
+                break;
+        }
+    }
+
+    // The last tab of a panel being closed closes the panel with it, and the keyboard
+    // goes back to the editor, as it does when a panel is put away by hand.
+    private void CollapseEmptyPanel(ToolPanel panel)
+    {
+        if (IsPanelCollapsed(panel))
+            return;
+
+        SetPanelCollapsed(panel, true);
+        SaveLayoutAfterLayoutPasses();
+        ActiveEditorHost()?.FocusTerminal();
     }
 
     // Reading ActualWidth/ActualHeight immediately after changing a track still
@@ -4659,6 +4711,9 @@ private void OpenInNewWindow(string? projectPath)
 
         UpdateAgentSessionUI();
         PersistAgentSessions();
+
+        if (_agentSessions.Count == 0)
+            CollapseEmptyPanel(ToolPanel.Agent);
     }
     private void ActivateRunnerSession(AgentSessionView session)
     {
@@ -4725,6 +4780,7 @@ private void OpenInNewWindow(string? projectPath)
         else
         {
             _activeRunnerSession = null;
+            CollapseEmptyPanel(ToolPanel.Runner);
         }
 
         RunnerTabStrip.Items.Refresh();
