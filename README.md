@@ -33,11 +33,15 @@ Or, if you wish to build the binary yourself, see below.
 
 - Windows 10 1809 or later
 - .NET 8 SDK
-- `hx`, `lazygit` and `yazi` on PATH
+- `hx`, `lazygit` and `yazi`
 - `pwsh` is preferred for the runner; Helide falls back to Windows PowerShell, then `cmd`
 - Agents are optional: any of `opencode` (version 2 is required), `codex` or `claude`
 
-Note: If you have tools missing on the PATH, see [CheckNInstall Utility](#checkninstall-utility)
+No .NET install is needed to run the self-contained release. The .NET 8 SDK is only for building from source.
+
+Helide checks for these itself. The welcome screen lists each tool with a mark when it is found, and if one is missing it offers to `winget install` for it. Tools installed that way, or placed in winget's package folder, are picked up without a restart.
+
+If you wish to build from source and repairing PATH, see [CheckNInstall Utility](#checkninstall-utility).
 
 ## Build and Run
 
