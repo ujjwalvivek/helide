@@ -142,6 +142,16 @@ public partial class MainWindow : Window
         EditorTabStrip.ItemsSource = _editorTabs;
         ZenTabStrip.ItemsSource = _editorTabs;
 
+        // Which tab is active follows the pane that has focus, and clicking into a
+        // pane moves that without anyone touching the tab strip.
+        EditorSlot.FocusedHostChanged += EditorSlot_FocusedHostChanged;
+        RunnerSlot.FocusedHostChanged += RunnerSlot_FocusedHostChanged;
+
+        // How the panes are split is saved with the tabs, and as soon as it changes, for
+        // the reason the tabs are: it should not depend on exiting cleanly.
+        EditorSlot.LayoutChanged += PersistEditorTabs;
+        RunnerSlot.LayoutChanged += PersistEditorTabs;
+
         // A popup is a topmost window of its own, so one left open would sit over
         // whatever application was switched to.
         Deactivated += (_, _) => ZenBarPopup.IsOpen = false;
@@ -713,6 +723,16 @@ public partial class MainWindow : Window
             "New",
             "project folders",
             canInvoke: workspace));
+
+        // --- Split ---
+        // The same as the right-click menu on a tab and as dragging one onto a pane,
+        // for when the keyboard is already where the hands are.
+        commands.Add(new PaletteCommand("Split Editor Right", () => SplitActive(false, DropEdge.Right), "Split", keywords: "pane side by side horizontal", canInvoke: () => workspace() && _activeEditorTab is not null));
+        commands.Add(new PaletteCommand("Split Editor Down", () => SplitActive(false, DropEdge.Bottom), "Split", keywords: "pane above below vertical", canInvoke: () => workspace() && _activeEditorTab is not null));
+        commands.Add(new PaletteCommand("Close Editor Split", () => { if (_activeEditorTab is { } tab && EditorSlot.IsShown(tab.Host)) EditorSlot.Unsplit(tab.Host); }, "Split", keywords: "unsplit merge pane", canInvoke: () => workspace() && EditorSlot.PaneCount > 1));
+        commands.Add(new PaletteCommand("Split Terminal Right", () => SplitActive(true, DropEdge.Right), "Split", keywords: "runner pane side by side horizontal", canInvoke: () => workspace() && _activeRunnerSession is not null));
+        commands.Add(new PaletteCommand("Split Terminal Down", () => SplitActive(true, DropEdge.Bottom), "Split", keywords: "runner pane above below vertical", canInvoke: () => workspace() && _activeRunnerSession is not null));
+        commands.Add(new PaletteCommand("Close Terminal Split", () => { if (_activeRunnerSession?.Host is { } host && RunnerSlot.IsShown(host)) RunnerSlot.Unsplit(host); }, "Split", keywords: "runner unsplit merge pane", canInvoke: () => workspace() && RunnerSlot.PaneCount > 1));
 
         // --- Close ---
         commands.Add(new PaletteCommand(
@@ -1456,12 +1476,15 @@ private void OpenInNewWindow(string? projectPath)
             // Restores the editor tabs this workspace had open. A tab whose file has since
             // been deleted or moved is dropped rather than opened on a path that no
             // longer resolves.
+            // Nothing about the runner is saved until it has been brought up below.
+            _runnerLayoutReady = false;
             if (RestoreEditorTabs() == 0 && CreateEditorTab(null) is null)
                 failures++;
             // Initialize runner session with startup message, or create default
             InitializeRunnerSessions(project);
-            if (_runnerSessions.Count == 0)
+            if (_runnerSessions.Count == 0 && !RestoreRunnerLayout())
                 CreateRunnerShell($" Try {_runCommand}");
+            _runnerLayoutReady = true;
             // Take the rollout snapshot before any pane exists. A codex pane writes its
             // rollout file a moment after the process starts, so snapshotting after the
             // launches below would place the cutoff past the files those panes had
@@ -1804,7 +1827,13 @@ private void OpenInNewWindow(string? projectPath)
     // used. It is a parameter so the palette can open a session rooted somewhere else --
     // an agent scoped to a subdirectory, a yazi on a folder outside the project -- without
     // pretending the project itself has moved.
-    private EditorTab? CreateEditorTab(string? path, string? workingDirectory = null)
+    //
+    // `beside` puts the new tab in a pane of its own next to the one showing that host,
+    // instead of in the pane that has focus.
+    private EditorTab? CreateEditorTab(
+        string? path,
+        string? workingDirectory = null,
+        (NativeTerminalHost Anchor, DropEdge Edge)? beside = null)
     {
         if (_currentProject is null)
             return null;
@@ -1816,11 +1845,21 @@ private void OpenInNewWindow(string? projectPath)
             var host = new NativeTerminalHost("helix", command, workingDirectory ?? _currentProject, path);
             var tab = new EditorTab(path, host);
 
-            EditorSlot.Children.Add(host);
+            EditorSlot.Add(host);
             _editorTabs.Add(tab);
             _terminalHosts.Add(host);
             ScrollStripToEnd(EditorTabStripScroll);
-            ActivateEditorTab(tab);
+
+            if (beside is { } place && EditorSlot.IsShown(place.Anchor))
+            {
+                EditorSlot.SplitBeside(place.Anchor, place.Edge, host);
+                ActivateEditorTab(tab);
+            }
+            else
+            {
+                ActivateEditorTab(tab);
+            }
+
             PersistEditorTabs();
             return tab;
         }
@@ -1833,21 +1872,38 @@ private void OpenInNewWindow(string? projectPath)
 
     private void ActivateEditorTab(EditorTab tab)
     {
+        // Which pane shows it is the panel's business: where the tab already is, or else
+        // in the pane that has focus.
+        EditorSlot.Show(tab.Host);
+        MarkActiveEditorTab(tab);
+
+        // The renderer only exists once WPF has laid the host out at a real size, so
+        // the raise has to wait for a pass that has actually happened.
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(tab.Host.BringToFront));
+    }
+
+    // Which tab is the active one: the one in the pane that has focus. Clicking into
+    // another pane moves it, so this is also what the panel's focus change lands on.
+    private void MarkActiveEditorTab(EditorTab tab)
+    {
         foreach (var other in _editorTabs)
-        {
             other.IsActive = ReferenceEquals(other, tab);
-            other.Host.Visibility = other.IsActive ? Visibility.Visible : Visibility.Collapsed;
-        }
 
         _activeEditorTab = tab;
 
         // The dot means "not looked at yet", so arriving here clears it. Without
         // this it would sit there for the rest of the session.
         tab.ClearAttention();
+    }
 
-        // The renderer only exists once WPF has laid the host out at a real size, so
-        // the raise has to wait for a pass that has actually happened.
-        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(tab.Host.BringToFront));
+    private void EditorSlot_FocusedHostChanged(NativeTerminalHost? host)
+    {
+        if (host is null)
+            return;
+
+        var tab = _editorTabs.FirstOrDefault(t => ReferenceEquals(t.Host, host));
+        if (tab is not null && !ReferenceEquals(tab, _activeEditorTab))
+            MarkActiveEditorTab(tab);
     }
 
 
@@ -1947,8 +2003,20 @@ private void OpenInNewWindow(string? projectPath)
             return;
         }
 
-        if (_draggingTab
-            || Math.Abs(element.PointToScreen(e.GetPosition(element)).X - _pressOrigin.X) < TabDragThreshold)
+        var pointer = element.PointToScreen(e.GetPosition(element));
+
+        if (_draggingTab)
+        {
+            // Over the strip it is a reorder, and nothing is shown. Over a pane of its
+            // own area it is a split, and the pane lights up where the tab would land.
+            UpdateSplitDrop(_pressedTab, pointer);
+            return;
+        }
+
+        // Down as well as sideways: pulling a tab off the strip into a pane is the
+        // gesture for splitting it.
+        if (Math.Abs(pointer.X - _pressOrigin.X) < TabDragThreshold
+            && Math.Abs(pointer.Y - _pressOrigin.Y) < TabDragThreshold)
             return;
 
         // Captured only now, not on the press: a captured tab would take the mouse-up
@@ -1969,17 +2037,188 @@ private void OpenInNewWindow(string? projectPath)
         var dragged = _draggingTab;
         var pointer = element.PointToScreen(e.GetPosition(element));
 
+        // Read before the drag is ended, which clears them.
+        var drop = _splitDrop;
+        var dropPanel = _splitDropPanel;
+
         EndTabDrag();
 
         if (tab is null || !ReferenceEquals(element.DataContext, tab))
             return;
 
-        if (dragged)
+        if (dragged && drop is { } target && dropPanel is not null)
+            CommitSplitDrop(tab, dropPanel, target);
+        else if (dragged)
             DropTab(element, tab, pointer);
         else
             ActivateTab(tab);
 
         e.Handled = true;
+    }
+
+    // ---- Splitting ------------------------------------------------------------
+    //
+    // Editor tabs and runner tabs can be put in panes of their own, side by side or one
+    // above another, as many times as there are tabs. Dragging one onto a pane splits
+    // that pane where it is let go; the right-click menu does the same without a drag.
+
+    // Where the tab being dragged would land, and the panel that would take it. Both
+    // null unless the pointer is over a pane of the tab's own area.
+    private DropTarget? _splitDrop;
+    private PaneSplitPanel? _splitDropPanel;
+
+    private PaneSplitPanel? SplitPanelFor(object? tab) => tab switch
+    {
+        EditorTab => EditorSlot,
+        AgentSessionView session when _runnerSessions.Contains(session) => RunnerSlot,
+        _ => null,
+    };
+
+    private static NativeTerminalHost? HostOf(object? tab) => tab switch
+    {
+        EditorTab editor => editor.Host,
+        AgentSessionView session => session.Host,
+        _ => null,
+    };
+
+    // What a pane shows once the tab in it has been moved away: a tab that is open but
+    // out of sight, or null when there is none.
+    private NativeTerminalHost? FillFor(object tab) => tab switch
+    {
+        EditorTab editor => NearestHidden(
+            _editorTabs, _editorTabs.IndexOf(editor), EditorSlot, t => t.Host)?.Host,
+        AgentSessionView session when _runnerSessions.Contains(session) => NearestHidden(
+            _runnerSessions, _runnerSessions.IndexOf(session), RunnerSlot, s => s.Host!)?.Host,
+        _ => null,
+    };
+
+    private void UpdateSplitDrop(object? tab, Point pointer)
+    {
+        var panel = SplitPanelFor(tab);
+        var host = HostOf(tab);
+
+        if (_splitDropPanel is not null && !ReferenceEquals(_splitDropPanel, panel))
+            _splitDropPanel.HideDropPreview();
+
+        DropTarget? target = null;
+        if (panel is not null && host is not null && tab is not null)
+        {
+            target = panel.HitTestDrop(pointer);
+
+            // A drop that would do nothing is not offered: a tab onto the middle of its
+            // own pane, or a tab alone in its pane split against itself.
+            if (target is { } hit && ReferenceEquals(hit.Anchor, host))
+            {
+                if (hit.Edge == DropEdge.Center || FillFor(tab) is null)
+                    target = null;
+            }
+        }
+
+        _splitDrop = target;
+        _splitDropPanel = target is null ? null : panel;
+        panel?.ShowDropPreview(target);
+    }
+
+    private void CommitSplitDrop(object tab, PaneSplitPanel panel, DropTarget target)
+    {
+        var host = HostOf(tab);
+        if (host is null)
+            return;
+
+        panel.MoveTo(host, target, FillFor(tab));
+        ActivateTab(tab);
+
+        if (tab is EditorTab)
+            PersistEditorTabs();
+    }
+
+    // The tab a right click opened the menu on.
+    private object? _menuTab;
+
+    private void Tab_ContextRequested(object sender, MouseButtonEventArgs e)
+    {
+        if (_draggingTab || sender is not FrameworkElement element)
+            return;
+
+        var tab = element.DataContext;
+        var panel = SplitPanelFor(tab);
+        if (panel is null)
+            return;
+
+        _menuTab = tab;
+        TabUnsplitRow.Visibility = HostOf(tab) is { } host && panel.IsShown(host) && panel.PaneCount > 1
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        TabSplitFlyout.PlacementTarget = element;
+        TabSplitFlyout.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void TabSplit_Click(object sender, RoutedEventArgs e)
+    {
+        TabSplitFlyout.IsOpen = false;
+
+        if (_menuTab is not { } tab || (sender as FrameworkElement)?.Tag is not string choice)
+            return;
+
+        if (choice == "Unsplit")
+        {
+            if (SplitPanelFor(tab) is { } panel && HostOf(tab) is { } host)
+                panel.Unsplit(host);
+
+            return;
+        }
+
+        var edge = choice switch
+        {
+            "Left" => DropEdge.Left,
+            "Up" => DropEdge.Top,
+            "Down" => DropEdge.Bottom,
+            _ => DropEdge.Right,
+        };
+
+        SplitTab(tab, edge);
+    }
+
+    // A tab on screen is split by opening another like it beside it: a shell in the
+    // same place, or the same file. A tab that is not on screen is simply shown beside
+    // the pane that has focus, since that is the only way it can be looked at next to
+    // anything.
+    private void SplitTab(object tab, DropEdge edge)
+    {
+        var panel = SplitPanelFor(tab);
+        var host = HostOf(tab);
+        if (panel is null || host is null)
+            return;
+
+        if (!panel.IsShown(host))
+        {
+            if (panel.FocusedHost is { } anchor)
+                panel.MoveTo(host, new DropTarget(anchor, edge, default), null);
+
+            ActivateTab(tab);
+            return;
+        }
+
+        switch (tab)
+        {
+            case EditorTab editor:
+                CreateEditorTab(editor.Path, beside: (host, edge));
+                break;
+            case AgentSessionView session:
+                CreateRunnerSession(
+                    session.Type, session.Name, session.CommandLine, session.WorkingDirectory, (host, edge));
+                break;
+        }
+    }
+
+    // The same from the keyboard, on whichever tab is active in that area.
+    private void SplitActive(bool runner, DropEdge edge)
+    {
+        object? tab = runner ? _activeRunnerSession : _activeEditorTab;
+        if (tab is not null)
+            SplitTab(tab, edge);
     }
 
     private void Tab_LostCapture(object sender, MouseEventArgs e)
@@ -1997,6 +2236,13 @@ private void OpenInNewWindow(string? projectPath)
         _pressedTab = null;
         _draggingTab = false;
         _dragElement = null;
+
+        // The highlight belongs to the drag, however it ended.
+        _splitDropPanel?.HideDropPreview();
+        EditorSlot.HideDropPreview();
+        RunnerSlot.HideDropPreview();
+        _splitDrop = null;
+        _splitDropPanel = null;
 
         if (element is null)
             return;
@@ -2089,8 +2335,18 @@ private void OpenInNewWindow(string? projectPath)
 
     private void CloseEditorTab(EditorTab tab, bool refill = true)
     {
+        var wasShown = EditorSlot.IsShown(tab.Host);
+        var index = _editorTabs.IndexOf(tab);
+
         _editorTabs.Remove(tab);
         _terminalHosts.Remove(tab.Host);
+
+        // The pane that was showing it shows a neighbour that is open but out of sight,
+        // so a split is not lost to closing the tab in it. With none to show, the pane
+        // closes up and the ones beside it take the room.
+        var replacement = wasShown
+            ? NearestHidden(_editorTabs, index, EditorSlot, t => t.Host)
+            : null;
 
         // Detach before disposing, and never the other way round. The renderer is a
         // child HWND that is still in the visual tree at this point, and WPF can post
@@ -2099,8 +2355,7 @@ private void OpenInNewWindow(string? projectPath)
         // the pseudoconsole, so a host whose ConPTY is already gone throws
         // InvalidOperationException out of an HWND message hook and takes the
         // process down with it.
-        tab.Host.Visibility = Visibility.Collapsed;
-        EditorSlot.Children.Remove(tab.Host);
+        EditorSlot.Remove(tab.Host, replacement?.Host);
         tab.Host.Dispose();
 
         // Land on a neighbour rather than leaving the pane blank. A caller that is
@@ -2108,30 +2363,51 @@ private void OpenInNewWindow(string? projectPath)
         // fill up again before it does.
         if (_editorTabs.Count == 0)
         {
+            _activeEditorTab = null;
             if (refill)
                 CreateEditorTab(null);
         }
         else
         {
-            ActivateNeighbourAfter(tab);
+            // Whatever has focus now is the active tab. Closing a tab in the background
+            // leaves the one in front alone.
+            var focused = EditorSlot.FocusedHost is { } host
+                ? _editorTabs.FirstOrDefault(t => ReferenceEquals(t.Host, host))
+                : null;
+            ActivateEditorTab(focused ?? _editorTabs[Math.Min(Math.Max(index, 0), _editorTabs.Count - 1)]);
         }
 
         PersistEditorTabs();
     }
 
-    private void ActivateNeighbourAfter(EditorTab removed)
+    // The open tab nearest to where `index` was that is not in any pane, or null when
+    // every tab is already on screen.
+    private static T? NearestHidden<T>(
+        IList<T> tabs,
+        int index,
+        PaneSplitPanel panel,
+        Func<T, NativeTerminalHost> hostOf)
+        where T : class
     {
-        var index = _editorTabs.Count;
-        for (var i = 0; i < _editorTabs.Count; i++)
+        T? best = null;
+        var bestDistance = int.MaxValue;
+
+        for (var i = 0; i < tabs.Count; i++)
         {
-            if (_editorTabs[i].Host == removed.Host)
+            if (panel.IsShown(hostOf(tabs[i])))
+                continue;
+
+            // A tab that moved up into the closed one's place is nearer than the one
+            // before it, which is what the tab bar does when you close one in the middle.
+            var distance = i >= index ? i - index : index - i + 1;
+            if (distance < bestDistance)
             {
-                index = i;
-                break;
+                best = tabs[i];
+                bestDistance = distance;
             }
         }
 
-        ActivateEditorTab(_editorTabs[Math.Min(index, _editorTabs.Count - 1)]);
+        return best;
     }
 
     // The + button used to raise a Windows file dialog, which pulled focus out of the
@@ -2712,14 +2988,25 @@ private void OpenInNewWindow(string? projectPath)
     // size, so this is only a nudge for the odd stale frame after SW_HIDE.
     private void RequestPaneRefresh(ToolPanel panel)
     {
-        var slot = panel switch
+        var host = panel switch
         {
-            ToolPanel.Runner => RunnerSlot,
-            _ => AgentSlot,
+            ToolPanel.Left => ActiveLeftHost(),
+            ToolPanel.Runner => RunnerSlot.FocusedHost,
+            _ => AgentSlot.Content as NativeTerminalHost,
         };
-        var host = panel == ToolPanel.Left ? ActiveLeftHost() : slot.Content as NativeTerminalHost;
 
-        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() => host?.Refresh()));
+        // A runner in a split has more than one pane to nudge, so every host on screen
+        // is asked rather than only the one with focus.
+        var also = panel == ToolPanel.Runner
+            ? _runnerSessions.Select(s => s.Host).Where(h => h is not null && RunnerSlot.IsShown(h)).ToArray()
+            : [];
+
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+        {
+            host?.Refresh();
+            foreach (var other in also)
+                other?.Refresh();
+        }));
     }
 
     private NativeTerminalHost? ActiveLeftHost() => _leftHost;
@@ -3215,18 +3502,54 @@ private void OpenInNewWindow(string? projectPath)
     {
         var restored = 0;
 
+        // By the position each had in the saved list, which is what the saved panes name.
+        // A tab that was skipped leaves a gap, and the pane that wanted it is dropped.
+        var bySavedIndex = new Dictionary<int, EditorTab>();
+
         _restoringEditorTabs = true;
         try
         {
-            foreach (var saved in _workspace.EditorTabs)
+            for (var index = 0; index < _workspace.EditorTabs.Count; index++)
             {
+                var saved = _workspace.EditorTabs[index];
+
                 // A file that moved or was deleted between sessions opens as a Helix
                 // error pane, so skip it and let the file picker take over.
                 if (saved.Path is not null && !File.Exists(saved.Path))
                     continue;
 
-                if (CreateEditorTab(saved.Path) is not null)
+                if (CreateEditorTab(saved.Path) is { } tab)
+                {
                     restored++;
+                    bySavedIndex[index] = tab;
+                }
+            }
+
+            // Every tab was shown in the one pane as it was made, so the panes are put
+            // back now that they all exist.
+            if (restored > 1 && _workspace.EditorSplit is { } split)
+            {
+                var focus = bySavedIndex.TryGetValue(_workspace.EditorFocusedTab, out var focused)
+                    ? focused.Host
+                    : null;
+
+                if (EditorSlot.Import(
+                        split,
+                        index => bySavedIndex.TryGetValue(index, out var tab) ? tab.Host : null,
+                        focus)
+                    && EditorSlot.FocusedHost is { } host)
+                {
+                    var active = _editorTabs.FirstOrDefault(tab => ReferenceEquals(tab.Host, host));
+                    if (active is not null)
+                        MarkActiveEditorTab(active);
+
+                    // Each tab asked for the keyboard when it was made, and those requests
+                    // are still queued; the one that runs last wins. So this one is queued
+                    // behind them.
+                    Dispatcher.BeginInvoke(
+                        DispatcherPriority.ContextIdle,
+                        new Action(() => EditorSlot.FocusedHost?.BringToFront()));
+                }
             }
         }
         finally
@@ -3235,6 +3558,75 @@ private void OpenInNewWindow(string? projectPath)
         }
 
         return restored;
+    }
+
+    // Brings back a split terminal: a fresh shell for each pane that was open, in the
+    // arrangement they were in. The processes themselves are not kept between launches,
+    // which is why a workspace that was not split just starts its one shell.
+    private bool RestoreRunnerLayout()
+    {
+        var split = _workspace.RunnerSplit;
+        if (split is null)
+            return false;
+
+        var wanted = new SortedSet<int>();
+        CollectPaneTabs(split, wanted);
+        if (wanted.Count < 2)
+            return false;
+
+        var bySavedIndex = new Dictionary<int, AgentSessionView>();
+
+        _restoringEditorTabs = true;
+        try
+        {
+            foreach (var index in wanted)
+            {
+                var directory = index >= 0 && index < _workspace.RunnerPanes.Count
+                    ? _workspace.RunnerPanes[index].WorkingDirectory
+                    : null;
+                if (directory is not null && !Directory.Exists(directory))
+                    directory = null;
+
+                var before = _runnerSessions.Count;
+                CreateRunnerShell(bySavedIndex.Count == 0 ? $" Try {_runCommand}" : null, directory);
+                if (_runnerSessions.Count > before)
+                    bySavedIndex[index] = _runnerSessions[^1];
+            }
+
+            if (bySavedIndex.Count == 0)
+                return false;
+
+            var focus = bySavedIndex.TryGetValue(_workspace.RunnerFocusedTab, out var focused)
+                ? focused.Host
+                : null;
+
+            if (bySavedIndex.Count > 1
+                && RunnerSlot.Import(
+                    split,
+                    index => bySavedIndex.TryGetValue(index, out var session) ? session.Host : null,
+                    focus)
+                && RunnerSlot.FocusedHost is { } host)
+            {
+                var active = _runnerSessions.FirstOrDefault(session => ReferenceEquals(session.Host, host));
+                if (active is not null)
+                    MarkActiveRunnerSession(active);
+            }
+
+            return true;
+        }
+        finally
+        {
+            _restoringEditorTabs = false;
+        }
+    }
+
+    private static void CollectPaneTabs(PaneNodeState node, ISet<int> into)
+    {
+        if (node.Tab is { } tab)
+            into.Add(tab);
+
+        foreach (var child in node.Children ?? [])
+            CollectPaneTabs(child, into);
     }
 
     private static double ClampRatio(double value, double fallback) =>
@@ -3458,8 +3850,8 @@ private void OpenInNewWindow(string? projectPath)
             // a focus change, and answering that on a torn-down pseudoconsole throws
             // out of an HWND message hook.
             LeftToolStack.Children.Clear();
-            EditorSlot.Children.Clear();
-            RunnerSlot.Content = null;
+            EditorSlot.Clear();
+            RunnerSlot.Clear();
             AgentSlot.Content = null;
 
             foreach (var host in _terminalHosts.ToArray())
@@ -3497,7 +3889,10 @@ private void OpenInNewWindow(string? projectPath)
     // A runner tab on whichever shell this machine has, optionally opening with a line
     // of text. The shell is chosen per tab rather than once, so a pwsh installed while
     // Helide is open is what the next tab gets.
-    private void CreateRunnerShell(string? greeting = null, string? workingDirectory = null)
+    private void CreateRunnerShell(
+        string? greeting = null,
+        string? workingDirectory = null,
+        (NativeTerminalHost Anchor, DropEdge Edge)? beside = null)
     {
         var shell = ToolDefaults.RunnerShell();
 
@@ -3517,7 +3912,7 @@ private void OpenInNewWindow(string? projectPath)
             commandLine = QuoteArgument(shell.Executable);
         }
 
-        CreateRunnerSession("runner", shell.Label, commandLine, workingDirectory);
+        CreateRunnerSession("runner", shell.Label, commandLine, workingDirectory, beside);
     }
 
     // Single quotes are the only PowerShell literal form that takes a path verbatim,
@@ -3570,7 +3965,51 @@ private void OpenInNewWindow(string? projectPath)
         _workspace.EditorTabs.Clear();
         foreach (var tab in _editorTabs)
             _workspace.EditorTabs.Add(new EditorTabState { Path = tab.Path });
+
+        // How they were split. A pane names its tab by its place in the list above, which
+        // is the order they are reopened in.
+        int EditorIndex(NativeTerminalHost host)
+        {
+            for (var i = 0; i < _editorTabs.Count; i++)
+                if (ReferenceEquals(_editorTabs[i].Host, host))
+                    return i;
+
+            return -1;
+        }
+
+        _workspace.EditorSplit = EditorSlot.Export(EditorIndex);
+        _workspace.EditorFocusedTab = EditorSlot.FocusedHost is { } focused ? EditorIndex(focused) : -1;
+
+        // Not before the runner has been brought up for this workspace: until then there
+        // are no shells, and what is saved would replace the layout that is about to be
+        // read back with an empty one.
+        if (!_runnerLayoutReady)
+            return;
+
+        int RunnerIndex(NativeTerminalHost host)
+        {
+            for (var i = 0; i < _runnerSessions.Count; i++)
+                if (ReferenceEquals(_runnerSessions[i].Host, host))
+                    return i;
+
+            return -1;
+        }
+
+        _workspace.RunnerPanes = _runnerSessions
+            .Select(session => new RunnerPaneState
+            {
+                WorkingDirectory = string.Equals(
+                    session.WorkingDirectory, _currentProject, StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : session.WorkingDirectory,
+            })
+            .ToList();
+        _workspace.RunnerSplit = RunnerSlot.Export(RunnerIndex);
+        _workspace.RunnerFocusedTab = RunnerSlot.FocusedHost is { } runnerFocused ? RunnerIndex(runnerFocused) : -1;
     }
+
+    // True once the runner has been brought up for the open workspace; see SaveEditorTabs.
+    private bool _runnerLayoutReady;
 
     // Set while saved tabs are being reopened, when the saved list is the thing being
     // read and must not be rewritten from a half-built set of tabs.
@@ -3983,48 +4422,72 @@ private void OpenInNewWindow(string? projectPath)
     }
     private void ActivateRunnerSession(AgentSessionView session)
     {
-        {
-            foreach (var s in _runnerSessions)
-                s.IsActive = ReferenceEquals(s, session);
+        if (session.Host is null)
+            return;
 
-            if (session.Host is not null)
-            {
-                RunnerSlot.Content = session.Host;
-                _activeRunnerSession = session;
-                session.ClearAttention();
-                session.Host.BringToFront();
-            }
-            RunnerTabStrip.Items.Refresh();
-        }
+        RunnerSlot.Show(session.Host);
+        MarkActiveRunnerSession(session);
+        session.Host.BringToFront();
+    }
+
+    // The active session is the one in the pane that has focus; see MarkActiveEditorTab.
+    private void MarkActiveRunnerSession(AgentSessionView session)
+    {
+        foreach (var s in _runnerSessions)
+            s.IsActive = ReferenceEquals(s, session);
+
+        _activeRunnerSession = session;
+        session.ClearAttention();
+        RunnerTabStrip.Items.Refresh();
+    }
+
+    private void RunnerSlot_FocusedHostChanged(NativeTerminalHost? host)
+    {
+        if (host is null)
+            return;
+
+        var session = _runnerSessions.FirstOrDefault(s => ReferenceEquals(s.Host, host));
+        if (session is not null && !ReferenceEquals(session, _activeRunnerSession))
+            MarkActiveRunnerSession(session);
     }
 
     // Runner session close
     private void CloseRunnerSession(AgentSessionView session)
     {
-        {
-            session.Host?.Dispose();
-            _runnerSessions.Remove(session);
-            if (session.Host is not null && _terminalHosts.Contains(session.Host))
-                _terminalHosts.Remove(session.Host);
+        var host = session.Host;
+        var wasShown = host is not null && RunnerSlot.IsShown(host);
+        var index = _runnerSessions.IndexOf(session);
 
-            if (ReferenceEquals(_activeRunnerSession, session))
-            {
-                if (_runnerSessions.Count > 0)
-                {
-                    var nextSession = _runnerSessions.Last();
-                    nextSession.IsActive = true;
-                    RunnerSlot.Content = nextSession.Host;
-                    _activeRunnerSession = nextSession;
-                    nextSession.Host?.BringToFront();
-                }
-                else
-                {
-                    RunnerSlot.Content = null;
-                    _activeRunnerSession = null;
-                }
-            }
-            RunnerTabStrip.Items.Refresh();
+        _runnerSessions.Remove(session);
+        if (host is not null && _terminalHosts.Contains(host))
+            _terminalHosts.Remove(host);
+
+        // As for an editor tab: the pane shows a neighbour that was out of sight, or
+        // closes up when there is none.
+        var replacement = wasShown
+            ? NearestHidden(_runnerSessions, index, RunnerSlot, s => s.Host!)
+            : null;
+
+        // Taken out of the panel before it is disposed, never after.
+        if (host is not null)
+        {
+            RunnerSlot.Remove(host, replacement?.Host);
+            host.Dispose();
         }
+
+        if (_runnerSessions.Count > 0)
+        {
+            var focused = RunnerSlot.FocusedHost is { } focusedHost
+                ? _runnerSessions.FirstOrDefault(s => ReferenceEquals(s.Host, focusedHost))
+                : null;
+            ActivateRunnerSession(focused ?? _runnerSessions.Last());
+        }
+        else
+        {
+            _activeRunnerSession = null;
+        }
+
+        RunnerTabStrip.Items.Refresh();
     }
 
     private void RunnerNewSessionButton_Click(object sender, RoutedEventArgs e)
@@ -4032,30 +4495,41 @@ private void OpenInNewWindow(string? projectPath)
         CreateRunnerShell();
     }
 
-    private void CreateRunnerSession(string type, string label, string commandLine, string? workingDirectory = null)
+    // `beside` puts the new session in a pane of its own next to the one showing that
+    // host, instead of in the pane that has focus.
+    private void CreateRunnerSession(
+        string type,
+        string label,
+        string commandLine,
+        string? workingDirectory = null,
+        (NativeTerminalHost Anchor, DropEdge Edge)? beside = null)
     {
         if (_currentProject is null) return;
         try
         {
             var host = new NativeTerminalHost(type, commandLine, workingDirectory ?? _currentProject!);
-            RunnerSlot.Content = host;
+            RunnerSlot.Add(host);
             _terminalHosts.Add(host);
 
-var session = new AgentSessionView(type, label);
-                session.Host = host;
-                session.CommandLine = commandLine;
-                foreach (var s in _runnerSessions)
-                    s.IsActive = false;
-            session.IsActive = true;
+            var session = new AgentSessionView(type, label);
+            session.Host = host;
+            session.CommandLine = commandLine;
+            session.WorkingDirectory = workingDirectory;
             _runnerSessions.Add(session);
-            _activeRunnerSession = session;
+
+            if (beside is { } place && RunnerSlot.IsShown(place.Anchor))
+                RunnerSlot.SplitBeside(place.Anchor, place.Edge, host);
+            else
+                RunnerSlot.Show(host);
+
             RunnerTabStrip.ItemsSource = null;
             RunnerTabStrip.ItemsSource = _runnerSessions;
+            MarkActiveRunnerSession(session);
             ScrollStripToEnd(RunnerTabStripScroll);
         }
         catch (Exception exception)
         {
-            RunnerSlot.Content = CreateErrorPanel(type, exception);
+            RunnerSlot.Children.Add(CreateErrorPanel(type, exception));
         }
     }
 

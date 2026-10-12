@@ -53,12 +53,50 @@ internal sealed class WorkspaceState
     public int ActiveAgentIndex { get; set; } = -1;
 
     public List<EditorTabState> EditorTabs { get; set; } = [];
+
+    // How the editor tabs were split into panes, and which pane had focus. Leaves name
+    // a tab by its position in EditorTabs. Null is one pane, which is what a workspace
+    // saved before panes could be split has.
+    public PaneNodeState? EditorSplit { get; set; }
+    public int EditorFocusedTab { get; set; } = -1;
+
+    // The same for the terminal runner. Its shells are not kept between launches, so
+    // what is saved is where each one was and how the panes were arranged, and the next
+    // launch starts a fresh shell in each place. Leaves name a pane by its position in
+    // RunnerPanes.
+    public PaneNodeState? RunnerSplit { get; set; }
+    public int RunnerFocusedTab { get; set; } = -1;
+    public List<RunnerPaneState> RunnerPanes { get; set; } = [];
 }
 
 internal sealed class EditorTabState
 {
     // null is Helix's file picker, which is what the pane opens on with no file.
     public string? Path { get; set; }
+}
+
+internal sealed class RunnerPaneState
+{
+    // null is the project root, which is where a runner starts unless it was told otherwise.
+    public string? WorkingDirectory { get; set; }
+}
+
+/// <summary>
+/// One node of a saved split layout: a pane showing a tab, or a row or column of nodes.
+/// </summary>
+internal sealed class PaneNodeState
+{
+    // Set on a pane: the position of the tab it shows in the saved tab list.
+    public int? Tab { get; set; }
+
+    // Set on a row or column: whether its children sit side by side or one above another.
+    public bool Row { get; set; }
+
+    // This node's share of what it sits in, among its siblings. Saved as a fraction
+    // so it does not depend on the window being the size it was.
+    public double Weight { get; set; } = 1;
+
+    public List<PaneNodeState>? Children { get; set; }
 }
 
 internal sealed class RecentProjectState

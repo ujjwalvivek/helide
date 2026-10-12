@@ -106,6 +106,7 @@
                 PreviewMouseLeftButtonDown="Tab_PointerDown"
                 MouseMove="Tab_PointerMove"
                 MouseLeftButtonUp="Tab_PointerUp"
+                MouseRightButtonUp="Tab_ContextRequested"
                 LostMouseCapture="Tab_LostCapture"
             >
                 <Border.Style>
@@ -1195,7 +1196,7 @@
                                         </Button>
                                 </Grid>
                             </Border>
-                            <Grid
+                            <ui:PaneSplitPanel
                                     Grid.Row="1"
                                     x:Name="EditorSlot"
                                     Background="{DynamicResource TerminalBrush}"
@@ -1306,10 +1307,10 @@
                                     </Button>
                                 </Grid>
                             </Border>
-                            <ContentControl
+                            <ui:PaneSplitPanel
                                     Grid.Row="1"
                                     x:Name="RunnerSlot"
-                                    Style="{DynamicResource TerminalSlotStyle}"
+                                    Background="{DynamicResource TerminalBrush}"
                                 />
                         </Grid>
                     </Grid>
@@ -1575,6 +1576,58 @@
              same reason as the palette below, and because laying it over the editor is
              the point: a bar that pushed the editor down would reflow the terminal on
              every reveal. -->
+        <!-- What a right click on an editor or runner tab offers. A popup for the same
+             reason as everything else here that has to sit above a pane. The rows are
+             the same ones the new-agent menu uses. -->
+        <Popup
+                x:Name="TabSplitFlyout"
+                Placement="Bottom"
+                StaysOpen="False"
+                AllowsTransparency="True"
+            >
+            <Border
+                    Background="{DynamicResource PopoverBrush}"
+                    BorderBrush="{DynamicResource PressedBrush}"
+                    BorderThickness="1"
+                    Padding="0,3"
+                    MinWidth="150"
+                >
+                <StackPanel>
+                    <Button
+                            Tag="Right"
+                            Click="TabSplit_Click"
+                            Style="{DynamicResource MenuRowStyle}"
+                            Content="Split Right"
+                        />
+                    <Button
+                            Tag="Down"
+                            Click="TabSplit_Click"
+                            Style="{DynamicResource MenuRowStyle}"
+                            Content="Split Down"
+                        />
+                    <Button
+                            Tag="Left"
+                            Click="TabSplit_Click"
+                            Style="{DynamicResource MenuRowStyle}"
+                            Content="Split Left"
+                        />
+                    <Button
+                            Tag="Up"
+                            Click="TabSplit_Click"
+                            Style="{DynamicResource MenuRowStyle}"
+                            Content="Split Up"
+                        />
+                    <Button
+                            x:Name="TabUnsplitRow"
+                            Tag="Unsplit"
+                            Click="TabSplit_Click"
+                            Style="{DynamicResource MenuRowStyle}"
+                            Content="Close Split"
+                        />
+                </StackPanel>
+            </Border>
+        </Popup>
+
         <Popup x:Name="ZenBarPopup"
                Placement="Relative"
                AllowsTransparency="False"
