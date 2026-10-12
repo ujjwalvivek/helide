@@ -731,15 +731,15 @@ public partial class MainWindow : Window
         }
 
         // --- Focus ---
-        commands.Add(new PaletteCommand("Focus Left Panel", () => FocusPanel(ToolPanel.Left, ActiveLeftHost()), "Focus", PaletteCommand.Gesture(Key.D1), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Focus Left Panel", () => FocusPanel(ToolPanel.Left, ActiveLeftHost()), "Focus", canInvoke: workspace));
         commands.Add(new PaletteCommand("Focus Editor", () => FocusPanel(null, ActiveEditorHost()), "Focus", PaletteCommand.Gesture(Key.D2), canInvoke: workspace));
-        commands.Add(new PaletteCommand("Focus Runner", () => FocusPanel(ToolPanel.Runner, _activeRunnerSession?.Host), "Focus", PaletteCommand.Gesture(Key.D3), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Focus Runner", () => FocusPanel(ToolPanel.Runner, _activeRunnerSession?.Host), "Focus", canInvoke: workspace));
         if (_state.AiEnabled)
-            commands.Add(new PaletteCommand("Focus Agent", () => FocusPanel(ToolPanel.Agent, _activeAgentSession?.Host), "Focus", PaletteCommand.Gesture(Key.D4), canInvoke: workspace));
+            commands.Add(new PaletteCommand("Focus Agent", () => FocusPanel(ToolPanel.Agent, _activeAgentSession?.Host), "Focus", canInvoke: workspace));
 
         // --- Navigate ---
-        commands.Add(new PaletteCommand("Show Lazygit Panel", () => ToggleLeftTool(LeftTool.Git), "View", keywords: "git left", canInvoke: workspace));
-        commands.Add(new PaletteCommand("Show Project Browser", () => ToggleLeftTool(LeftTool.Project), "View", keywords: "yazi files left", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Lazygit Panel", () => ToggleLeftToolFromKey(LeftTool.Git), "View", PaletteCommand.Gesture(Key.D1), keywords: "git left show hide", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Project Browser", () => ToggleLeftToolFromKey(LeftTool.Project), "View", PaletteCommand.Gesture(Key.D5), keywords: "yazi files left show hide", canInvoke: workspace));
         // The same offer the first-run toast makes, reachable any time -- the toast is
         // driven by the config file's absence, so a user who dismissed it once can still
         // turn the whole thing on without hunting for the file themselves.
@@ -749,7 +749,7 @@ public partial class MainWindow : Window
             "View",
             _state.YaziOpenInHelide ? "on · restarts Helide" : "restarts Helide",
             keywords: "yazi file tree editor helix open config"));
-        commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanel(ToolPanel.Runner), "View", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanelFromKey(ToolPanel.Runner, _activeRunnerSession?.Host), "View", PaletteCommand.Gesture(Key.D3), canInvoke: workspace));
         commands.Add(new PaletteCommand(
             _workspace.Layout.Zen ? "Leave Zen Mode" : "Zen Mode",
             ToggleZen,
@@ -758,7 +758,7 @@ public partial class MainWindow : Window
             keywords: "focus fullscreen distraction hide panels",
             canInvoke: workspace));
         if (_state.AiEnabled)
-            commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanel(ToolPanel.Agent), "View", canInvoke: workspace));
+            commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanelFromKey(ToolPanel.Agent, _activeAgentSession?.Host), "View", PaletteCommand.Gesture(Key.D4), canInvoke: workspace));
         commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
         commands.Add(new PaletteCommand("Previous Editor Tab", () => CycleEditorTab(-1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
 
@@ -2337,43 +2337,60 @@ private void OpenInNewWindow(string? projectPath)
         if (number == 4 && !_state.AiEnabled)
             return;
 
-        // Ctrl+5 always means the project browser; Ctrl+1 means whichever left tool is
-        // showing, so it can never focus a pane the user cannot see.
-        if (number == 5)
+        // Every number is a pane, and every one of them toggles: the key shows its pane
+        // and puts the keyboard in it, and the same key again puts the pane away and
+        // hands the keyboard back to the editor. Ctrl+1 is lazygit and Ctrl+5 the
+        // project browser, each by name -- Ctrl+1 used to mean "whichever of the two is
+        // showing", so it could never bring lazygit back once the browser was up, and
+        // only Ctrl+5 ever closed anything. The editor is the one pane that cannot be
+        // closed, so Ctrl+2 only focuses.
+        switch (number)
         {
-            ToggleLeftTool(LeftTool.Project);
-
-            // The toggle just hid the browser. Carrying on would focus the pane, and
-            // focusing reveals it again.
-            if (IsPanelCollapsed(ToolPanel.Left))
-            {
-                e.Handled = true;
-                return;
-            }
+            case 1:
+                ToggleLeftToolFromKey(LeftTool.Git);
+                break;
+            case 5:
+                ToggleLeftToolFromKey(LeftTool.Project);
+                break;
+            case 2:
+                FocusPanel(null, ActiveEditorHost());
+                break;
+            case 3:
+                TogglePanelFromKey(ToolPanel.Runner, _activeRunnerSession?.Host);
+                break;
+            case 4:
+                TogglePanelFromKey(ToolPanel.Agent, _activeAgentSession?.Host);
+                break;
         }
 
-        // Each number names a pane and resolves to whatever that pane is showing.
-        // Ctrl+3 and Ctrl+4 used to index the host list instead, which is in creation
-        // order: with a second editor tab open they focused that, not the runner.
-        var host = number switch
+        e.Handled = true;
+    }
+
+    private void ToggleLeftToolFromKey(LeftTool tool)
+    {
+        var showing = !IsPanelCollapsed(ToolPanel.Left) && _activeLeftTool == tool;
+
+        // Shows the tool, switching to it if the other one is up, or hides the panel.
+        ToggleLeftTool(tool);
+
+        if (showing)
+            ActiveEditorHost()?.FocusTerminal();
+        else
+            FocusWhenReady(ActiveLeftHost());
+    }
+
+    private void TogglePanelFromKey(ToolPanel panel, NativeTerminalHost? host)
+    {
+        if (IsPanelCollapsed(panel))
         {
-            1 or 5 => ActiveLeftHost(),
-            2 => ActiveEditorHost(),
-            3 => _activeRunnerSession?.Host,
-            _ => _activeAgentSession?.Host,
-        };
-        if (host is not null)
-        {
-            var panel = number switch
-            {
-                1 or 5 => ToolPanel.Left,
-                3 => ToolPanel.Runner,
-                4 => ToolPanel.Agent,
-                _ => (ToolPanel?)null,
-            };
             FocusPanel(panel, host);
-            e.Handled = true;
+            return;
         }
+
+        TogglePanel(panel);
+
+        // A hidden pane must not keep the keyboard: typing would go nowhere visible.
+        ActiveEditorHost()?.FocusTerminal();
     }
 
     private static int KeyToNumber(Key key) => key switch
@@ -3401,6 +3418,13 @@ private void OpenInNewWindow(string? projectPath)
     {
         if (!_workspace.Layout.Zen || ZenBarPopup.IsOpen)
             return;
+
+        ZenNameText.Text = ProjectNamePillText.Text;
+        ZenPathText.Text = ProjectPathPillText.Text;
+        ZenBranchText.Text = GitBranchPillText.Text;
+        ZenBranchPill.Visibility = string.IsNullOrEmpty(GitBranchPillText.Text)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
 
         ZenBarPopup.PlacementTarget = ZenReveal;
         ZenBarPopup.HorizontalOffset = 0;
