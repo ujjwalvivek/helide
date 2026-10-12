@@ -1,4 +1,4 @@
-﻿#define G 0.1
+#define G 0.1
 
 mat2 R(float a)
 {
@@ -16,13 +16,6 @@ float N(vec2 p)
     return 0.5 + 0.5 * mix(mix(dot(-1.0 + 2.0 * H(i), f), dot(-1.0 + 2.0 * H(i + vec2(1, 0)), f - vec2(1, 0)), u.x), mix(dot(-1.0 + 2.0 * H(i + vec2(0, 1)), f - vec2(0, 1)), dot(-1.0 + 2.0 * H(i + vec2(1, 1)), f - vec2(1, 1)), u.x), u.y);
 }
 float F(vec2 uv) { return length(H(uv)); }
-
-// Signed distance to the rounded window rect. Negative inside, positive outside.
-float sdBox(vec2 p, vec2 b, float r)
-{
-    vec2 q = abs(p) - b + r;
-    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
-}
 
 // The original field, evaluated at a point in normalised screen space.
 vec3 field(vec2 u)
@@ -52,70 +45,130 @@ vec3 field(vec2 u)
     return col;
 }
 
+// ---------------------------------------------------------------------------
+// Two programs are built from this file.
+//
+// Without RIM it is the page background: the field and nothing else. Nothing is
+// drawn around the window -- no frame, no glow, no shadow.
+//
+// With RIM it is drawn on a canvas laid over the window itself, and paints only
+// the window's own edge: the last uBand pixels before the border, transparent
+// everywhere else. That edge is treated as glass. The window is a pane whose
+// rim is rounded over, level a little way in and rolling off to vertical at the
+// border, and light does two things there.
+//
+//   Refraction. A ray coming straight down meets the tilted surface, is bent on
+//   entering the glass (Snell's law) and reaches the page a little way from
+//   where it was heading; the steeper the surface, the further. So the rim
+//   shows the background that is right behind it, pulled in and compressed,
+//   clear and bright where the rest of the window is frosted and dark.
+//
+//   Reflection. The steep outer part of the rim throws light back, and what it
+//   throws back is the light that reached it: the colour of the page at that
+//   spot, at full strength. Over pink it is a pink line, over blue a blue one.
+//   It is never white, because nothing here lights the glass but the page.
+//
+// Both run the whole way round the border and take their colour from whatever
+// the background is doing underneath, so the rim shifts as the field moves. The
+// pointer only leans on it: the side facing the pointer is a little brighter.
+// Both fade out toward the inside of the window, so there is no line where the
+// rim stops.
+// ---------------------------------------------------------------------------
+
+#ifdef RIM
+
+const float IOR = 1.50;    // glass
+const float DEPTH = 34.0;  // pixels a ray travels inside the glass
+
+// Where a ray going straight down ends up once the surface with normal n has
+// bent it, as an offset in pixels.
+vec2 bend(vec3 n, float ior)
+{
+    vec3 r = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior);
+    return r.xy / max(-r.z, 0.25) * DEPTH;
+}
+
+void main()
+{
+    vec2 half_ = uSize * 0.5;
+    vec2 p = gl_FragCoord.xy - half_;
+
+    // How far into the rim this pixel is on each axis: 0 where the rim begins,
+    // 1 on the border.
+    vec2 q = (abs(p) - (half_ - uBand)) / uBand;
+    vec2 qp = max(q, 0.0);
+
+    // One smooth surface round the corner rather than two planes meeting in a
+    // crease, with a power high enough that the outline stays square.
+    float x = pow(pow(qp.x, 16.0) + pow(qp.y, 16.0), 1.0 / 16.0);
+    if (x <= 0.001)
+    {
+        gl_FragColor = vec4(0.0);
+        return;
+    }
+    x = min(x, 1.0);
+
+    // Which way the surface leans, turned gently through the corner.
+    vec2 n2 = normalize(qp * qp + vec2(1e-5)) * sign(p);
+
+    // Circular cross-section: the slope runs from level to vertical.
+    float slope = x / sqrt(max(1.0 - x * x, 1e-3));
+    vec3 n = normalize(vec3(n2 * min(slope, 9.0), 1.0));
+
+    // This pixel's place on the page, which is where the background was drawn.
+    vec2 u = (gl_FragCoord.xy + uOrigin) / iResolution.xy;
+    vec2 px = 1.0 / iResolution.xy;
+
+    // Refraction. One sample for all three channels: splitting them by colour
+    // reads red from one place and blue from another, and over this palette
+    // that manufactures yellows and greens the background never contains.
+    vec3 glass = field(u + bend(n, IOR) * px);
+
+    // The same colour at full strength: scaled until its strongest channel is
+    // as bright as it can go, which keeps the hue exactly and only raises the
+    // light. Capped, so the darkest parts of the field lift to a deep blue
+    // rather than being forced all the way up into noise.
+    float peak = max(glass.r, max(glass.g, glass.b));
+    vec3 lifted = glass * min(4.5, 1.0 / max(peak, 1e-3));
+
+    // The pointer leans on the rim: the side facing it is brighter, the far
+    // side keeps most of its light. Never less than three quarters.
+    vec2 toPointer = (iMouse * iResolution.xy) - (gl_FragCoord.xy + uOrigin);
+    float facing = dot(n2, normalize(toPointer + vec2(1e-4))) * 0.5 + 0.5;
+    float lean = 0.76 + 0.24 * facing;
+
+    // The highlight: a hair-thin line just inside the border, where the
+    // surface is steep enough to throw light straight back.
+    float rimPx = (1.0 - x) * uBand;
+    float streak = exp(-pow((rimPx - 0.9 * uScale) / (0.8 * uScale), 2.0));
+
+    // Fresnel: the steeper the surface, the more of the light it returns
+    // instead of passing. So the refracted page gives way to its own lifted
+    // colour toward the border.
+    float f0 = pow((IOR - 1.0) / (IOR + 1.0), 2.0);
+    float fresnel = f0 + (1.0 - f0) * pow(x, 3.0);
+
+    vec3 col = mix(glass * 1.1, lifted, fresnel * 0.75);
+    col = mix(col, lifted, streak);
+
+    // How much of the rim shows: a lens that rises smoothly from nothing at
+    // the inside to nearly solid at the border, with the line on top of it.
+    // The same everywhere along the border but for the lean.
+    float lens = pow(x, 2.0) * 0.85;
+    float alpha = clamp(max(lens, streak) * lean, 0.0, 1.0);
+
+    col = clamp(col - F(u) * G * 0.6, 0.0, 1.0);
+    gl_FragColor = vec4(col * alpha, alpha);
+}
+
+#else
+
 void main()
 {
     vec2 u = gl_FragCoord.xy / iResolution.xy;
-
-    vec2 half_ = uWin.zw * 0.5;
-    vec2 centre = uWin.xy + half_;
-    vec2 p = gl_FragCoord.xy - centre;
-    // Must match the window's border-radius (--radius), otherwise the rim
-    // detaches from the corners and blobs over them.
-    float radius = 4.0;
-
-    // Distance to the window edge in pixels, plus its outward normal. Bending
-    // along the normal is what a thick glass lip does to the light crossing it.
-    float dist = sdBox(p, half_, radius);
-    float e = 1.5;
-    vec2 n = vec2(
-        sdBox(p + vec2(e, 0.0), half_, radius) - sdBox(p - vec2(e, 0.0), half_, radius),
-        sdBox(p + vec2(0.0, e), half_, radius) - sdBox(p - vec2(0.0, e), half_, radius)
-    );
-    n = normalize(n + vec2(1e-6));
-
-    // Lens profile: nothing in the middle, a tight bend right on the rim.
-    float band = 68.0;
-    float near = 1.0 - smoothstep(0.0, band, abs(dist));
-    near *= near;
-
-    // Displace along the normal, in pixels, then convert to screen units.
-    float push = near * 17.0;
-    vec2 off = n * push / iResolution.xy;
-
-    // Anchor the hue to one refracted sample. Sampling each channel from far
-    // apart fabricates colours that are not in the field (this palette has a
-    // near-constant green, so wide R/B separation invents yellow), so the
-    // dispersion stays small and is blended back over the base.
-    vec3 base = field(u + off);
-    float disp = near * 2.5 / iResolution.x;
-    vec3 col;
-    col.r = field(u + off * 0.95 + vec2(disp, 0.0)).r;
-    col.g = base.g;
-    col.b = field(u + off * 1.05 - vec2(disp, 0.0)).b;
-    col = mix(base, col, 0.4);
-
-    // Specular lip: a thin line hugging the border. The highlight brightens the
-    // shader's own colour by scaling it and capping so no channel clips.
-    // Adding white instead is what turned blue areas into a yellow-green rim.
-    float rim = pow(1.0 - smoothstep(0.0, 7.0, abs(dist)), 1.5);
-
-    // The highlight tracks the pointer so it slides around the rim.
-    vec2 toMouse = (iMouse * iResolution.xy) - centre;
-    float lobe = clamp(dot(normalize(toMouse + vec2(1e-5)), n) * 0.5 + 0.5, 0.0, 1.0);
-
-    float peak = max(col.r, max(col.g, col.b));
-    vec3 lifted = col * min(2.1, 1.0 / max(peak, 1e-3));
-    col = mix(col, lifted, rim * (0.55 + 0.45 * lobe));
-
-    // Soft bloom: a wider, gentler falloff around the lip so it reads as light
-    // rather than a drawn line. Multiplied, so the halo keeps the shader's hue.
-    float bloom = pow(1.0 - smoothstep(2.0, 18.0, abs(dist)), 2.6);
-    col += col * bloom * (0.16 + 0.22 * lobe);
-
-    // Hairline contact shadow at the very edge reads as glass thickness.
-    float edge = 1.0 - smoothstep(0.0, 2.5, abs(dist + 1.0));
-    col *= 1.0 - edge * 0.45;
-
+    vec3 col = field(u);
     col -= F(u) * G;
     gl_FragColor = vec4(col, 1.0);
 }
+
+#endif

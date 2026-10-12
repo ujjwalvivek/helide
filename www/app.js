@@ -1,7 +1,7 @@
 const API = "https://api.github.com/repos/ujjwalvivek/helide/releases/latest";
 const FALLBACK = "https://github.com/ujjwalvivek/helide/releases/latest";
 
-const versionEls = document.querySelectorAll("#version");
+const versionEls = document.querySelectorAll(".js-version");
 const downloadEl = document.getElementById("download");
 const btnLabel = document.getElementById("btn-label");
 
@@ -363,25 +363,39 @@ if (carousel && track && dotsBox && lightbox && SHOTS.length) {
   });
 }
 
-// Background shader
-const bgCanvas = document.getElementById("bg-shader");
-if (bgCanvas && bgCanvas.getContext) {
-  const gl = bgCanvas.getContext("webgl", { preserveDrawingBuffer: true }) || bgCanvas.getContext("experimental-webgl", { preserveDrawingBuffer: true });
-  if (gl) {
-    const vsSource = `
-      attribute vec2 a_pos;
-      void main() {
-        gl_Position = vec4(a_pos, 0, 1);
-      }
-    `;
-    const fsSourcePlaceholder = `
-      precision mediump float;
-      uniform float iTime;
-      uniform vec2 iResolution;
-      void main() {
-        gl_FragColor = vec4(0.05, 0.06, 0.09, 1.0);
-      }
-    `;
+// Background shader, and the glass rim on the window.
+//
+// One shader file, built twice. The background is a full-page canvas behind
+// everything. The rim is a second canvas laid over the window, which paints
+// only the window's own border: see background-lite.glsl.
+(function () {
+  const bgCanvas = document.getElementById("bg-shader");
+  const rimCanvas = document.getElementById("rim-shader");
+  const winEl = document.querySelector(".window");
+  if (!bgCanvas || !bgCanvas.getContext) return;
+
+  const VS = "attribute vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }";
+  const HEADER = [
+    "#ifdef GL_FRAGMENT_PRECISION_HIGH",
+    "precision highp float;",
+    "#else",
+    "precision mediump float;",
+    "#endif",
+    "uniform float iTime;",
+    "uniform vec2 iResolution;",
+    "uniform vec2 iMouse;",
+    "uniform vec2 uSize;",
+    "uniform vec2 uOrigin;",
+    "uniform float uBand;",
+    "uniform float uScale;",
+    "",
+  ].join("\n");
+
+  // Builds one of the two programs on a canvas. Returns null when WebGL is not
+  // there or the shader will not compile, and the page simply goes without.
+  function build(canvas, source, defines, options) {
+    const gl = canvas.getContext("webgl", options) || canvas.getContext("experimental-webgl", options);
+    if (!gl) return null;
 
     function compile(type, src) {
       const sh = gl.createShader(type);
@@ -389,90 +403,115 @@ if (bgCanvas && bgCanvas.getContext) {
       gl.compileShader(sh);
       if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
         console.warn(gl.getShaderInfoLog(sh));
+        return null;
       }
       return sh;
     }
 
-        const shaderHeader = `
-precision mediump float;
-uniform float iTime;
-uniform vec2 iResolution;
-uniform vec2 iMouse;
-uniform vec4 uWin;
-`;
+    const vs = compile(gl.VERTEX_SHADER, VS);
+    const fs = compile(gl.FRAGMENT_SHADER, defines + HEADER + source);
+    if (!vs || !fs) return null;
 
-    fetch("background-lite.glsl")
-      .then(r => r.text())
-      .then(src => {
-        const vs = compile(gl.VERTEX_SHADER, vsSource);
-        const fs = compile(gl.FRAGMENT_SHADER, shaderHeader + src);
-        const prog = gl.createProgram();
-        gl.attachShader(prog, vs);
-        gl.attachShader(prog, fs);
-        gl.linkProgram(prog);
-        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-          console.warn(gl.getProgramInfoLog(prog));
-        }
-        gl.useProgram(prog);
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.warn(gl.getProgramInfoLog(prog));
+      return null;
+    }
+    gl.useProgram(prog);
 
-        const posLoc = gl.getAttribLocation(prog, "a_pos");
-        const buf = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-        gl.enableVertexAttribArray(posLoc);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+    const pos = gl.getAttribLocation(prog, "a_pos");
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(pos);
+    gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
 
-        const iTime = gl.getUniformLocation(prog, "iTime");
-        const iRes = gl.getUniformLocation(prog, "iResolution");
-        const iMouse = gl.getUniformLocation(prog, "iMouse");
-        const uWin = gl.getUniformLocation(prog, "uWin");
-        const winEl = document.querySelector(".window");
-
-        function resize() {
-          const rect = bgCanvas.parentElement.getBoundingClientRect();
-          bgCanvas.width = rect.width;
-          bgCanvas.height = rect.height;
-          gl.viewport(0, 0, bgCanvas.width, bgCanvas.height);
-        }
-        resize();
-        window.addEventListener("resize", resize);
-
-        let mouse = [0, 0];
-        bgCanvas.addEventListener("mousemove", e => {
-          const rect = bgCanvas.getBoundingClientRect();
-          mouse[0] = (e.clientX - rect.left) / rect.width;
-          mouse[1] = 1.0 - (e.clientY - rect.top) / rect.height;
-        });
-
-        let start = Date.now();
-
-        // Feed the shader the window's rect so it can bend its own output
-        // around the border. Kept in GL space (origin bottom-left).
-        function setWinRect() {
-          if (!winEl || !uWin) return;
-          const r = winEl.getBoundingClientRect();
-          const sx = bgCanvas.width / window.innerWidth;
-          const sy = bgCanvas.height / window.innerHeight;
-          gl.uniform4f(
-            uWin,
-            r.left * sx,
-            (window.innerHeight - r.top - r.height) * sy,
-            r.width * sx,
-            r.height * sy
-          );
-        }
-
-        function draw() {
-          const t = (Date.now() - start) / 1000;
-          gl.uniform1f(iTime, t);
-          gl.uniform2f(iRes, bgCanvas.width, bgCanvas.height);
-          gl.uniform2f(iMouse, mouse[0], mouse[1]);
-          setWinRect();
-          gl.drawArrays(gl.TRIANGLES, 0, 3);
-          requestAnimationFrame(draw);
-        }
-        draw();
-      })
-      .catch(err => console.warn("Shader load failed:", err));
+    const at = name => gl.getUniformLocation(prog, name);
+    return {
+      gl,
+      canvas,
+      iTime: at("iTime"),
+      iResolution: at("iResolution"),
+      iMouse: at("iMouse"),
+      uSize: at("uSize"),
+      uOrigin: at("uOrigin"),
+      uBand: at("uBand"),
+      uScale: at("uScale"),
+    };
   }
-}
+
+  fetch("background-lite.glsl")
+    .then(r => r.text())
+    .then(source => {
+      const bg = build(bgCanvas, source, "", { preserveDrawingBuffer: true });
+      if (!bg) return;
+
+      // The rim blends over the window, so its canvas keeps an alpha channel.
+      const rim = rimCanvas && winEl
+        ? build(rimCanvas, source, "#define RIM\n", { alpha: true, premultipliedAlpha: true })
+        : null;
+
+      // Drawn at the screen's own resolution, up to 2x: the highlight on the
+      // rim is about a pixel wide, and upscaled it turns into a soft band.
+      let scale = 1;
+      function fit(canvas, width, height) {
+        const w = Math.max(1, Math.round(width * scale));
+        const h = Math.max(1, Math.round(height * scale));
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+      }
+
+      // Listened for on the window object: the background canvas is behind the
+      // page and never sees the pointer. Starts in the middle so the highlight
+      // has somewhere sensible to be before the pointer has moved.
+      const mouse = [0.5, 0.5];
+      window.addEventListener("pointermove", e => {
+        mouse[0] = e.clientX / window.innerWidth;
+        mouse[1] = 1.0 - e.clientY / window.innerHeight;
+      });
+
+      const start = performance.now();
+
+      function draw() {
+        const t = (performance.now() - start) / 1000;
+        scale = Math.min(window.devicePixelRatio || 1, 2);
+
+        fit(bgCanvas, window.innerWidth, window.innerHeight);
+        bg.gl.viewport(0, 0, bgCanvas.width, bgCanvas.height);
+        bg.gl.uniform1f(bg.iTime, t);
+        bg.gl.uniform2f(bg.iResolution, bgCanvas.width, bgCanvas.height);
+        bg.gl.uniform2f(bg.iMouse, mouse[0], mouse[1]);
+        bg.gl.drawArrays(bg.gl.TRIANGLES, 0, 3);
+
+        if (rim) {
+          // The rim has to sample the background exactly where the background
+          // drew it, so it is told the page's resolution and where on the page
+          // the window's bottom-left corner is, both in background pixels.
+          const r = winEl.getBoundingClientRect();
+          const band = parseFloat(getComputedStyle(winEl).getPropertyValue("--rim")) || 12;
+          const gl = rim.gl;
+
+          fit(rimCanvas, r.width, r.height);
+          gl.viewport(0, 0, rimCanvas.width, rimCanvas.height);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.uniform1f(rim.iTime, t);
+          gl.uniform2f(rim.iResolution, bgCanvas.width, bgCanvas.height);
+          gl.uniform2f(rim.iMouse, mouse[0], mouse[1]);
+          gl.uniform2f(rim.uSize, rimCanvas.width, rimCanvas.height);
+          gl.uniform2f(rim.uOrigin, r.left * scale, (window.innerHeight - r.bottom) * scale);
+          gl.uniform1f(rim.uBand, band * scale);
+          gl.uniform1f(rim.uScale, scale);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+        }
+
+        requestAnimationFrame(draw);
+      }
+      draw();
+    })
+    .catch(err => console.warn("Shader load failed:", err));
+})();

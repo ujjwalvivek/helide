@@ -6,20 +6,27 @@
         <title>Helide | Workspace</title>
         <meta
             name="description"
-            content="Helide is a WPF workspace for Windows: lazygit or yazi, Helix with tabbed buffers, a terminal runner, and multi-agent chat in one dark window."
+            content="Helide is a terminal workspace for Windows: Helix with tabs, lazygit and yazi, a PowerShell runner, and optional OpenCode, Codex or Claude sessions, in one keyboard-driven window."
         />
         <link rel="icon" type="image/svg+xml" href="helide.svg" />
         <link rel="stylesheet" href="styles.css" />
     </head>
     <body>
-        <canvas id="bg-shader" style="position:fixed; top:0; left:0; width:100%; height:100vh; z-index:-1; display:block;"></canvas>
+        <canvas id="bg-shader"></canvas>
         <main>
             <section class="window">
-                <div class="titlebar" style="position:relative; z-index:1;">
-                    <span class="dot dot-pink"></span>
-                    <span class="dot dot-blue"></span>
-                    <span class="dot dot-green"></span>
-                    <span class="title">terminal workspace</span>
+                <!-- The app's own title bar: the mark, the project strip, and the
+                     three window buttons on the right. -->
+                <div class="titlebar">
+                    <img class="tb-logo" src="helide.svg" alt="" />
+                    <span class="tb-seg tb-name">helide</span
+                    ><span class="tb-seg tb-path">ujjwalvivek\helide</span
+                    ><span class="tb-seg tb-branch">main</span>
+                    <span class="lights" aria-hidden="true">
+                        <i class="light light-min"></i>
+                        <i class="light light-max"></i>
+                        <i class="light light-close"></i>
+                    </span>
                 </div>
 
                 <div class="layout">
@@ -35,9 +42,9 @@
                                 </div>
                                 <div class="fetch-info">
                                     <pre class="fetch-text">
-<span class="label cat-rosewater">helide</span>@<span id="version" class="label cat-flamingo">loading…</span><span class="cursor"></span><div class="palette"><div class="swatch" style="background:#f5c2e7"></div><div class="swatch" style="background:#cba6f7"></div><div class="swatch" style="background:#89b4fa"></div><div class="swatch" style="background:#a6e3a1"></div><div class="swatch" style="background:#fab387"></div><div class="swatch" style="background:#313244"></div><div class="swatch" style="background:#1e1e2e"></div><div class="swatch" style="background:#11111b"></div></div><span class="key">os</span>         <span class="cat-text">win x64</span>
+<span class="label cat-rosewater">helide</span>@<span class="js-version label cat-flamingo">loading…</span><span class="cursor"></span><div class="palette"><div class="swatch" style="background:#f5c2e7"></div><div class="swatch" style="background:#cba6f7"></div><div class="swatch" style="background:#89b4fa"></div><div class="swatch" style="background:#a6e3a1"></div><div class="swatch" style="background:#fab387"></div><div class="swatch" style="background:#313244"></div><div class="swatch" style="background:#1e1e2e"></div><div class="swatch" style="background:#11111b"></div></div><span class="key">os</span>         <span class="cat-text">win x64</span>
 <span class="key">shell</span>      <span class="cat-text">pwsh</span>
-<span class="key">agent</span>      <span class="cat-text">opencode &amp; codex</span>
+<span class="key">agents</span>     <span class="cat-text">opencode·codex·claude</span>
 <span class="key">editor</span>     <span class="cat-text">helix</span>
 <span class="key">explorer</span>   <span class="cat-text">yazi</span>
 <span class="key">versioning</span> <span class="cat-text">lazygit</span>
@@ -47,75 +54,58 @@
                         </div>
                         <section class="panes">
                             <div class="prompt">
-                                <span class="chevron">></span
-                                ><a href="https://github.com/jesseduffield/lazygit" class="pill">lazygit</a><span> + </span><a href="https://yazi-rs.github.io/" class="pill">yazi</a>
+                                <span class="chevron">$_</span><a href="https://github.com/jesseduffield/lazygit" class="pill">lazygit</a><span> + </span><a href="https://yazi-rs.github.io/" class="pill">yazi</a>
                             </div>
                             <div class="prompt result">
-                                <span class="result-text"
-                                    >Git status, diffs, or file trees, swap from
-                                    the status bar.</span
-                                >
+                                <span class="result-text">Git diffs and file trees, swap/collapse using <kbd>Ctrl+1</kbd> and <kbd>Ctrl+5</kbd>.</span>
                             </div>
 
                             <div class="prompt">
-                                <span class="chevron">></span><a href="https://helix-editor.com/" class="pill">helix</a>
+                                <span class="chevron">$_</span><a href="https://helix-editor.com/" class="pill">helix</a>
                             </div>
                             <div class="prompt result">
-                                <span class="result-text"
-                                    >The modal editor, open by default. Each
-                                    file gets its own tab.</span
-                                >
+                                <span class="result-text">The modal editor, open by default. Every file gets a draggable tab.</span>
                             </div>
 
                             <div class="prompt">
-                                <span class="chevron">></span
-                                ><span>runner</span>
+                                <span class="chevron">$_</span><span>runner</span>
                             </div>
-
                             <div class="prompt result">
-                                <span class="result-text"
-                                    ><span><a href="https://github.com/powershell/powershell" class="pill">PowerShell</a></span> terminal sessions that stay out of your way
-                                    until you need them.</span
-                                >
+                                <span class="result-text"><a href="https://github.com/powershell/powershell" class="pill">PowerShell</a> sessions on <kbd>Ctrl+3</kbd>, out of the way until you need them.</span>
                             </div>
 
                             <div class="prompt">
-                                <span class="chevron">></span
-                                ><span>agent panel</span>
+                                <span class="chevron">$_</span><span>agents, if you want them</span>
                             </div>
                             <div class="prompt result">
-                                <span class="result-text"
-                                    >Multi-agent tabs for <span><a href="https://github.com/anomalyco/opencode" class="pill">Opencode</a></span> or <span><a href="https://chatgpt.com/codex/" class="pill">Codex</a></span>.
-                                    Keep chats alongside code.</span
-                                >
+                                <span class="result-text"><a href="https://github.com/anomalyco/opencode" class="pill">OpenCode</a>, <a href="https://chatgpt.com/codex/" class="pill">Codex</a> or <a href="https://claude.com/claude-code" class="pill">Claude</a>, whichever you have installed. Optional.</span>
                             </div>
 
                             <div class="prompt">
-                                <span class="chevron">></span
-                                ><span>tabbed everything</span>
+                                <span class="chevron">$_</span><span>command palette</span>
                             </div>
                             <div class="prompt result">
-                                <span class="result-text"
-                                    >Editor buffers, agents, and terminal
-                                    runners, all tabbed.</span
-                                >
+                                <span class="result-text"><kbd>Ctrl+P</kbd> reaches everything cohesively, projects, panes, themes, windows.</span>
                             </div>
 
                             <div class="prompt">
-                                <span class="chevron">></span
-                                ><span>collapsible panels</span>
+                                <span class="chevron">$_</span><span>zen mode</span>
                             </div>
                             <div class="prompt result">
-                                <span class="result-text"
-                                    >Expand or collapse any surface. Your layout
-                                    remains saved.</span
-                                >
+                                <span class="result-text"><kbd>F11</kbd> leaves the editor, full screen. The tabs wait at the top edge.</span>
+                            </div>
+
+                            <div class="prompt">
+                                <span class="chevron">$_</span><span>persisted workspace</span>
+                            </div>
+                            <div class="prompt result">
+                                <span class="result-text">Workspace & sessions return as you left them. Two projects, two windows.</span>
                             </div>
                         </section>
 
                         <section class="download">
                             <div class="prompt">
-                                <span class="chevron">></span
+                                <span class="chevron">$_</span
                                 ><a
                                     id="download"
                                     href="https://github.com/ujjwalvivek/helide/releases/latest"
@@ -123,22 +113,20 @@
                                     rel="noopener"
                                     class="term-link"
                                     >Download
-                                    <span
-                                        id="version"
-                                        class="label cat-flamingo"
+                                    <span class="js-version label cat-flamingo"
                                         >loading…</span
                                     >
                                     for Windows</a
                                 >
                             </div>
                             <div class="prompt">
-                                <span class="chevron">></span
+                                <span class="chevron">$_</span
                                 ><a
                                     href="https://github.com/ujjwalvivek/helide"
                                     target="_blank"
                                     rel="noopener"
                                     class="term-link"
-                                    >view source on github</a
+                                    >View source on github</a
                                 >
                             </div>
                         </section>
@@ -146,7 +134,6 @@
 
                     <aside class="sidebar">
                         <div class="showcase">
-                            <div class="showcase-title">screenshots</div>
                             <div class="carousel-wrap">
                                 <div
                                     class="carousel"
@@ -164,11 +151,15 @@
                                 id="carousel-dots"
                                 role="tablist"
                                 aria-label="Screenshot"
+                                style="display: none;"
                             ></div>
                         </div>
 
                     </aside>
                 </div>
+
+                <!-- The window's glass rim: drawn over its own border, and nowhere else. -->
+                <canvas id="rim-shader" aria-hidden="true"></canvas>
 
                 <div class="statusbar">
                     <div class="status-left">
