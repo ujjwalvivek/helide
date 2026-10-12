@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="About Helide"
     SizeToContent="Height"
-    Width="380"
+    Width="420"
     WindowStartupLocation="CenterOwner"
     WindowStyle="None"
     ResizeMode="NoResize"
@@ -16,13 +16,16 @@
     SnapsToDevicePixels="True"
 >
     <Window.Resources>
+        <!-- One look for both footer buttons. They share the footer's width, so neither
+             hangs off to one side. -->
         <Style x:Key="AboutButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource InteractiveBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="Padding" Value="12,8" />
             <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -41,6 +44,9 @@
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="BtnSurface" Property="Background" Value="{DynamicResource PressedStrongBrush}" />
                             </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -53,6 +59,7 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -60,6 +67,13 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- A label in the facts block. Readable, but quieter than its value. -->
+        <Style x:Key="AboutLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+            <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
     </Window.Resources>
 
@@ -69,87 +83,139 @@
         BorderThickness="1"
         CornerRadius="0"
     >
-        <Grid Margin="20,18,20,16">
+        <Grid Margin="24,22,24,20">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="0" Orientation="Horizontal">
-                <Border
-                    Width="40"
-                    Height="40"
-                    CornerRadius="0"
-                    Margin="0,0,12,0"
-                    Background="Transparent"
-                >
-                    <Image
-                        Source="/src/Assets/helide.png"
-                        Width="40"
-                        Height="40"
-                        RenderOptions.BitmapScalingMode="HighQuality"
-                    />
-                </Border>
-                <StackPanel VerticalAlignment="Center">
+            <!-- Who it is: the mark, the name, and the version where it can be read, as
+                 a chip beside the name rather than as small print under it. -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Image
+                    Grid.Column="0"
+                    Source="/src/Assets/helide.png"
+                    Width="48"
+                    Height="48"
+                    Margin="0,0,16,0"
+                    VerticalAlignment="Center"
+                    RenderOptions.BitmapScalingMode="HighQuality"
+                />
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            Text="Helide"
+                            FontSize="{DynamicResource FontSizeDisplay}"
+                            FontWeight="SemiBold"
+                            Foreground="{DynamicResource TextStrongBrush}"
+                            VerticalAlignment="Center"
+                        />
+                        <Border
+                            Margin="10,3,0,0"
+                            Padding="7,2"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource InteractiveBrush}"
+                        >
+                            <TextBlock
+                                x:Name="VersionText"
+                                Text="v"
+                                Foreground="{DynamicResource TextBrush}"
+                                FontFamily="{DynamicResource UiMonoFontFamily}"
+                                FontSize="{DynamicResource FontSizeSmall}"
+                            />
+                        </Border>
+                    </StackPanel>
                     <TextBlock
-                        Text="Helide"
-                        FontSize="{DynamicResource FontSizeDisplay}"
-                        FontWeight="SemiBold"
-                        Foreground="{DynamicResource TextBrush}"
-                    />
-                    <TextBlock
-                        Text="A terminal workspace that brings the project tools you need."
-                        TextWrapping="Wrap"
-                        MaxWidth="270"
-                        Margin="0,3,0,0"
-Foreground="{DynamicResource TextMutedBrush}"
+                        Text="A terminal workspace for Windows."
+                        Margin="0,4,0,0"
+                        Foreground="{DynamicResource TextMutedBrush}"
                         FontSize="{DynamicResource FontSizeBody}"
                     />
                 </StackPanel>
-            </StackPanel>
+            </Grid>
 
-            <StackPanel Grid.Row="1" Margin="0,16,0,18">
-                <TextBlock
-                    x:Name="VersionText"
-                    Text="Version"
-                    Foreground="{DynamicResource TextFaintBrush}"
-                    FontFamily="{DynamicResource UiMonoFontFamily}"
-                    FontSize="{DynamicResource FontSizeSmall}"
-                    Margin="0,0,0,8"
-                />
-                <TextBlock
-                    Text="Source code on GitHub:"
-                    Foreground="{DynamicResource TextMutedBrush}"
-                    FontSize="{DynamicResource FontSizeBody}"
-                    Margin="0,0,0,4"
-                />
+            <!-- What it is, in a sentence a person would say. -->
+            <TextBlock
+                Grid.Row="1"
+                Margin="0,18,0,0"
+                TextWrapping="Wrap"
+                LineHeight="20"
+                Foreground="{DynamicResource TextBrush}"
+                FontSize="{DynamicResource FontSizeBody}"
+                Text="Helix with tabs, lazygit, yazi and a PowerShell runner in one window you can drive from the keyboard, with OpenCode, Codex or Claude alongside if you want them."
+            />
+
+            <!-- Facts, as rows, so the left edge is a label and the right edge a value
+                 instead of a column of text and a loose pair of buttons. -->
+            <Grid Grid.Row="2" Margin="0,18,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="84" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Source" Style="{DynamicResource AboutLabelStyle}" />
                 <Button
                     x:Name="GitHubLink"
+                    Grid.Row="0"
+                    Grid.Column="1"
                     Click="GitHubLink_Click"
                     Style="{DynamicResource AboutLinkStyle}"
                     Content="github.com/ujjwalvivek/helide"
                     HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
                     FontSize="{DynamicResource FontSizeBody}"
                 />
-            </StackPanel>
 
-            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button
-                    x:Name="UpdateButton"
-                    Click="UpdateButton_Click"
-                    Style="{DynamicResource AboutButtonStyle}"
-                    Content="Check for Updates"
-                    Margin="0,0,6,0"
-                    MinWidth="116"
+                <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" Text="License" Style="{DynamicResource AboutLabelStyle}" />
+                <TextBlock
+                    Grid.Row="1"
+                    Grid.Column="1"
+                    Margin="0,8,0,0"
+                    Text="MIT, free to use and change"
+                    Foreground="{DynamicResource TextBrush}"
+                    FontSize="{DynamicResource FontSizeBody}"
+                    VerticalAlignment="Center"
                 />
-                <Button
-                    x:Name="OkButton"
-                    Click="OkButton_Click"
-                    Style="{DynamicResource AboutButtonStyle}"
-                    Content="OK"
-                    MinWidth="56"
-                />
+            </Grid>
+
+            <!-- Footer: a rule, then two buttons that split the width between them. -->
+            <StackPanel Grid.Row="3" Margin="0,22,0,0">
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,0,0,16" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button
+                        x:Name="UpdateButton"
+                        Grid.Column="0"
+                        Click="UpdateButton_Click"
+                        Style="{DynamicResource AboutButtonStyle}"
+                        Content="Check for Updates"
+                    />
+                    <Button
+                        x:Name="OkButton"
+                        Grid.Column="2"
+                        Click="OkButton_Click"
+                        Style="{DynamicResource AboutButtonStyle}"
+                        Content="Close"
+                        IsDefault="True"
+                        IsCancel="True"
+                    />
+                </Grid>
             </StackPanel>
         </Grid>
     </Border>

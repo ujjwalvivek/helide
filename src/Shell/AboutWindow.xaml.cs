@@ -9,7 +9,8 @@ public partial class AboutWindow : Window
     public AboutWindow()
     {
         InitializeComponent();
-        VersionText.Text = $"Version {DescribeVersion()}";
+        var version = DescribeVersion();
+        VersionText.Text = version == "unknown" ? "dev build" : $"v{version}";
         Loaded += (_, _) =>
         {
             // Past the constructor on purpose: the Owner is assigned after it, and the
@@ -48,7 +49,7 @@ public partial class AboutWindow : Window
         // which the installing window has already replaced by now.
         if (HelideUpdateState.IsReadyToRestart || HelideUpdateState.NewerVersionOnDisk())
         {
-            UpdateButton.Content = "restart to update";
+            UpdateButton.Content = "Restart to update";
             UpdateButton.IsEnabled = true;
         }
         else
@@ -93,7 +94,7 @@ public partial class AboutWindow : Window
         if (UpdateButton.Content.ToString() != "Check for Updates") return;
 
         UpdateButton.IsEnabled = false;
-        UpdateButton.Content = "checking";
+        UpdateButton.Content = "Checking…";
         try
         {
             var updater = new HelideUpdater();
@@ -104,7 +105,7 @@ public partial class AboutWindow : Window
 
                 // Said out loud. Going straight back to "Check for Updates" looked
                 // exactly like a click that had done nothing.
-                UpdateButton.Content = "up to date";
+                UpdateButton.Content = "You are up to date";
                 await Task.Delay(2500);
                 SyncWithUpdateState();
                 return;
@@ -115,7 +116,7 @@ public partial class AboutWindow : Window
             var gate = HelideUpdateState.TryAcquireUpdateGate();
             if (gate is null)
             {
-                UpdateButton.Content = "installing";
+                UpdateButton.Content = "Installing…";
                 UpdateButton.IsEnabled = false;
                 await Task.Run(HelideUpdateState.WaitForOtherInstaller);
                 if (HelideUpdateState.NewerVersionOnDisk())
@@ -152,7 +153,7 @@ public partial class AboutWindow : Window
         catch (Exception ex)
         {
             HelideUpdateState.Clear();
-            UpdateButton.Content = $"failed: {ex.Message}";
+            UpdateButton.Content = $"Update failed: {ex.Message}";
             UpdateButton.IsEnabled = false;
             await System.Threading.Tasks.Task.Delay(3000);
             SyncWithUpdateState();
