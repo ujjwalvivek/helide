@@ -1069,6 +1069,7 @@
                     </Grid>
 
                     <GridSplitter
+                            x:Name="LeftSplitter"
                             Grid.Column="1"
                             Width="3"
                             HorizontalAlignment="Stretch"
@@ -1076,7 +1077,7 @@
                             DragCompleted="LayoutSplitter_DragCompleted"
                         />
 
-                    <Grid Grid.Column="2">
+                    <Grid x:Name="CenterPane" Grid.Column="2">
                         <Grid.RowDefinitions>
                             <RowDefinition
                                     x:Name="EditorPaneRow"
@@ -1316,6 +1317,7 @@
                     </Grid>
 
                     <GridSplitter
+                            x:Name="RightSplitter"
                             Grid.Column="3"
                             Width="3"
                             HorizontalAlignment="Stretch"
@@ -1496,6 +1498,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel
+                                x:Name="StatusLeftGroup"
                                 Grid.Column="0"
                                 Margin="0,0,12,0"
                                 Orientation="Horizontal"
@@ -1528,6 +1531,7 @@
                                 </ToggleButton>
                         </StackPanel>
                         <StackPanel
+                                x:Name="StatusRightGroup"
                                 Grid.Column="2"
                                 Margin="4,0,0,0"
                                 Orientation="Horizontal"

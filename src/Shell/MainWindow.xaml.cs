@@ -155,6 +155,9 @@ public partial class MainWindow : Window
         // A popup is a topmost window of its own, so one left open would sit over
         // whatever application was switched to.
         Deactivated += (_, _) => ZenBarPopup.IsOpen = false;
+        // Before anything reads or sets a track: the panes are laid out in the order
+        // they were left in, and every size below is read by role, not by position.
+        ApplySideSwap(_state.SidesSwapped);
         CaptureTrackDefaults();
         RestoreWindowGeometry();
         RestoreWorkspaceLayout();
@@ -781,6 +784,14 @@ public partial class MainWindow : Window
             commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanelFromKey(ToolPanel.Agent, _activeAgentSession?.Host), "View", PaletteCommand.Gesture(Key.D4), canInvoke: workspace));
         commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
         commands.Add(new PaletteCommand("Previous Editor Tab", () => CycleEditorTab(-1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
+
+        commands.Add(new PaletteCommand(
+            "Swap Side Panels",
+            SwapSidePanels,
+            "View",
+            "left ⇄ right",
+            keywords: "flip mirror switch sides left right agent git project",
+            canInvoke: workspace));
 
         // --- Theme ---
         // Driven off the theme table rather than a hand-maintained list, so a theme
@@ -3084,6 +3095,76 @@ private void OpenInNewWindow(string? projectPath)
             _workspace.Layout.LeftTool = showingGit ? "git" : "project";
             _stateStore.Save(_state);
         }
+    }
+
+    // ---- Swapping the side panels ---------------------------------------------
+    //
+    // The git and project panel and the agent panel trade sides, and the two clusters of
+    // panel buttons in the status bar trade with them, so each button stays under the
+    // panel it belongs to.
+    //
+    // Nothing that sizes a panel knows about this. Every width is read and written
+    // through a column definition named for its role, so what moves is the order the
+    // definitions are in and the column each pane is put in; the definitions, and the
+    // sizes in them, go along with their panes.
+
+    private bool _sidesSwappedApplied;
+
+    private void ApplySideSwap(bool swapped)
+    {
+        if (swapped == _sidesSwappedApplied)
+            return;
+
+        ColumnDefinition[] order = swapped
+            ? [RightPaneColumn, RightSplitterColumn, CenterPaneColumn, LeftSplitterColumn, LeftPaneColumn]
+            : [LeftPaneColumn, LeftSplitterColumn, CenterPaneColumn, RightSplitterColumn, RightPaneColumn];
+
+        PaneGrid.ColumnDefinitions.Clear();
+        foreach (var column in order)
+            PaneGrid.ColumnDefinitions.Add(column);
+
+        Grid.SetColumn(LeftPane, Array.IndexOf(order, LeftPaneColumn));
+        Grid.SetColumn(LeftSplitter, Array.IndexOf(order, LeftSplitterColumn));
+        Grid.SetColumn(CenterPane, Array.IndexOf(order, CenterPaneColumn));
+        Grid.SetColumn(RightSplitter, Array.IndexOf(order, RightSplitterColumn));
+        Grid.SetColumn(AgentPane, Array.IndexOf(order, RightPaneColumn));
+
+        // The status bar: the clusters change sides, and each is mirrored so the button
+        // for a panel is still the one nearest the edge that panel is against.
+        Grid.SetColumn(StatusLeftGroup, swapped ? 2 : 0);
+        Grid.SetColumn(StatusRightGroup, swapped ? 0 : 2);
+        StatusLeftGroup.Margin = swapped ? new Thickness(4, 0, 0, 0) : new Thickness(0, 0, 12, 0);
+        StatusRightGroup.Margin = swapped ? new Thickness(0, 0, 12, 0) : new Thickness(4, 0, 0, 0);
+        MirrorButtons(StatusLeftGroup);
+        MirrorButtons(StatusRightGroup);
+
+        _sidesSwappedApplied = swapped;
+    }
+
+    private static void MirrorButtons(StackPanel group)
+    {
+        var buttons = group.Children.Cast<UIElement>().Reverse().ToArray();
+        group.Children.Clear();
+
+        for (var index = 0; index < buttons.Length; index++)
+        {
+            if (buttons[index] is FrameworkElement element)
+                element.Margin = new Thickness(index == 0 ? 0 : 2, 0, 0, 0);
+
+            group.Children.Add(buttons[index]);
+        }
+    }
+
+    private void SwapSidePanels()
+    {
+        _state.SidesSwapped = !_state.SidesSwapped;
+        ApplySideSwap(_state.SidesSwapped);
+        _stateStore.Save(_state);
+
+        // The panes' windows are put right once they are arranged at their new size;
+        // this only nudges the odd stale frame.
+        RequestPaneRefresh(ToolPanel.Left);
+        RequestPaneRefresh(ToolPanel.Agent);
     }
 
     private void TogglePanel(ToolPanel panel)

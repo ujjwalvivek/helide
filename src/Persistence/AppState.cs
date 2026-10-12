@@ -39,6 +39,11 @@ internal sealed class AppState
     // it. While it is off no agent is started, and the saved sessions of each workspace
     // are left exactly as they were so turning it back on brings them back.
     public bool AiEnabled { get; set; }
+
+    // Whether the two side panels have traded places: the agent on the left and the git
+    // and project panel on the right. A way of working rather than part of any one
+    // project, so it is kept here and every workspace follows it.
+    public bool SidesSwapped { get; set; }
 }
 
 /// <summary>Everything describing one project's workspace, persisted per project path.</summary>
