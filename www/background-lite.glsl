@@ -73,6 +73,12 @@ vec3 field(vec2 u)
 // pointer only leans on it: the side facing the pointer is a little brighter.
 // Both fade out toward the inside of the window, so there is no line where the
 // rim stops.
+//
+// The seam, where the spilled light gives out on the inside, is not an offset
+// of the border. How deep the light reaches depends on its colour (blue is bent
+// further than pink), and dips where one colour gives way to another. It is
+// smooth and steady inside a single colour, so the seam is uneven only where
+// the colours are, the way a real one would be, rather than reading as a bevel.
 // ---------------------------------------------------------------------------
 
 #ifdef RIM
@@ -88,19 +94,79 @@ vec2 bend(vec3 n, float ior)
     return r.xy / max(-r.z, 0.25) * DEPTH;
 }
 
+// The colour of the light at a point on the page, as a tint that does not
+// depend on how bright it is, so the dark and light halves of the same hue
+// agree: 0 for a warm pink, rising toward 0.5 for a blue.
+float tintAt(vec2 page)
+{
+    vec3 c = field(page / iResolution.xy);
+    return (c.b - c.r) / max(max(c.r, max(c.g, c.b)), 1e-3);
+}
+
 void main()
 {
     vec2 half_ = uSize * 0.5;
     vec2 p = gl_FragCoord.xy - half_;
 
-    // How far into the rim this pixel is on each axis: 0 where the rim begins,
+    // The rim is painted over a little more of the window than it nominally
+    // takes, so the seam has room to wander both ways. The nominal depth is
+    // uBand; the light can spill as far as reach.
+    float reach = uBand * 1.8;
+
+    // How far into that margin this pixel is on each axis: 0 where it begins,
     // 1 on the border.
-    vec2 q = (abs(p) - (half_ - uBand)) / uBand;
+    vec2 q = (abs(p) - (half_ - reach)) / reach;
     vec2 qp = max(q, 0.0);
 
     // One smooth surface round the corner rather than two planes meeting in a
     // crease, with a power high enough that the outline stays square.
-    float x = pow(pow(qp.x, 16.0) + pow(qp.y, 16.0), 1.0 / 16.0);
+    float xr = pow(pow(qp.x, 16.0) + pow(qp.y, 16.0), 1.0 / 16.0);
+    if (xr <= 0.001)
+    {
+        gl_FragColor = vec4(0.0);
+        return;
+    }
+    xr = min(xr, 1.0);
+
+    // Distance in from the border, in pixels.
+    float dist = (1.0 - xr) * reach;
+
+    // This pixel's place on the page, which is where the background was drawn.
+    vec2 u = (gl_FragCoord.xy + uOrigin) / iResolution.xy;
+    vec2 px = 1.0 / iResolution.xy;
+
+    // The point on the border straight out from this pixel, which is where the
+    // depth is read, so it is the same all the way across the band. Round a
+    // corner the two edges are blended, over a short stretch either side of the
+    // diagonal, so there is no crease where they meet.
+    float onX = smoothstep(-0.25, 0.25, qp.x - qp.y);
+    vec2 edgeX = vec2(sign(p.x) * half_.x, p.y);
+    vec2 edgeY = vec2(p.x, sign(p.y) * half_.y);
+    vec2 edge = mix(edgeY, edgeX, onX);
+
+    // Not every colour is bent the same, and blue is bent most: over pink the
+    // light stops short, over blue it carries further in. So the depth is a
+    // function of the colour at that point on the border and of nothing else.
+    // Within one colour the seam is smooth and keeps its line; it moves only
+    // where the colour does. Colour is not split into channels anywhere; this
+    // only changes how deep a single colour reaches.
+    vec2 page = edge + half_ + uOrigin;
+    float tint = tintAt(page);
+
+    // Where one colour gives way to another the seam dips: light there is
+    // being bent two ways at once and reaches less far than either. Measured
+    // as how much the tint changes along the edge, so it is nothing in the
+    // middle of a colour.
+    vec2 along = mix(vec2(1.0, 0.0), vec2(0.0, 1.0), onX) * 24.0 * uScale;
+    float change = abs(tintAt(page + along) - tintAt(page - along));
+
+    float depth = uBand * (1.0 + 1.2 * (tint - 0.2)) * (1.0 - 3.0 * change);
+    depth = clamp(depth, uBand * 0.35, reach);
+
+    // The surface rolls over inside that depth rather than inside a fixed one,
+    // so where the light spills further the glass is simply a wider curve. At
+    // the border it is 1 whatever the depth, so the edge itself stays put.
+    float x = 1.0 - dist / depth;
     if (x <= 0.001)
     {
         gl_FragColor = vec4(0.0);
@@ -114,10 +180,6 @@ void main()
     // Circular cross-section: the slope runs from level to vertical.
     float slope = x / sqrt(max(1.0 - x * x, 1e-3));
     vec3 n = normalize(vec3(n2 * min(slope, 9.0), 1.0));
-
-    // This pixel's place on the page, which is where the background was drawn.
-    vec2 u = (gl_FragCoord.xy + uOrigin) / iResolution.xy;
-    vec2 px = 1.0 / iResolution.xy;
 
     // Refraction. One sample for all three channels: splitting them by colour
     // reads red from one place and blue from another, and over this palette
@@ -139,8 +201,9 @@ void main()
 
     // The highlight: a hair-thin line just inside the border, where the
     // surface is steep enough to throw light straight back.
-    float rimPx = (1.0 - x) * uBand;
-    float streak = exp(-pow((rimPx - 0.9 * uScale) / (0.8 * uScale), 2.0));
+    // This is measured from the border itself, so it stays straight; only the
+    // seam on the inside wanders.
+    float streak = exp(-pow((dist - 0.9 * uScale) / (0.8 * uScale), 2.0));
 
     // Fresnel: the steeper the surface, the more of the light it returns
     // instead of passing. So the refracted page gives way to its own lifted
