@@ -432,7 +432,14 @@ internal static class Program
 
     private static bool IsOnPath(string exe)
     {
-        var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        // This process's PATH is a copy taken when it started, so it cannot see anything
+        // an install or a repair added since -- which made a full run install all three
+        // tools and then report all three as still missing. The saved machine and user
+        // values are what the next shell will get, so they are searched as well.
+        var path = string.Join(';',
+            Environment.GetEnvironmentVariable("PATH"),
+            Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine),
+            Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User));
 
         foreach (var directory in path.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
