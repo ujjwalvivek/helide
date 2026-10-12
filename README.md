@@ -96,10 +96,8 @@ Update source:
 cd tools/AutoUpdater
 dotnet build
 
-# Run the binary (with flags)
+# Run the binary
 dotnet run
-dotnet run --check        # only check, don't install
-dotnet run --silent       # suppress extra output
 
 # Release build
 dotnet publish -c Release -r win-x64 --self-contained
