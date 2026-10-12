@@ -109,6 +109,14 @@ dotnet publish -c Release -r win-x64 --self-contained
 
 Interactive TUI that checks the CLIs Helide shells out to, installs what is missing, repairs PATH, publishes the single-file builds, and installs them. The user PATH is guarded at 2000 characters for safety.
 
+It opens on a status screen (tools, agents, what is installed) and offers three workflows:
+
+| Workflow               | Does                                                          |
+| ---------------------- | ------------------------------------------------------------- |
+| Set up everything      | Fix tools, then build and install Helide and AutoUpdater      |
+| Fix tools              | Check, `winget install` what is missing, repair PATH          |
+| Build & install Helide | Publish Helide and AutoUpdater, then install both             |
+
 #### Build and Run
 
 ```sh

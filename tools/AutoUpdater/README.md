@@ -7,7 +7,8 @@ TUI (terminal) CLI updater for Helide. Checks GitHub releases, downloads updates
 Standalone:
 
 ```sh
-AutoUpdater.exe
+dotnet run
+.\AutoUpdater.exe
 ```
 
 It checks GitHub, downloads and installs the update if there is one, then restarts Helide. When there is nothing to install, or something fails, it holds the result on screen until a key is pressed.
