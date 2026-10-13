@@ -1,0 +1,225 @@
+<UserControl x:Class="Helide.Shell.AppDialog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="Transparent"
+             Focusable="False"
+             Width="480">
+    <UserControl.Resources>
+        <!-- A flat, square button. The fill is the one thing that says what it is for: the
+             accent or danger colour for the answer being asked for, the quiet one for the
+             way out. The pointer lays a veil over it rather than swapping the colour. -->
+        <Style x:Key="DialogButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="26" />
+            <Setter Property="MinWidth" Value="76" />
+            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontFamily" Value="{DynamicResource UiFontFamily}" />
+            <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid SnapsToDevicePixels="True">
+                            <Border Background="{TemplateBinding Background}"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="Veil"
+                                    Background="{DynamicResource TextStrongBrush}"
+                                    Opacity="0"
+                                    IsHitTestVisible="False" />
+                            <Border x:Name="Edge"
+                                    BorderBrush="{DynamicResource TextBrush}"
+                                    BorderThickness="1"
+                                    Opacity="0"
+                                    IsHitTestVisible="False" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Veil" Property="Opacity" Value="0.14" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Veil" Property="Opacity" Value="0.24" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Edge" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- A square box with a tick, in place of the system check box. -->
+        <Style x:Key="DialogCheckStyle" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}" />
+            <Setter Property="FontFamily" Value="{DynamicResource UiFontFamily}" />
+            <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Border Width="14"
+                                    Height="14"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource PressedStrongBrush}"
+                                    Background="{DynamicResource PaneHeaderBrush}"
+                                    VerticalAlignment="Center">
+                                <Path x:Name="Mark"
+                                      Data="M3,7 L6,10 L11,4"
+                                      Stroke="{DynamicResource AccentBrush}"
+                                      StrokeThickness="1.6"
+                                      Visibility="Collapsed" />
+                            </Border>
+                            <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Mark" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="{DynamicResource PopoverBrush}"
+            BorderBrush="{DynamicResource PressedBrush}"
+            BorderThickness="1"
+            SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="28"
+                              ShadowDepth="8"
+                              Opacity="0.55"
+                              Color="Black" />
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Height="38"
+                    Background="{DynamicResource PaneHeaderBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="16,0">
+                <TextBlock x:Name="TitleText"
+                           VerticalAlignment="Center"
+                           FontFamily="{DynamicResource UiFontFamily}"
+                           FontSize="{DynamicResource FontSizeMedium}"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}"
+                           TextTrimming="CharacterEllipsis" />
+            </Border>
+
+            <StackPanel Grid.Row="1" Margin="16,14,16,16">
+                <ScrollViewer MaxHeight="260"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Focusable="False">
+                    <TextBlock x:Name="MessageText"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextBrush}" />
+                </ScrollViewer>
+                <Border x:Name="InputFrame"
+                        Margin="0,12,0,0"
+                        Background="{DynamicResource PaneHeaderBrush}"
+                        BorderBrush="{DynamicResource PressedBrush}"
+                        BorderThickness="1"
+                        Visibility="Collapsed">
+                    <Grid>
+                        <TextBox x:Name="InputBox"
+                                 Height="28"
+                                 Padding="8,0"
+                                 VerticalContentAlignment="Center"
+                                 FontFamily="{DynamicResource UiMonoFontFamily}"
+                                 FontSize="{DynamicResource FontSizeBody}"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 CaretBrush="{DynamicResource AccentBrush}"
+                                 SelectionBrush="{DynamicResource AccentBrush}"
+                                 Background="Transparent"
+                                 BorderThickness="0" />
+                        <TextBlock x:Name="InputPlaceholder"
+                                   Margin="9,0,0,0"
+                                   VerticalAlignment="Center"
+                                   IsHitTestVisible="False"
+                                   FontFamily="{DynamicResource UiMonoFontFamily}"
+                                   FontSize="{DynamicResource FontSizeBody}"
+                                   Foreground="{DynamicResource TextFaintBrush}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=InputBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+                <CheckBox x:Name="SuppressCheck"
+                          Style="{StaticResource DialogCheckStyle}"
+                          Margin="0,14,0,0"
+                          HorizontalAlignment="Left"
+                          Visibility="Collapsed" />
+            </StackPanel>
+
+            <!-- The footer says what the keys do, as the palette's does, and carries the
+                 answers on the right. -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource PaneHeaderBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="12,0">
+                <Grid Height="46">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Style="{DynamicResource KeyBadgeStyle}">
+                            <TextBlock Text="Enter" Style="{DynamicResource KeyBadgeTextStyle}" />
+                        </Border>
+                        <TextBlock x:Name="EnterHint"
+                                   Style="{DynamicResource SectionLabelStyle}"
+                                   Margin="6,0,14,0"
+                                   VerticalAlignment="Center" />
+                        <Border Style="{DynamicResource KeyBadgeStyle}">
+                            <TextBlock Text="Esc" Style="{DynamicResource KeyBadgeTextStyle}" />
+                        </Border>
+                        <TextBlock x:Name="EscHint"
+                                   Style="{DynamicResource SectionLabelStyle}"
+                                   Margin="6,0,0,0"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="SecondaryButton"
+                                Style="{StaticResource DialogButtonStyle}"
+                                Margin="0,0,8,0"
+                                Background="{DynamicResource InteractiveBrush}"
+                                Foreground="{DynamicResource TextBrush}"
+                                Click="SecondaryButton_Click" />
+                        <Button x:Name="PrimaryButton"
+                                Style="{StaticResource DialogButtonStyle}"
+                                Background="{DynamicResource AccentBrush}"
+                                Foreground="{DynamicResource TextOnAccentBrush}"
+                                Click="PrimaryButton_Click" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>

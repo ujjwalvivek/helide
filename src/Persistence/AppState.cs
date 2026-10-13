@@ -44,6 +44,12 @@ internal sealed class AppState
     // and project panel on the right. A way of working rather than part of any one
     // project, so it is kept here and every workspace follows it.
     public bool SidesSwapped { get; set; }
+
+    // Dialogs the user ticked "don't ask again" on, by the key each one is shown under.
+    // A confirmation in this list is answered yes without being shown, and a notice is
+    // not shown at all. Kept here and not per project: it is about how annoying a
+    // question is, not about any one repository.
+    public List<string> HiddenDialogs { get; set; } = [];
 }
 
 /// <summary>Everything describing one project's workspace, persisted per project path.</summary>

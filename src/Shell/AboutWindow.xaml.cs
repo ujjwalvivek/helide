@@ -128,7 +128,10 @@ public partial class AboutWindow : Window
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"Failed to restart Helide: {ex.Message}", "Restart Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                // Said on the button itself: this window has nowhere else to say it,
+                // and a second click tries again.
+                UpdateButton.Content = "Restart failed";
+                UpdateButton.ToolTip = ex.Message;
             }
             return;
         }

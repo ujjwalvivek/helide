@@ -816,6 +816,22 @@ public partial class MainWindow : Window
             _state.AiEnabled ? "closes the agent pane" : "opens the agent pane",
             keywords: "agent opencode codex claude toggle switch"));
 
+        // Only offered once something has been hidden, so it is not a command that does
+        // nothing.
+        if (_state.HiddenDialogs.Count > 0)
+        {
+            commands.Add(new PaletteCommand(
+                "Show Hidden Dialogs Again",
+                () =>
+                {
+                    _state.HiddenDialogs.Clear();
+                    _stateStore.Save(_state);
+                },
+                "Help",
+                "undoes \"don't ask again\"",
+                keywords: "reset confirm notice popup warning"));
+        }
+
         commands.Add(new PaletteCommand("About Helide", ShowAbout, "Help"));
 
         return commands;
@@ -2950,6 +2966,44 @@ private void OpenInNewWindow(string? projectPath)
     private void MainWindow_PreviewKeyDown(object sender, WpfKeyEventArgs e)
     {
         var modifiers = Keyboard.Modifiers;
+
+        // A dialog card owns the keyboard while it is up, for the palette's reason: shown
+        // over a pane, its text box would never be handed a key of its own.
+        if (_dialogOpen)
+        {
+            switch (e.Key)
+            {
+                case Key.Escape:
+                    DialogControl.Cancel();
+                    e.Handled = true;
+                    return;
+
+                case Key.Enter:
+                    DialogControl.Accept();
+                    e.Handled = true;
+                    return;
+
+                // The one key a card with no text box has left over.
+                case Key.Space when !DialogControl.HasInput:
+                    DialogControl.ToggleSuppress();
+                    e.Handled = true;
+                    return;
+            }
+
+            // Swallowed rather than passed on when the card is not the window receiving
+            // keys: they would otherwise be typed into the terminal behind it.
+            if (!DialogHasOsFocus())
+            {
+                if (e.Key == Key.Back)
+                    DialogControl.Backspace();
+                else if (PrintableText(e.Key) is { } typed)
+                    DialogControl.AppendText(typed);
+
+                e.Handled = true;
+            }
+
+            return;
+        }
 
         if (modifiers == ModifierKeys.Control && e.Key == Key.P)
         {

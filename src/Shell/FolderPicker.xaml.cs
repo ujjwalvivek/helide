@@ -18,7 +18,7 @@ using UserControl = System.Windows.Controls.UserControl;
 namespace Helide.Shell;
 
 /// <summary>
-/// The in-project counterpart of the folder dialog: lists the project's own
+/// The in-project folder picker: lists the project's own
 /// directories, project-relative and fuzzy-filtered, and picks one.
 /// </summary>
 /// <remarks>
@@ -47,10 +47,8 @@ public partial class FolderPicker : UserControl
     /// <summary>Raised with the picked folder's full path, before the picker closes.</summary>
     public event Action<string>? Picked;
 
-    /// <summary>Raised when the pinned "Open another folder" row is chosen. The window owns the
-    /// native dialog from there -- including closing this picker before showing it,
-    /// which is the whole reason this is an event rather than the picker calling the
-    /// dialog itself.
+    /// <summary>Raised when the pinned "Open another folder" row is chosen. The window owns
+    /// the folder browser from there, and closes this picker before showing it.
     /// </summary>
     public event Action? BrowseRequested;
 
@@ -270,11 +268,8 @@ public partial class FolderPicker : UserControl
         if (ResultsList.SelectedItem is not FolderRow row)
             return;
 
-        // The pinned row hands off to the window for the native browser. It stays open
-        // until the window decides what to do: it is the one that has to close first,
-        // since showing a parentless dialog under an open popup lets the dialog adopt
-        // the popup's HWND as its owner, and the deactivation that closes the popup
-        // then destroys its owner with it.
+        // The pinned row hands off to the window for the folder browser. It stays open
+        // until the window decides what to do: closing it is the window's to do.
         if (row.IsBrowse)
         {
             BrowseRequested?.Invoke();

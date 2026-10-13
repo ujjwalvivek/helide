@@ -1909,6 +1909,19 @@
             </Border>
         </Popup>
 
+        <!-- Every message, confirmation and prompt for a name. A popup for the reason the
+             palette is one, and a separate one so it can be raised while the palette's list is
+             closing. -->
+        <Popup x:Name="DialogPopup"
+               Placement="Center"
+               AllowsTransparency="True"
+               Focusable="True"
+               StaysOpen="False"
+               Opened="DialogPopup_Opened"
+               PopupAnimation="None">
+            <ui:AppDialog x:Name="DialogControl" />
+        </Popup>
+
         <Popup x:Name="CommandPalettePopup"
                Placement="Center"
                AllowsTransparency="True"
