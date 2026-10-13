@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -113,8 +114,87 @@ internal static class MaximizeBounds
         source?.AddHook(WindowProc);
     }
 
+    // Diagnostic, off unless HELIDE_TRACE_WINDOW is set: the messages that decide whether
+    // the window is shown, hidden, minimised or brought forward, written to
+    // %TEMP%\helide-window-trace.log. For working out what the taskbar and the window say
+    // to each other when a click on the taskbar button does nothing.
+    private static readonly string? Trace =
+        string.IsNullOrEmpty(Environment.GetEnvironmentVariable("HELIDE_TRACE_WINDOW"))
+            ? null
+            : Path.Combine(Path.GetTempPath(), "helide-window-trace.log");
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(nint hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern nint GetFocus();
+
+    [DllImport("user32.dll")]
+    private static extern nint GetCapture();
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowEnabled(nint hwnd);
+
+    private static void TraceMessage(nint hwnd, int message, nint wParam, nint lParam)
+    {
+        var name = message switch
+        {
+            0x0005 => "WM_SIZE",
+            0x0006 => "WM_ACTIVATE",
+            0x0007 => "WM_SETFOCUS",
+            0x0008 => "WM_KILLFOCUS",
+            0x000A => "WM_ENABLE",
+            0x0010 => "WM_CLOSE",
+            0x0013 => "WM_QUERYOPEN",
+            0x0018 => "WM_SHOWWINDOW",
+            0x001C => "WM_ACTIVATEAPP",
+            0x001F => "WM_CANCELMODE",
+            // Only with a button going down, or over somewhere that refuses the pointer:
+            // one is sent for every move of it otherwise.
+            0x0020 when (short)(lParam & 0xFFFF) == -2 || ((lParam >> 16) & 0xFFFF) != 0x0200 => "WM_SETCURSOR",
+            0x0021 => "WM_MOUSEACTIVATE",
+            0x0046 => "WM_WINDOWPOSCHANGING",
+            0x0047 => "WM_WINDOWPOSCHANGED",
+            0x0086 => "WM_NCACTIVATE",
+            0x00A1 => "WM_NCLBUTTONDOWN",
+            0x0112 => "WM_SYSCOMMAND",
+            0x0201 => "WM_LBUTTONDOWN",
+            0x0215 => "WM_CAPTURECHANGED",
+            0x0281 => "WM_IME_SETCONTEXT",
+            _ => null,
+        };
+        if (name is null)
+            return;
+
+        var detail = "";
+        if (message is 0x0046 or 0x0047)
+        {
+            // x, y, cx, cy and flags follow the two handles.
+            var at = lParam + 2 * nint.Size;
+            detail = $" pos=({Marshal.ReadInt32(at)},{Marshal.ReadInt32(at + 4)},{Marshal.ReadInt32(at + 8)},{Marshal.ReadInt32(at + 12)}) flags=0x{Marshal.ReadInt32(at + 16):X}";
+        }
+
+        try
+        {
+            File.AppendAllText(
+                Trace!,
+                $"{DateTime.Now:HH:mm:ss.fff} {name} w=0x{wParam:X} l=0x{lParam:X}{detail}"
+                + $" | iconic={IsIconic(hwnd)} zoomed={IsZoomed(hwnd)} foreground={(GetForegroundWindow() == hwnd)} focus=0x{GetFocus():X} capture=0x{GetCapture():X} enabled={IsWindowEnabled(hwnd)}{Environment.NewLine}");
+        }
+        catch
+        {
+            // A trace that cannot be written is not worth failing a window message for.
+        }
+    }
+
     private static nint WindowProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (Trace is not null)
+            TraceMessage(hwnd, message, wParam, lParam);
+
         switch (message)
         {
             // Sent by the theme engine to have the stock caption and frame drawn. The
