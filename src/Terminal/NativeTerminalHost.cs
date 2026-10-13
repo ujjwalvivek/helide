@@ -39,6 +39,13 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr SetFocus(IntPtr hWnd);
 
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetFocus();
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool IsChild(IntPtr parent, IntPtr window);
+
         [DllImport("user32.dll", EntryPoint = "SetClassLongPtrW", SetLastError = true)]
         public static extern IntPtr SetClassLongPtr(IntPtr hWnd, int index, IntPtr value);
 
@@ -323,6 +330,23 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             NativeMethods.SetFocus(handle);
     }
 
+    // Whether this pane's renderer is the window actually receiving keys. WPF's own
+    // notion of focus is not asked: it can name one element while a pane's HWND has the
+    // keyboard, which is the same trap the palette fell into.
+    public bool HasKeyboardFocus()
+    {
+        if (_disposed)
+            return false;
+
+        var handle = RendererHandle();
+        if (handle == IntPtr.Zero)
+            return false;
+
+        var focused = NativeMethods.GetFocus();
+        return focused != IntPtr.Zero
+            && (focused == handle || NativeMethods.IsChild(handle, focused));
+    }
+
     // Resolved lazily because the renderer only builds its HwndHost once the control
     // has been loaded and laid out.
     private IntPtr RendererHandle()
@@ -504,10 +528,25 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         if (_disposed)
             return;
 
-        if (IsPasteGesture(e) && PasteFromClipboard())
+        if (IsPasteGesture(e))
         {
-            e.Handled = true;
-            return;
+            if (PasteFromClipboard())
+            {
+                e.Handled = true;
+                return;
+            }
+
+            // Claude takes an image from the clipboard on Alt+V on Windows and has nothing
+            // on Ctrl+V, which is the key everything else here pastes with. So in a Claude
+            // pane a paste with only an image on the clipboard is sent as the chord it
+            // listens for: ESC then v, which is how a terminal writes Alt+V.
+            if (string.Equals(Label, "claude", StringComparison.OrdinalIgnoreCase)
+                && ClipboardHasImage())
+            {
+                WriteRaw("\u001bv");
+                e.Handled = true;
+                return;
+            }
         }
 
         if (e.Key == Key.Tab && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
@@ -522,7 +561,10 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             return;
         }
 
-        if (e.Key != Key.Enter)
+        // Only a bare Enter is rewritten. Ctrl+Enter and Shift+Enter are keys of their
+        // own to the agents -- send or queue, a new line -- and sent as a carriage return
+        // they were plain Enter. Those go to the renderer, which encodes the modifier.
+        if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None)
             return;
 
         WriteRaw("\r");
@@ -690,6 +732,27 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         var payload = cleaned.ToString();
         WriteRaw(_bracketedPaste ? "\u001b[200~" + payload + "\u001b[201~" : payload);
         return true;
+    }
+
+    private static bool ClipboardHasImage()
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                return System.Windows.Clipboard.ContainsImage();
+            }
+            catch (COMException)
+            {
+                Thread.Sleep(10);
+            }
+            catch (ExternalException)
+            {
+                Thread.Sleep(10);
+            }
+        }
+
+        return false;
     }
 
     private static string? ReadClipboardText()
