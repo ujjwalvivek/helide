@@ -570,6 +570,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     private static readonly int[] MouseModeNumbers = [1000, 1002, 1003, 1005, 1006, 1015];
     private readonly Dictionary<int, bool> _mouseModes = [];
     private string _mouseTail = "";
+    private bool _mouseModesReplayed;
 
     // Runs on the ConPTY reader thread.
     private void TrackMouseModes(object? data)
@@ -599,14 +600,19 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
 
     private void Host_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        if (_disposed || e.NewValue is not true)
+        // Once: the first time the pane is shown is the only time the renderer has missed
+        // anything. After that it comes and goes with its tab, and with the window being
+        // minimised, already knowing.
+        if (_disposed || _mouseModesReplayed || e.NewValue is not true)
             return;
 
         // After the layout pass that gives the renderer its window.
         Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
         {
-            if (_disposed || !IsVisible)
+            if (_disposed || _mouseModesReplayed || !IsVisible)
                 return;
+
+            _mouseModesReplayed = true;
 
             string modes;
             lock (_mouseModes)

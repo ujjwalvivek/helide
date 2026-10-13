@@ -1160,6 +1160,12 @@ private void OpenInNewWindow(string? projectPath)
     // back from an auto-hiding taskbar comes and goes with zen mode.
     private void ApplyMaximizeInset()
     {
+        // Left as it is while minimised. Dropping the inset there and putting it back on
+        // the way up resizes every pane twice for nothing, and each program in one
+        // redraws itself both times.
+        if (WindowState == WindowState.Minimized)
+            return;
+
         var maximized = WindowState == WindowState.Maximized;
         MaximizeInset.Margin = maximized ? MaximizeBounds.Measure(this) : new Thickness(0);
         WindowOutline.Visibility = maximized ? Visibility.Collapsed : Visibility.Visible;
