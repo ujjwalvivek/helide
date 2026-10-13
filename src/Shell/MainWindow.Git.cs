@@ -143,7 +143,7 @@ public partial class MainWindow
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         timer.Tick += (_, _) =>
         {
-            if (IsActive && GitToolStrip.IsVisible)
+            if (IsActive && WindowState != WindowState.Minimized && GitToolStrip.IsVisible)
                 _ = RefreshGitStatusAsync();
         };
         timer.Start();

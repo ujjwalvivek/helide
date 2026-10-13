@@ -261,13 +261,30 @@ public partial class MainWindow : Window
             session.RefreshTheme();
     }
 
+    private bool _wasMinimized;
+
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         if (_loaded)
             return;
 
         _loaded = true;
-        Activated += (_, _) => RefreshGitBranch();
+        // Not while minimised. A click on the taskbar button brings a minimised window
+        // forward first and restores it second, and git started in between costs the
+        // click its second half: the window stays down and Windows sounds its error
+        // chime. The readout is brought up to date as the window comes back up instead.
+        Activated += (_, _) =>
+        {
+            if (WindowState != WindowState.Minimized)
+                RefreshGitBranch();
+        };
+        StateChanged += (_, _) =>
+        {
+            var restored = _wasMinimized && WindowState != WindowState.Minimized;
+            _wasMinimized = WindowState == WindowState.Minimized;
+            if (restored)
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RefreshGitBranch));
+        };
         StartOpenRequestWatcher();
         // Yazi and Helix are launched by Helide, so they inherit this and route
         // "open this file" back to us instead of spawning their own windows.
