@@ -1638,15 +1638,20 @@ private void OpenInNewWindow(string? projectPath)
                 ProjectPanelToggle.IsChecked = false;
             }
             // The pane is not missing when the offer is on it -- the browser is simply
-            // held back until the question is answered.
-            if (_leftHost is null && !_yaziPromptPending)
+            // held back until the question is answered. A tool that is not installed is
+            // not a failure either: its pane is a card that says so and offers the fix,
+            // and counting it left "1 tool pane failed to start" on the welcome screen
+            // long after the tool had been installed and the pane was running.
+            if (_leftHost is null && !_yaziPromptPending
+                && !LeftToolStack.Children.OfType<MissingToolCard>().Any())
                 failures++;
             // Restores the editor tabs this workspace had open. A tab whose file has since
             // been deleted or moved is dropped rather than opened on a path that no
             // longer resolves.
             // Nothing about the runner is saved until it has been brought up below.
             _runnerLayoutReady = false;
-            if (RestoreEditorTabs() == 0 && CreateEditorTab(null) is null)
+            if (RestoreEditorTabs() == 0 && CreateEditorTab(null) is null
+                && !(_missingEditorCard is not null && EditorSlot.Children.Contains(_missingEditorCard)))
                 failures++;
             // Initialize runner session with startup message, or create default
             InitializeRunnerSessions(project);
