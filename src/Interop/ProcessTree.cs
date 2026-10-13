@@ -40,6 +40,62 @@ internal static class ProcessTree
     private static extern bool CloseHandle(nint handle);
 
     /// <summary>
+    /// The executable names of everything the process started, to any depth, not
+    /// including the process itself. Empty when the list cannot be read.
+    /// </summary>
+    public static List<string> DescendantNames(int root)
+    {
+        var names = new List<string>();
+
+        var snapshot = CreateToolhelp32Snapshot(Th32csSnapProcess, 0);
+        if (snapshot == InvalidHandle || snapshot == 0)
+            return names;
+
+        try
+        {
+            var children = new Dictionary<int, List<(int Id, string Name)>>();
+            var entry = new ProcessEntry32 { dwSize = (uint)Marshal.SizeOf<ProcessEntry32>() };
+
+            for (var more = Process32FirstW(snapshot, ref entry); more; more = Process32NextW(snapshot, ref entry))
+            {
+                var parent = (int)entry.th32ParentProcessID;
+                if (!children.TryGetValue(parent, out var list))
+                    children[parent] = list = [];
+
+                list.Add(((int)entry.th32ProcessID, entry.szExeFile));
+            }
+
+            var seen = new HashSet<int> { root };
+            var pending = new Stack<int>();
+            pending.Push(root);
+
+            while (pending.Count > 0)
+            {
+                if (!children.TryGetValue(pending.Pop(), out var list))
+                    continue;
+
+                foreach (var (id, name) in list)
+                {
+                    if (!seen.Add(id))
+                        continue;
+
+                    names.Add(name);
+                    pending.Push(id);
+                }
+            }
+        }
+        catch
+        {
+        }
+        finally
+        {
+            CloseHandle(snapshot);
+        }
+
+        return names;
+    }
+
+    /// <summary>
     /// The process and everything it started, to any depth. Just the process itself when
     /// the list cannot be read.
     /// </summary>

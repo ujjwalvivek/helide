@@ -88,6 +88,8 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         bool revealWhenSettled = false)
     {
         _revealWhenSettled = revealWhenSettled;
+        if (string.Equals(label, "helix", StringComparison.OrdinalIgnoreCase))
+            _statusProbe = new StatusLineProbe();
         _focusChangedHandler = Terminal_GotKeyboardFocus;
         Label = label;
         FilePath = filePath;
@@ -254,6 +256,44 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     }
 
     public event Action<NativeTerminalHost, TerminalHostState>? StateChanged;
+
+    // Whether the editor in this pane is showing its unsaved-changes marker. Only a
+    // Helix pane is followed; for anything else it stays false and never changes.
+    private readonly StatusLineProbe? _statusProbe;
+    private volatile bool _modifiedSeen;
+
+    public bool IsModified { get; private set; }
+
+    public event Action<NativeTerminalHost, bool>? ModifiedChanged;
+
+    // Runs on the ConPTY reader thread. The marker is read there, where the chunk is, and
+    // only a change is handed to the UI thread.
+    private void TrackModified(object? data)
+    {
+        if (_statusProbe is null)
+            return;
+
+        var text = data as string ?? (data is char[] chars ? new string(chars) : null);
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        bool? changed;
+        lock (_statusProbe)
+            changed = _statusProbe.Feed(text, _modifiedSeen);
+
+        if (changed is not { } modified)
+            return;
+
+        _modifiedSeen = modified;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            if (_disposed || IsModified == modified)
+                return;
+
+            IsModified = modified;
+            ModifiedChanged?.Invoke(this, modified);
+        }));
+    }
 
     public void FocusTerminal()
     {
@@ -590,6 +630,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         Interlocked.Exchange(ref _lastOutputTicks, DateTime.UtcNow.Ticks);
         Interlocked.Add(ref _outputLength, output.Data?.Length ?? 0);
         TrackPasteMode(output.Data);
+        TrackModified(output.Data);
     }
 
     private void ConPtyTerm_TermReady(object? sender, EventArgs e)

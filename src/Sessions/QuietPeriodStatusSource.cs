@@ -38,6 +38,14 @@ internal sealed class QuietPeriodStatusSource : ISessionStatusSource
 
     public event Action? BecameIdle;
 
+    // Silence is a guess at idleness, and so is output at working: a cursor blink or an
+    // echoed keystroke would be a spinner. Better to show none than a false one.
+    public event Action<bool>? BusyChanged
+    {
+        add { }
+        remove { }
+    }
+
     public void Start() => _timer.Start();
 
     public void Dispose() => _timer.Stop();

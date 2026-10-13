@@ -40,6 +40,7 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
     private long? _observedIdleAt;
     private bool _baselineTaken;
     private bool _sawRunning;
+    private bool _reportedBusy;
 
     private int _reading;
     private volatile bool _disposed;
@@ -61,6 +62,8 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
     public bool IsBusy => false;
 
     public event Action? BecameIdle;
+
+    public event Action<bool>? BusyChanged;
 
     public void Start() => _timer.Start();
 
@@ -93,6 +96,21 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
         });
     }
 
+    // Called from the read, which is on the thread pool; the change goes back to the
+    // dispatcher so the tab is only ever touched from the UI thread.
+    private void ReportBusy(bool busy)
+    {
+        if (busy == _reportedBusy)
+            return;
+
+        _reportedBusy = busy;
+        _dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!_disposed)
+                BusyChanged?.Invoke(busy);
+        }));
+    }
+
     private void Read()
     {
         OpenCodeSessionRow? session;
@@ -122,6 +140,7 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
             _baselineTaken = true;
             _observedIdleAt = session.IdleAt;
             _sawRunning = session.IdleAt is null;
+            ReportBusy(_sawRunning);
             return;
         }
 
@@ -130,8 +149,11 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
         {
             _observedIdleAt = null;
             _sawRunning = true;
+            ReportBusy(true);
             return;
         }
+
+        ReportBusy(false);
 
         // Only the arrival of an idle timestamp is news, so the same finished turn is
         // not reported on every poll after it.

@@ -19,6 +19,13 @@ internal interface ISessionStatusSource : IDisposable
     bool IsBusy { get; }
 
     /// <summary>
+    /// Fires with true when the agent starts working and false when it stops, on the UI
+    /// thread. Sources that cannot tell never fire it. It is what the tab's spinner
+    /// follows, whereas <see cref="BecameIdle"/> is the one-shot that marks a tab.
+    /// </summary>
+    event Action<bool>? BusyChanged;
+
+    /// <summary>
     /// Fires when the agent becomes idle. Never fires from a constructor, and must
     /// not fire before <see cref="Start"/>.
     /// </summary>

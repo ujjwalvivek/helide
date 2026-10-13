@@ -64,6 +64,7 @@ internal sealed class TranscriptStatusSource : ISessionStatusSource
     private long _offset;
     private string _pending = string.Empty;
     private bool _busy;
+    private bool _reportedBusy;
     private bool _finished;
     private bool _baselinePending;
     private bool _lookedBefore;
@@ -92,6 +93,8 @@ internal sealed class TranscriptStatusSource : ISessionStatusSource
     public bool IsBusy => _busy;
 
     public event Action? BecameIdle;
+
+    public event Action<bool>? BusyChanged;
 
     public void Start() => _timer.Start();
 
@@ -127,6 +130,14 @@ internal sealed class TranscriptStatusSource : ISessionStatusSource
 
         var finished = _finished;
         _finished = false;
+
+        // The baseline counts here: a turn already running when the pane is restored is
+        // running, and the spinner should say so.
+        if (_busy != _reportedBusy)
+        {
+            _reportedBusy = _busy;
+            BusyChanged?.Invoke(_busy);
+        }
 
         if (_baselinePending)
         {

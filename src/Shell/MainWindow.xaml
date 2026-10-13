@@ -145,6 +145,62 @@
                                 VerticalAlignment="Center"
                                 Visibility="{Binding ShowAttentionDot, Converter={StaticResource BoolToVis}}"
                             />
+                            <!-- Working. A quarter-circle turning, drawn rather than typed:
+                                 the terminal font has no spinner glyphs, and this one has to
+                                 sit exactly where the x does. It only runs while shown. -->
+                            <Path
+                                Data="M9,3.5 A5.5,5.5 0 0 1 14.5,9"
+                                Stroke="{DynamicResource AccentBrush}"
+                                StrokeThickness="1.6"
+                                StrokeStartLineCap="Round"
+                                StrokeEndLineCap="Round"
+                                Width="18"
+                                Height="18"
+                                RenderTransformOrigin="0.5,0.5"
+                                IsHitTestVisible="False"
+                                Visibility="{Binding ShowSpinner, Converter={StaticResource BoolToVis}}"
+                            >
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="RenderTransform">
+                                            <Setter.Value>
+                                                <RotateTransform />
+                                            </Setter.Value>
+                                        </Setter>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsVisible" Value="True">
+                                                <Trigger.EnterActions>
+                                                    <BeginStoryboard x:Name="SpinnerRun">
+                                                        <Storyboard>
+                                                            <DoubleAnimation
+                                                                Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                From="0"
+                                                                To="360"
+                                                                Duration="0:0:0.9"
+                                                                RepeatBehavior="Forever"
+                                                            />
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </Trigger.EnterActions>
+                                                <Trigger.ExitActions>
+                                                    <StopStoryboard BeginStoryboardName="SpinnerRun" />
+                                                </Trigger.ExitActions>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                            <!-- Unsaved changes in an editor tab. The terminal's yellow, so it is
+                                 not read as the green "finished" dot. -->
+                            <Ellipse
+                                Width="7"
+                                Height="7"
+                                Fill="{DynamicResource TerminalAnsi3Brush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                ToolTip="Unsaved changes"
+                                Visibility="{Binding ShowModifiedDot, Converter={StaticResource BoolToVis}}"
+                            />
                             <Button
                                 Click="Tab_Close"
                                 Style="{StaticResource TabCloseStyle}"

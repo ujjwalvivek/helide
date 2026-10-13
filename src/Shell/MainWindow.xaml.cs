@@ -2039,6 +2039,7 @@ private void OpenInNewWindow(string? projectPath)
         {
             var host = new NativeTerminalHost("helix", command, workingDirectory ?? _currentProject, path);
             var tab = new EditorTab(path, host);
+            host.ModifiedChanged += (_, modified) => tab.SetModified(modified);
 
             EditorSlot.Add(host);
             _editorTabs.Add(tab);
@@ -4083,6 +4084,9 @@ private void OpenInNewWindow(string? projectPath)
 
     private void InitializeRunnerSessions(string project)
     {
+        foreach (var session in _runnerSessions)
+            session.DisposeStatusSource();
+
         _runnerSessions.Clear();
         // Default runner session with startup message is created in OpenWorkspace
     }
@@ -4890,15 +4894,40 @@ private void OpenInNewWindow(string? projectPath)
                     MarkAttention();
             };
 
+            source.BusyChanged += SetBusy;
+
             source.Start();
         }
 
         private bool _hovered;
+        private bool _busy;
 
-        // Hover wins over the mark, so a marked tab still offers its close button.
-        public bool ShowAttentionDot => _needsAttention && !_hovered;
+        // What the slot after the name shows, in order: a spinner while the tab is
+        // working, then the green dot for something finished that was not looked at, then
+        // the unsaved marker. Hover wins over all of them, so every tab can always be
+        // closed; with none of them the slot is the close button.
+        public bool ShowSpinner => _busy && !_hovered;
 
-        public bool ShowCloseButton => !_needsAttention || _hovered;
+        public bool ShowAttentionDot => _needsAttention && !_busy && !_hovered;
+
+        // Unsaved changes in the editor. Shown only while nothing else is claiming the
+        // slot, since a pane that is also finishing something is the more urgent news.
+        private bool _modified;
+
+        public bool ShowModifiedDot => _modified && !_busy && !_needsAttention && !_hovered;
+
+        public void SetModified(bool modified)
+        {
+            if (_modified == modified)
+                return;
+
+            _modified = modified;
+            NotifyIndicators();
+        }
+
+        public bool IsModified => _modified;
+
+        public bool ShowCloseButton => !ShowSpinner && !ShowAttentionDot && !ShowModifiedDot;
 
         public void SetHovered(bool hovered)
         {
@@ -4906,7 +4935,25 @@ private void OpenInNewWindow(string? projectPath)
                 return;
 
             _hovered = hovered;
+            NotifyIndicators();
+        }
+
+        private void SetBusy(bool busy)
+        {
+            if (_busy == busy)
+                return;
+
+            _busy = busy;
+            NotifyIndicators();
+        }
+
+        private void NotifyIndicators()
+        {
+            // The template binds the derived booleans, so each has to be announced; a
+            // change to one input moves several of them.
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowSpinner)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAttentionDot)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowModifiedDot)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCloseButton)));
         }
 
@@ -4919,12 +4966,11 @@ private void OpenInNewWindow(string? projectPath)
 
             _needsAttention = !clear;
 
-            // All three, not just NeedsAttention: the tab templates bind the two
-            // derived booleans, so notifying only the flag leaves the dot and the
-            // close button showing whatever they were before.
+            // Not just NeedsAttention: the tab templates bind the derived booleans, so
+            // notifying only the flag leaves the dot and the close button showing
+            // whatever they were before.
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NeedsAttention)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAttentionDot)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCloseButton)));
+            NotifyIndicators();
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -5037,6 +5083,7 @@ private void OpenInNewWindow(string? projectPath)
         var host = session.Host;
         var wasShown = host is not null && RunnerSlot.IsShown(host);
         var index = _runnerSessions.IndexOf(session);
+        session.DisposeStatusSource();
 
         _runnerSessions.Remove(session);
         if (host is not null && _terminalHosts.Contains(host))
@@ -5097,6 +5144,7 @@ private void OpenInNewWindow(string? projectPath)
             session.CommandLine = commandLine;
             session.WorkingDirectory = workingDirectory;
             _runnerSessions.Add(session);
+            session.AttachStatusSource(new ShellStatusSource(host));
 
             if (beside is { } place && RunnerSlot.IsShown(place.Anchor))
                 RunnerSlot.SplitBeside(place.Anchor, place.Edge, host);
@@ -5212,15 +5260,26 @@ private void OpenInNewWindow(string? projectPath)
                     MarkAttention();
             };
 
+            source.BusyChanged += SetBusy;
+
             source.Start();
         }
 
         private bool _hovered;
+        private bool _busy;
 
-        // Hover wins over the mark, so a marked tab still offers its close button.
-        public bool ShowAttentionDot => _needsAttention && !_hovered;
+        // What the slot after the name shows, in order: a spinner while the tab is
+        // working, then the green dot for something finished that was not looked at, then
+        // the unsaved marker. Hover wins over all of them, so every tab can always be
+        // closed; with none of them the slot is the close button.
+        public bool ShowSpinner => _busy && !_hovered;
 
-        public bool ShowCloseButton => !_needsAttention || _hovered;
+        public bool ShowAttentionDot => _needsAttention && !_busy && !_hovered;
+
+        // Only an editor tab has unsaved changes.
+        public bool ShowModifiedDot => false;
+
+        public bool ShowCloseButton => !ShowSpinner && !ShowAttentionDot && !ShowModifiedDot;
 
         public void SetHovered(bool hovered)
         {
@@ -5228,7 +5287,25 @@ private void OpenInNewWindow(string? projectPath)
                 return;
 
             _hovered = hovered;
+            NotifyIndicators();
+        }
+
+        private void SetBusy(bool busy)
+        {
+            if (_busy == busy)
+                return;
+
+            _busy = busy;
+            NotifyIndicators();
+        }
+
+        private void NotifyIndicators()
+        {
+            // The template binds the derived booleans, so each has to be announced; a
+            // change to one input moves several of them.
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowSpinner)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAttentionDot)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowModifiedDot)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCloseButton)));
         }
 
@@ -5241,12 +5318,11 @@ private void OpenInNewWindow(string? projectPath)
 
             _needsAttention = !clear;
 
-            // All three, not just NeedsAttention: the tab templates bind the two
-            // derived booleans, so notifying only the flag leaves the dot and the
-            // close button showing whatever they were before.
+            // Not just NeedsAttention: the tab templates bind the derived booleans, so
+            // notifying only the flag leaves the dot and the close button showing
+            // whatever they were before.
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NeedsAttention)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAttentionDot)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCloseButton)));
+            NotifyIndicators();
         }
 
         public void RefreshTheme()
