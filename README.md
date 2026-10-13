@@ -19,15 +19,28 @@ The workspace layout consists of:
   - Agent support via Codex (`codex`)
   - Agent support via Claude Code (`claude`)
 
-Editor and terminal tabs can be split into as many panes as you like, side by side or one above another. See [Split Panes](#split-panes).
+Editor and terminal tabs can be split into as many panes as you like, side by side or one above another. See [Familiar Workspace](#familiar-workspace).
 
 ![Workspace](www/images/webp/workspace-1920x1080.webp)
 
 Each pane is its own process (`pwsh`, `hx`, `lazygit`, `yazi`, `opencode`, `codex`, `claude`) running in its own Windows pseudoconsole through `ConPTY`, GPU-backed by `EasyWindowsTerminalControl`. Full-screen apps such as Helix, lazygit, and yazi retain their native alternate-screen semantics.
 
-Download the release executable from the [Latest Release](https://github.com/ujjwalvivek/helide/releases/latest). Application updates are automatic, and each release publishes a `SHA256SUMS.txt` that the in-app updater verifies the download against.
+## Install
 
-Or, if you wish to build the binary yourself, see below.
+From PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/ujjwalvivek/helide/main/install.ps1 | iex
+```
+
+That downloads the [Latest Release](https://github.com/ujjwalvivek/helide/releases/latest), verifies it against the published `SHA256SUMS.txt`, installs it to `%LOCALAPPDATA%\Programs\Helide`, puts `helide` on your user PATH and adds a Start Menu entry. Running it again updates or repairs the install. Application updates are automatic, and the in-app updater verifies each download against the release's `SHA256SUMS.txt`. To remove it, or to put it somewhere else:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/ujjwalvivek/helide/main/install.ps1))) -Uninstall
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/ujjwalvivek/helide/main/install.ps1))) -InstallDir D:\Helide
+```
+
+If you wish to build the binary yourself, see below.
 
 ## Prerequisites
 
@@ -273,7 +286,7 @@ Codex and Claude both keep a transcript on disk and mark turn boundaries in it, 
 
 ### Why WPF?
 
-Helide uses C# for its development. I wanted to use Helix in a way that fgeels familiar to me, and on Windows. I wanted something native, and C# IS kinda *native* to Windows.
+Helide uses C# for its development. I wanted to use Helix in a way that fgeels familiar to me, and on Windows. I wanted something native, and C# IS kinda _native_ to Windows.
 
 ### Does Helide have a remote server for remote development?
 
