@@ -10,6 +10,7 @@
 #   winget validate --manifest .\packaging\winget\manifests\u\ujjwalvivek\Helide\1.7.5
 #
 # Then copy that folder into a fork of winget-pkgs and open a pull request.
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'A maintainer tool run at a console: the report is for the person running it.')]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]

@@ -1,6 +1,7 @@
 # Launcher for tools\CheckNInstall. With no switch it opens the interactive tool.
 #   -Check   report only, exit 0 when ready                           (CheckNInstall --check)
 #   -Full    republish the tool, then set up everything silently      (CheckNInstall --full)
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'A console launcher: its messages are for the person at the console, not for a pipeline.')]
 [CmdletBinding()]
 param( [switch]$Check, [switch]$Full )
 
