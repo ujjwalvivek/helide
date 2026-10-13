@@ -24,7 +24,7 @@ public partial class MainWindow
             var target = job;
             commands.Add(new PaletteCommand(
                 target.Name,
-                () => CreateAgentSession("claude", "Claude", target.SessionId, resuming: true),
+                () => StartAgentSession("claude", "Claude", target.SessionId, resuming: true),
                 "Session",
                 target.Status.Length > 0 ? target.Status : target.JobId));
         }

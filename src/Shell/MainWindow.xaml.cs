@@ -641,7 +641,7 @@ public partial class MainWindow : Window
         var commands = new List<PaletteCommand>();
 
         // --- File ---
-        commands.Add(new PaletteCommand("Open Folder", OpenProjectFolder, "File", PaletteCommand.Gesture(Key.O)));
+        commands.Add(new PaletteCommand("Open Folder", OpenProjectFolder, "File", PaletteCommand.Gesture(Key.O, ModifierKeys.Control | ModifierKeys.Shift)));
         commands.Add(new PaletteCommand("Close Workspace", ShowWelcome, "File", canInvoke: workspace));
         commands.Add(new PaletteCommand("Exit", Close, "File"));
 
@@ -691,7 +691,7 @@ public partial class MainWindow : Window
 
         // --- New ---
         commands.Add(new PaletteCommand("New Editor Tab", () => CreateEditorTab(null), "New", "Ctrl+N", canInvoke: workspace));
-        commands.Add(new PaletteCommand("New Runner Session", () => CreateRunnerShell(), "New", canInvoke: workspace));
+        commands.Add(new PaletteCommand("New Runner Session", () => StartRunnerShell(), "New", canInvoke: workspace));
 
         // One entry per agent that is installed, and none at all while AI is off: an
         // entry that could only ever fail is worse than no entry.
@@ -701,7 +701,7 @@ public partial class MainWindow : Window
         {
             commands.Add(new PaletteCommand(
                 $"New {agent.Label} Session",
-                () => CreateAgentSession(agent.Type, agent.Label),
+                () => StartAgentSession(agent.Type, agent.Label),
                 "New",
                 canInvoke: workspace));
         }
@@ -726,7 +726,7 @@ public partial class MainWindow : Window
         {
             commands.Add(new PaletteCommand(
                 $"Open {agent.Label} in Folder…",
-                () => OpenFolderPicker(path => CreateAgentSession(agent.Type, agent.Label, workingDirectory: path)),
+                () => OpenFolderPicker(path => StartAgentSession(agent.Type, agent.Label, workingDirectory: path)),
                 "New",
                 "project folders",
                 canInvoke: workspace));
@@ -748,7 +748,7 @@ public partial class MainWindow : Window
 
         commands.Add(new PaletteCommand(
             "Open Runner in Folder…",
-            () => OpenFolderPicker(path => CreateRunnerShell(workingDirectory: path)),
+            () => OpenFolderPicker(path => StartRunnerShell(path)),
             "New",
             "project folders",
             canInvoke: workspace));
@@ -1107,6 +1107,37 @@ private void OpenInNewWindow(string? projectPath)
                 timer.Stop();
         };
         timer.Start();
+    }
+
+    // A session started from outside its panel -- the palette, the folder picker, the
+    // list of background conversations -- is made in a panel that may be shut, and a tab
+    // in a shut panel is a tab nobody can see. The buttons that make sessions sit inside
+    // the panels, so they never had this. The panel opens with the session and the
+    // keyboard goes into it, as it does for Ctrl+3 and Ctrl+4.
+    //
+    // Done by these callers and not in the Create methods: restoring a workspace calls
+    // those with the layout deliberately collapsed, and it must stay that way.
+    private void StartAgentSession(
+        string type,
+        string typeLabel,
+        string? resumeSessionId = null,
+        bool resuming = false,
+        string? workingDirectory = null)
+    {
+        var before = _agentSessions.Count;
+        CreateAgentSession(type, typeLabel, resumeSessionId, resuming, workingDirectory);
+
+        if (_agentSessions.Count > before && IsPanelCollapsed(ToolPanel.Agent))
+            FocusPanel(ToolPanel.Agent, _activeAgentSession?.Host);
+    }
+
+    private void StartRunnerShell(string? workingDirectory = null)
+    {
+        var before = _runnerSessions.Count;
+        CreateRunnerShell(workingDirectory: workingDirectory);
+
+        if (_runnerSessions.Count > before && IsPanelCollapsed(ToolPanel.Runner))
+            FocusPanel(ToolPanel.Runner, _activeRunnerSession?.Host);
     }
 
     private void CycleEditorTab(int delta)
@@ -2990,7 +3021,18 @@ private void OpenInNewWindow(string? projectPath)
             return;
         }
 
-        if (modifiers == ModifierKeys.Control && e.Key == Key.P)
+        // An agent pane owns Ctrl+O (expand) and Ctrl+P (its own commands) while it has
+        // the keyboard, so those two are not taken from it. Ctrl+Shift+O and Ctrl+Shift+P
+        // do the same for Helide in any pane: a terminal cannot tell Ctrl+Shift+letter
+        // from Ctrl+letter, so no agent has anything on them.
+        //
+        // An open palette is the exception: Ctrl+P has to be able to close it, and its own
+        // window can be without the OS-level keyboard when it was opened from a pane.
+        var agentOwnsKeys = !_paletteOpen && AgentHasKeyboard();
+        var helideChord = modifiers == (ModifierKeys.Control | ModifierKeys.Shift);
+        var plainChord = modifiers == ModifierKeys.Control && !agentOwnsKeys;
+
+        if ((plainChord || helideChord) && e.Key == Key.P)
         {
             ToggleCommandPalette();
             e.Handled = true;
@@ -3097,7 +3139,7 @@ private void OpenInNewWindow(string? projectPath)
             return;
         }
 
-        if (modifiers == ModifierKeys.Control && e.Key == Key.O)
+        if ((plainChord || helideChord) && e.Key == Key.O)
         {
             OpenProjectButton_Click(this, new RoutedEventArgs());
             e.Handled = true;
@@ -3168,6 +3210,10 @@ private void OpenInNewWindow(string? projectPath)
 
         e.Handled = true;
     }
+
+    // The agent pane that is showing, and whether it is the window receiving keys.
+    private bool AgentHasKeyboard() =>
+        AgentSlot.Content is NativeTerminalHost host && host.HasKeyboardFocus();
 
     private void ToggleLeftToolFromKey(LeftTool tool)
     {
