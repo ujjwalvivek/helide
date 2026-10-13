@@ -25,7 +25,7 @@ Editor and terminal tabs can be split into as many panes as you like, side by si
 
 Each pane is its own process (`pwsh`, `hx`, `lazygit`, `yazi`, `opencode`, `codex`, `claude`) running in its own Windows pseudoconsole through `ConPTY`, GPU-backed by `EasyWindowsTerminalControl`. Full-screen apps such as Helix, lazygit, and yazi retain their native alternate-screen semantics.
 
-Download the release executable from the [Latest Release](https://github.com/ujjwalvivek/helide/releases/latest). Application Updates are automatic, or you can use the [AutoUpdater Utility](#autoupdater-utility).
+Download the release executable from the [Latest Release](https://github.com/ujjwalvivek/helide/releases/latest). Application updates are automatic, and each release publishes a `SHA256SUMS.txt` that the in-app updater verifies the download against.
 
 Or, if you wish to build the binary yourself, see below.
 
@@ -74,7 +74,7 @@ helide/
 │   ├── Terminal/         # Native terminal host (ConPTY)
 │   └── Theme/            # Theme palette and XAML resources
 ├── tools/
-│   ├── AutoUpdater/      # TUI updater CLI
+│   ├── AutoUpdater/      # TUI updater CLI (deprecated, kept for reference)
 │   └── CheckNInstall/    # Dependency checker / installer
 ├── www/                  # Static Helide site
 ├── check'n'install.ps1   # Launcher for tools/CheckNInstall
@@ -83,7 +83,9 @@ helide/
 
 ## Tools and Utilities
 
-### AutoUpdater Utility
+### AutoUpdater Utility (Deprecated)
+
+**Deprecated.** Helide updates itself, so releases no longer ship `AutoUpdater.exe` and the build and install tools no longer produce it. The code stays in `tools/AutoUpdater` for reference and still builds.
 
 TUI (terminal) CLI updater for Helide. Checks GitHub releases, downloads updates (zip or exe), installs beside Helide, and restarts.
 
@@ -107,7 +109,7 @@ dotnet run
 dotnet publish -c Release -r win-x64 --self-contained
 ```
 
-**Note**: This utility need not be ran to update Helide. The app automatically checks for new updates on restarts and highlights the new updates in the title bar and the about page of the app.
+**Note**: This utility is not needed to update Helide. The app checks for new updates on restarts and highlights them in the title bar and the About page. An install managed by winget is left to winget (`winget upgrade ujjwalvivek.Helide`).
 
 ### CheckNInstall Utility
 
@@ -117,9 +119,9 @@ It opens on a status screen (tools, agents, what is installed) and offers three 
 
 | Workflow               | Does                                                          |
 | ---------------------- | ------------------------------------------------------------- |
-| Set up everything      | Fix tools, then build and install Helide and AutoUpdater      |
+| Set up everything      | Fix tools, then build and install Helide                      |
 | Fix tools              | Check, `winget install` what is missing, repair PATH          |
-| Build & install Helide | Publish Helide and AutoUpdater, then install both             |
+| Build & install Helide | Publish Helide, then install it                               |
 
 #### Build and Run
 
@@ -147,7 +149,7 @@ It goes through 5 phases:
 4. Builds with `-r win-x64 --self-contained`, into `bin\Release\net8.0-windows\*-win-x64.exe`
 5. Finally, installs into `%LOCALAPPDATA%\Programs\Helide\`, and the user PATH.
 
-**Note**: Installation also creates a Start Menu entry for `Helide.exe`, and also does a silent install of `AutoUpdater.exe` beside it.
+**Note**: Installation also creates a Start Menu entry for `Helide.exe`.
 
 ## Configurations and Settings
 
