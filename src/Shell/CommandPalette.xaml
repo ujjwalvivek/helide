@@ -121,7 +121,8 @@
                                  BorderThickness="0"
                                  Padding="0"
                                  VerticalContentAlignment="Center" />
-                        <TextBlock Text="Type a command"
+                        <TextBlock x:Name="PlaceholderText"
+                                   Text="Type a command"
                                    FontFamily="{DynamicResource UiFontFamily}"
                                    FontSize="{DynamicResource FontSizeLarge}"
                                    Foreground="{DynamicResource TextFaintBrush}"
@@ -141,7 +142,7 @@
                             </TextBlock.Style>
                         </TextBlock>
                     </Grid>
-                    <Border Grid.Column="2" Style="{DynamicResource KeyBadgeStyle}">
+                    <Border x:Name="ShortcutBadge" Grid.Column="2" Style="{DynamicResource KeyBadgeStyle}">
                         <TextBlock Text="Ctrl P" Style="{DynamicResource KeyBadgeTextStyle}" />
                     </Border>
                 </Grid>
@@ -303,7 +304,7 @@
                         <Border Style="{DynamicResource KeyBadgeStyle}">
                             <TextBlock Text="Enter" Style="{DynamicResource KeyBadgeTextStyle}" />
                         </Border>
-                        <TextBlock Text="run" Style="{DynamicResource SectionLabelStyle}" Margin="6,0,14,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="EnterLabel" Text="run" Style="{DynamicResource SectionLabelStyle}" Margin="6,0,14,0" VerticalAlignment="Center" />
                         <Border Style="{DynamicResource KeyBadgeStyle}">
                             <TextBlock Text="↑" Style="{DynamicResource KeyBadgeTextStyle}" />
                         </Border>

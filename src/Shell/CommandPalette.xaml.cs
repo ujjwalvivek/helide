@@ -27,6 +27,7 @@ public partial class CommandPalette : UserControl
 {
     private readonly ObservableCollection<PaletteRow> _visible = [];
     private IReadOnlyList<PaletteCommand> _all = [];
+    private PaletteMode _mode = PaletteMode.Commands;
 
     public CommandPalette()
     {
@@ -44,9 +45,25 @@ public partial class CommandPalette : UserControl
     /// Replaces the command set and re-runs the current query. Called on every open so
     /// the list reflects what exists right now rather than what existed last time.
     /// </summary>
-    public void Load(IReadOnlyList<PaletteCommand> commands)
+    /// <param name="mode">
+    /// What the list is of, which only changes the words around it. The overlay is the
+    /// same one whether it is listing commands, recent projects or branches.
+    /// </param>
+    public void Load(IReadOnlyList<PaletteCommand> commands, PaletteMode? mode = null)
     {
         _all = commands;
+        _mode = mode ?? PaletteMode.Commands;
+
+        PlaceholderText.Text = _mode.Placeholder;
+        EnterLabel.Text = _mode.EnterLabel;
+        EmptyText.Text = $"No matching {_mode.Plural}";
+
+        // The badge is the shortcut that opens the command list, so it means nothing on
+        // any other list.
+        ShortcutBadge.Visibility = ReferenceEquals(_mode, PaletteMode.Commands)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
         QueryBox.Text = string.Empty;
         Refilter();
     }
@@ -92,7 +109,7 @@ public partial class CommandPalette : UserControl
 
         ResultsList.Visibility = _visible.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Visibility = _visible.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
-        CountText.Text = matched.Count == 1 ? "1 command" : $"{matched.Count} commands";
+        CountText.Text = matched.Count == 1 ? $"1 {_mode.Singular}" : $"{matched.Count} {_mode.Plural}";
 
         // Land on the first command rather than the first row, so Enter runs something
         // instead of trying to run a heading.
@@ -237,4 +254,13 @@ public partial class CommandPalette : UserControl
     /// caret has to land here too, and Load is called before the popup is shown.
     /// </summary>
     public void FocusQuery() => QueryBox.Focus();
+}
+
+/// <summary>
+/// The words around a palette list: what the empty query box says, what Enter does, and
+/// what the rows are called in the count.
+/// </summary>
+public sealed record PaletteMode(string Placeholder, string Singular, string Plural, string EnterLabel)
+{
+    public static readonly PaletteMode Commands = new("Type a command", "command", "commands", "run");
 }

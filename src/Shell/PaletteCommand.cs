@@ -118,6 +118,11 @@ internal sealed class PaletteRow
         "View" => "",      // view
         "Navigate" => "",  // switch
         "Run" => "",       // play
+        "Branch" => "\uE8AB",  // switch
+        "Remote" => "\uE774",  // globe
+        "Select" => "\uE73E",  // check
+        "Up" => "\uE74A",      // up
+        "Folder" => "\uE8B7",  // folder
         "Theme" => "",     // colour
         _ => "",           // chevron
     };

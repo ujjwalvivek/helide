@@ -15,12 +15,13 @@ internal static class ProjectDetector
         return "pwsh";
     }
 
-    public static string? DetectGitBranch(string projectPath)
+    // The directory HEAD lives in. A plain repository keeps it under .git; a worktree or
+    // a submodule has a .git file that points at it instead.
+    public static string? ResolveGitDirectory(string projectPath)
     {
         try
         {
             var gitPath = Path.Combine(projectPath, ".git");
-            var headPath = Path.Combine(gitPath, "HEAD");
 
             if (File.Exists(gitPath))
             {
@@ -29,10 +30,26 @@ internal static class ProjectDetector
                 if (pointer.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 {
                     var target = pointer[prefix.Length..].Trim();
-                    var gitDirectory = Path.GetFullPath(Path.Combine(projectPath, target));
-                    headPath = Path.Combine(gitDirectory, "HEAD");
+                    return Path.GetFullPath(Path.Combine(projectPath, target));
                 }
             }
+
+            return Directory.Exists(gitPath) ? gitPath : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static string? DetectGitBranch(string projectPath)
+    {
+        try
+        {
+            if (ResolveGitDirectory(projectPath) is not { } gitDirectory)
+                return null;
+
+            var headPath = Path.Combine(gitDirectory, "HEAD");
 
             if (!File.Exists(headPath))
                 return null;
