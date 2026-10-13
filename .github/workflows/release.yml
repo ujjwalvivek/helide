@@ -31,9 +31,6 @@ jobs:
       # AutoUpdater is deprecated and no longer shipped: the app updates itself. Its
       # source stays under tools/AutoUpdater, and builds that already have it installed
       # keep working, because the archive still carries Helide.exe at its root.
-      #
-      # The name of the archive is a contract: installed copies fall back to
-      # releases/latest/download/helide-win-x64.zip when the API will not answer.
       - name: package
         shell: pwsh
         run: |
@@ -58,3 +55,15 @@ jobs:
           body_path: .github/release-body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Opens the winget-pkgs pull request for this release.
+  winget:
+    needs: build
+    if: ${{ vars.WINGET_AUTOMATION == 'true' }}
+    runs-on: windows-latest
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: ujjwalvivek.Helide
+          installers-regex: 'helide-win-x64\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}
