@@ -161,6 +161,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         _terminal.ConPTYTerm.TermReady += ConPtyTerm_TermReady;
         _terminal.ConPTYTerm.TerminalOutput += ConPtyTerm_TerminalOutput;
         ThemePalette.ThemeChanged += Palette_ThemeChanged;
+        IsVisibleChanged += Host_IsVisibleChanged;
 
         Children.Add(_startupSurface);
         Children.Add(_terminal);
@@ -555,6 +556,73 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     private const string BracketedPasteOn = "\u001b[?2004h";
     private const string BracketedPasteOff = "\u001b[?2004l";
 
+    // The mouse reporting modes the program in this pane has asked for, by number, and
+    // whether each is on. A program asks once, as it starts. The renderer throws away
+    // whatever arrives before it has a window, and a pane that is restored out of sight
+    // has none until it is first shown, so the request never reaches it: the pane draws
+    // and takes keys, but clicks in it go nowhere. What was asked for is kept here and
+    // given to the renderer again when the pane comes into view.
+    private static readonly System.Text.RegularExpressions.Regex PrivateModes =
+        new(@"\u001b\[\?([0-9;]+)([hl])", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly int[] MouseModeNumbers = [1000, 1002, 1003, 1005, 1006, 1015];
+    private readonly Dictionary<int, bool> _mouseModes = [];
+    private string _mouseTail = "";
+
+    // Runs on the ConPTY reader thread.
+    private void TrackMouseModes(object? data)
+    {
+        var text = data as string ?? (data is char[] chars ? new string(chars) : null);
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        lock (_mouseModes)
+        {
+            // A sequence can be split across two chunks; one seen twice sets the same
+            // thing twice, in the same order.
+            var window = _mouseTail + text;
+            foreach (System.Text.RegularExpressions.Match match in PrivateModes.Matches(window))
+            {
+                var on = match.Groups[2].Value == "h";
+                foreach (var part in match.Groups[1].Value.Split(';'))
+                {
+                    if (int.TryParse(part, out var mode) && Array.IndexOf(MouseModeNumbers, mode) >= 0)
+                        _mouseModes[mode] = on;
+                }
+            }
+
+            _mouseTail = window.Length > 32 ? window[^32..] : window;
+        }
+    }
+
+    private void Host_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (_disposed || e.NewValue is not true)
+            return;
+
+        // After the layout pass that gives the renderer its window.
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+        {
+            if (_disposed || !IsVisible)
+                return;
+
+            string modes;
+            lock (_mouseModes)
+                modes = string.Concat(_mouseModes.Where(m => m.Value).Select(m => $"\u001b[?{m.Key}h"));
+
+            if (modes.Length == 0)
+                return;
+
+            try
+            {
+                _terminal.ConPTYTerm?.WriteToUITerminal(modes);
+            }
+            catch
+            {
+                // The renderer is on its way out; there is nothing to tell.
+            }
+        }));
+    }
+
     private void TrackPasteMode(object? data)
     {
         var text = data as string ?? (data is char[] chars ? new string(chars) : null);
@@ -696,6 +764,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         Interlocked.Exchange(ref _lastOutputTicks, DateTime.UtcNow.Ticks);
         Interlocked.Add(ref _outputLength, output.Data?.Length ?? 0);
         TrackPasteMode(output.Data);
+        TrackMouseModes(output.Data);
         TrackModified(output.Data);
     }
 
