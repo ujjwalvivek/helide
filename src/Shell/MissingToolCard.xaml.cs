@@ -57,12 +57,17 @@ public partial class MissingToolCard : UserControl
             return;
         }
 
-        var installing = ToolLocator.IsInstalling;
-        InstallButton.IsEnabled = !installing;
-        RecheckButton.IsEnabled = !installing;
-        InstallButton.Content = installing
-            ? $"Installing {(ToolLocator.Current ?? _tool).Label}…"
-            : $"Install {_tool.Label}";
+        // Only this tool's own turn disables the card. Another tool being installed is not
+        // a reason to stop offering this one: asking queues it behind that install, and
+        // the button saying "Installing yazi" on lazygit's card was simply wrong.
+        var pending = ToolLocator.IsPending(_tool);
+        InstallButton.IsEnabled = !pending;
+        RecheckButton.IsEnabled = !pending;
+        InstallButton.Content = ToolLocator.IsCurrent(_tool)
+            ? $"Installing {_tool.Label}…"
+            : pending
+                ? $"{_tool.Label} is queued…"
+                : $"Install {_tool.Label}";
     }
 
     private void Resolve()
@@ -82,7 +87,13 @@ public partial class MissingToolCard : UserControl
     {
         StatusText.Visibility = Visibility.Collapsed;
 
-        await ToolLocator.InstallAsync([_tool]);
+        var install = ToolLocator.InstallAsync([_tool]);
+
+        // Drawn now, from here, rather than waiting for the state event to come back
+        // around: the click should answer itself the moment it is made.
+        Refresh();
+
+        await install;
 
         if (ToolLocator.IsInstalled(_tool))
         {

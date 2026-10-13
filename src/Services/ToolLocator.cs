@@ -125,20 +125,33 @@ internal static class ToolLocator
         }
     }
 
-    // One install at a time, for the whole process. The welcome screen and the card in a
-    // pane both offer it, and a project can be opened while one is running; without a
-    // shared state the pane would offer to start a second winget on the same package.
+    // One install at a time, for the whole process, as a queue. The welcome screen and the
+    // card in a pane both offer it, and a project can be opened while one is running:
+    // a request that arrives mid-install joins the queue instead of being dropped or
+    // starting a second winget, and each card can tell its own tool's turn from another's.
     private static readonly object Gate = new();
+    private static readonly List<ManagedTool> Queue = [];
     private static Task<IReadOnlyList<ManagedTool>>? _running;
+    private static bool _draining;
 
     /// <summary>True while winget is installing something for Helide.</summary>
     public static bool IsInstalling
     {
-        get { lock (Gate) return _running is { IsCompleted: false }; }
+        get { lock (Gate) return _draining; }
     }
 
     /// <summary>The tool being installed right now, or null.</summary>
     public static ManagedTool? Current { get; private set; }
+
+    /// <summary>True when this tool is being installed now or is waiting its turn.</summary>
+    public static bool IsPending(ManagedTool tool)
+    {
+        lock (Gate)
+            return _draining && (Current?.Label == tool.Label || Queue.Any(queued => queued.Label == tool.Label));
+    }
+
+    /// <summary>True when this tool is the one winget is working on right now.</summary>
+    public static bool IsCurrent(ManagedTool tool) => Current?.Label == tool.Label;
 
     /// <summary>True when the last install could not run because winget is missing.</summary>
     public static bool WingetMissing { get; private set; }
@@ -149,89 +162,127 @@ internal static class ToolLocator
     public static event Action? InstallStateChanged;
 
     /// <summary>
-    /// Installs the tools, or joins the install that is already running. Returns the ones
-    /// that are still not found afterwards.
+    /// Installs the tools, queueing behind the install that is already running if there
+    /// is one. Returns the tools that are still not found once the queue has drained.
     /// </summary>
     public static Task<IReadOnlyList<ManagedTool>> InstallAsync(IEnumerable<ManagedTool> tools)
     {
         Task<IReadOnlyList<ManagedTool>> task;
-        var list = tools.ToArray();
+        var requested = tools.ToArray();
 
         lock (Gate)
         {
-            if (_running is { IsCompleted: false })
-                return _running;
-
-            WingetMissing = false;
-            task = _running = Task.Run<IReadOnlyList<ManagedTool>>(() =>
+            foreach (var tool in requested)
             {
-                try
-                {
-                    if (!WingetAvailable())
-                    {
-                        WingetMissing = true;
-                        return list.Where(tool => !IsInstalled(tool)).ToArray();
-                    }
+                var known = Current?.Label == tool.Label || Queue.Any(queued => queued.Label == tool.Label);
+                if (!known)
+                    Queue.Add(tool);
+            }
 
-                    return Install(list, tool =>
-                    {
-                        Current = tool;
-                        InstallStateChanged?.Invoke();
-                    });
-                }
-                finally
-                {
-                    Current = null;
-                    // Completed before listeners look, so IsInstalling reads false.
-                    Task.Run(() => InstallStateChanged?.Invoke());
-                }
-            });
+            if (_draining && _running is not null)
+            {
+                // Joined an install that is already running. Still announced below:
+                // returning here used to skip it, so a card that had just queued its tool
+                // had nothing telling it to say so, and showed "Install" until something
+                // unrelated made it redraw.
+                task = _running;
+            }
+            else
+            {
+                _draining = true;
+                WingetMissing = false;
+                task = _running = Task.Run(DrainQueue);
+            }
         }
 
         InstallStateChanged?.Invoke();
         return task;
     }
 
-    /// <summary>
-    /// Installs each tool with winget and reports the ones that still are not found
-    /// afterwards. Blocking: call it off the UI thread.
-    /// </summary>
-    /// <param name="onProgress">Called with the name of the tool about to be installed.</param>
-    private static IReadOnlyList<ManagedTool> Install(
-        IEnumerable<ManagedTool> tools, Action<ManagedTool>? onProgress = null)
+    private static IReadOnlyList<ManagedTool> DrainQueue()
     {
         var failed = new List<ManagedTool>();
 
-        foreach (var tool in tools)
+        try
         {
-            onProgress?.Invoke(tool);
-
-            try
+            if (!WingetAvailable())
             {
-                using var process = Process.Start(Hidden(
-                    "winget",
-                    $"install -e --id {tool.WingetId} --silent --disable-interactivity "
-                    + "--accept-package-agreements --accept-source-agreements"));
+                WingetMissing = true;
+                lock (Gate)
+                {
+                    failed.AddRange(Queue.Where(tool => !IsInstalled(tool)));
+                    Queue.Clear();
+                }
 
-                // Drained rather than ignored: an unread redirected pipe fills up and the
-                // child then blocks forever.
-                process?.BeginOutputReadLine();
-                process?.BeginErrorReadLine();
-                process?.WaitForExit();
-            }
-            catch (Exception)
-            {
-                // Judged by whether the tool is there afterwards, not by how winget ended.
+                return failed;
             }
 
-            // winget exits non-zero for "already installed" and for "nothing to upgrade",
-            // which are both a success here. The file on disk is the only honest answer.
-            SyncProcessPath();
-            if (!IsInstalled(tool))
-                failed.Add(tool);
+            while (true)
+            {
+                ManagedTool tool;
+
+                // Emptiness is decided under the same lock that decides whether a caller
+                // may join: a request cannot be added to a queue that has just been judged
+                // finished and then never be looked at.
+                lock (Gate)
+                {
+                    if (Queue.Count == 0)
+                    {
+                        _draining = false;
+                        break;
+                    }
+
+                    tool = Queue[0];
+                    Queue.RemoveAt(0);
+                    Current = tool;
+                }
+
+                InstallStateChanged?.Invoke();
+
+                if (!InstallOne(tool))
+                    failed.Add(tool);
+            }
+        }
+        finally
+        {
+            lock (Gate)
+            {
+                _draining = false;
+                Current = null;
+            }
+
+            // Off this thread so a listener that reads the state sees it settled.
+            Task.Run(() => InstallStateChanged?.Invoke());
         }
 
         return failed;
+    }
+
+    // Judged by whether the tool is there afterwards, not by how winget ended: winget exits
+    // non-zero for "already installed" and for "nothing to upgrade", which are both a
+    // success here. The file on disk is the only honest answer.
+    private static bool InstallOne(ManagedTool tool)
+    {
+        try
+        {
+            using var process = Process.Start(Hidden(
+                "winget",
+                $"install -e --id {tool.WingetId} --silent --disable-interactivity "
+                + "--accept-package-agreements --accept-source-agreements"));
+
+            // Drained rather than ignored: an unread redirected pipe fills up and the
+            // child then blocks forever.
+            process?.BeginOutputReadLine();
+            process?.BeginErrorReadLine();
+            process?.WaitForExit();
+        }
+        catch (Exception)
+        {
+            // Fall through to the check below.
+        }
+
+        SyncProcessPath();
+        return IsInstalled(tool);
     }
 
     private static ProcessStartInfo Hidden(string fileName, string arguments) => new(fileName, arguments)
