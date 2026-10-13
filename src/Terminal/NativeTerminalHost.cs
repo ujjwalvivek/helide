@@ -400,6 +400,18 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             return;
         }
 
+        if (e.Key == Key.Tab && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
+        {
+            // Tab is the program's: shell completion, a TUI's next field. Left to the
+            // default it is WPF's, and moves the keyboard to the next control in the
+            // window -- a tab's close button -- instead of reaching the pane. Sent
+            // here, in the form a terminal sends it, so nothing in the window gets to
+            // see it. Shift+Tab is the "back tab" sequence.
+            WriteRaw(Keyboard.Modifiers == ModifierKeys.Shift ? "\u001b[Z" : "\t");
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key != Key.Enter)
             return;
 

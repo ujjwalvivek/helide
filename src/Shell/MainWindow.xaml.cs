@@ -258,6 +258,14 @@ public partial class MainWindow : Window
         // "open this file" back to us instead of spawning their own windows.
         Environment.SetEnvironmentVariable("HELIDE_OPEN_REQUEST", _openRequestPath ?? string.Empty);
 
+        // The panes are drawn by a renderer that takes 24-bit colour, but nothing tells
+        // the programs inside: Windows sets no COLORTERM, and a program that cannot tell
+        // squeezes every hex colour into the 256-colour palette. That is what turned a
+        // diff's red and green backgrounds into the same grey. A value the user already
+        // set is left alone.
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("COLORTERM")))
+            Environment.SetEnvironmentVariable("COLORTERM", "truecolor");
+
         SyncYaziIntegration();
         UpdateAiChrome();
 
@@ -691,6 +699,21 @@ public partial class MainWindow : Window
                 "project folders",
                 canInvoke: workspace));
         }
+        // Only offered when there is something to attach to: a conversation that was
+        // moved to the background keeps running there, and this is the way back into it.
+        if (agents.Any(agent => agent.Type == "claude")
+            && _currentProject is { } attachProject
+            && ClaudeSessions.ListBackgroundJobs(attachProject).Count > 0)
+        {
+            commands.Add(new PaletteCommand(
+                "Attach Claude Background Session…",
+                AttachBackgroundSession,
+                "New",
+                "running in the background",
+                keywords: "claude resume job conversation continue",
+                canInvoke: workspace));
+        }
+
         commands.Add(new PaletteCommand(
             "Open Runner in Folder…",
             () => OpenFolderPicker(path => CreateRunnerShell(workingDirectory: path)),
@@ -3914,12 +3937,20 @@ private void OpenInNewWindow(string? projectPath)
         {
             var claude = AgentProviders.Resolve(type) ?? "claude.exe";
 
-            // Resuming an id that has no conversation yet makes claude exit, and that is
-            // exactly what a pane that was opened and never typed into has. So the
-            // transcript decides: continue it if it is there, otherwise start it.
-            commandLine = ClaudeSessions.FindTranscriptPath(sessionId!) is null
-                ? ToolCommand(claude, "--session-id", sessionId!)
-                : ToolCommand(claude, "--resume", sessionId!);
+            // A conversation that is running in the background cannot be resumed: Claude
+            // opens an empty copy of it and prints one line saying so, which is what piled
+            // up in the pane on every restart. It is attached to instead, which shows the
+            // conversation as it is.
+            //
+            // Past that, resuming an id that has no conversation yet makes claude exit,
+            // and that is exactly what a pane that was opened and never typed into has.
+            // So the transcript decides: continue it if it is there, otherwise start it.
+            if (ClaudeSessions.FindBackgroundJobId(sessionId!) is { } jobId)
+                commandLine = ToolCommand(claude, "attach", jobId);
+            else if (ClaudeSessions.FindTranscriptPath(sessionId!) is null)
+                commandLine = ToolCommand(claude, "--session-id", sessionId!);
+            else
+                commandLine = ToolCommand(claude, "--resume", sessionId!);
         }
         else
         {

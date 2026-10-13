@@ -108,6 +108,14 @@ internal static class ClaudeSessions
                         || !Guid.TryParse(id, out _))
                         continue;
 
+                    // A conversation that was moved to the background leaves this process
+                    // on a stub that only says where it went. The stub's id names a
+                    // transcript of "/resume" lines; the job it is parked on holds the
+                    // conversation, so that is the id worth keeping.
+                    if (Text(root, "parkedJobId") is { } parked
+                        && ListBackgroundJobs().FirstOrDefault(job => job.JobId == parked) is { } target)
+                        id = target.SessionId;
+
                     // Several processes in one chain can all be there; the most recently
                     // started is the one the user is in.
                     var startedAt = root.TryGetProperty("startedAt", out var started)
@@ -134,6 +142,101 @@ internal static class ClaudeSessions
         }
 
         return found;
+    }
+
+    /// <summary>A Claude session that is running in the background, and how to reach it.</summary>
+    internal sealed record BackgroundJob(string JobId, string Name, string SessionId, string Status);
+
+    /// <summary>
+    /// The background sessions that are running now, optionally only those started in a
+    /// given directory.
+    /// </summary>
+    /// <remarks>
+    /// A conversation moved to the background keeps running in a process of its own, and
+    /// <c>--resume</c> cannot take it over: Claude opens another copy and says so. The way
+    /// to see it is <c>claude attach &lt;job id&gt;</c>. The same
+    /// <c>sessions/&lt;pid&gt;.json</c> files <see cref="LiveSessionId"/> reads say which
+    /// ones exist, with <c>kind</c> set to <c>bg</c>.
+    /// </remarks>
+    public static IReadOnlyList<BackgroundJob> ListBackgroundJobs(string? workingDirectory = null)
+    {
+        var jobs = new List<BackgroundJob>();
+
+        try
+        {
+            var folder = Path.Combine(ConfigDirectory, "sessions");
+            if (!Directory.Exists(folder))
+                return jobs;
+
+            foreach (var file in Directory.EnumerateFiles(folder, "*.json"))
+            {
+                try
+                {
+                    using var stream = new FileStream(
+                        file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    using var document = JsonDocument.Parse(stream);
+                    var root = document.RootElement;
+
+                    if (Text(root, "kind") != "bg"
+                        || Text(root, "sessionId") is not { } sessionId
+                        || Text(root, "jobId") is not { } jobId
+                        || !root.TryGetProperty("pid", out var pidElement)
+                        || !pidElement.TryGetInt32(out var pid)
+                        || !IsRunning(pid))
+                        continue;
+
+                    if (workingDirectory is not null
+                        && !string.Equals(
+                            Text(root, "cwd")?.TrimEnd('\\', '/'),
+                            workingDirectory.TrimEnd('\\', '/'),
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    jobs.Add(new BackgroundJob(
+                        jobId,
+                        Text(root, "name") ?? jobId,
+                        sessionId,
+                        Text(root, "status") ?? string.Empty));
+                }
+                catch (Exception)
+                {
+                    // Being rewritten, or gone.
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // An unreadable folder lists nothing.
+        }
+
+        return jobs;
+    }
+
+    /// <summary>
+    /// The job id to attach to when this session is running in the background, or null
+    /// when it is an ordinary conversation that can be resumed.
+    /// </summary>
+    public static string? FindBackgroundJobId(string sessionId) =>
+        ListBackgroundJobs().FirstOrDefault(job =>
+            string.Equals(job.SessionId, sessionId, StringComparison.OrdinalIgnoreCase))?.JobId;
+
+    private static string? Text(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.String
+            ? element.GetString()
+            : null;
+
+    // A session file outlives a process that was killed instead of closed.
+    private static bool IsRunning(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>
