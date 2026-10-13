@@ -97,6 +97,7 @@ internal class Program
             _current = updater.CurrentVersion;
 
             SetStage(Stage.Check, StageState.Active, "contacting GitHub");
+            Log(Level.Warn, $"deprecated: {AppName} updates itself from the title bar and the About window");
             Log(Level.Info, $"checking {AppName} for updates");
 
             bool hasUpdate;
@@ -1082,7 +1083,7 @@ public class AutoUpdater : IDisposable
             }
 
             if (string.IsNullOrEmpty(downloadUrl))
-                downloadUrl = $"{DownloadBase}/helide.zip";
+                downloadUrl = $"{DownloadBase}/helide-win-x64.zip";
 
             if (string.IsNullOrEmpty(downloadUrl))
             {

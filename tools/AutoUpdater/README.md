@@ -1,5 +1,7 @@
 # Helide AutoUpdater
 
+> **Deprecated.** Helide updates itself: Releases no longer ship `AutoUpdater.exe`, and neither the release workflow nor CheckNInstall builds or installs it. The code still builds though.
+
 TUI (terminal) CLI updater for Helide. Checks GitHub releases, downloads updates (zip or exe), installs beside Helide, and restarts.
 
 ## Usage
