@@ -14,9 +14,9 @@ It opens on a status screen (required tools, optional agents, what is installed)
 
 | # | Workflow               | Does                                                     |
 | - | ---------------------- | -------------------------------------------------------- |
-| 1 | Set up everything      | Fix tools, then build and install Helide and AutoUpdater |
+| 1 | Set up everything      | Fix tools, then build and install Helide                 |
 | 2 | Fix tools              | Check, `winget install` what is missing, repair PATH     |
-| 3 | Build & install Helide | Publish Helide and AutoUpdater, then install both        |
+| 3 | Build & install Helide | Publish Helide, then install it                          |
 
 ## Phases
 
@@ -26,4 +26,6 @@ It opens on a status screen (required tools, optional agents, what is installed)
 | 2   | Install     | `winget install` each missing one                                                                                   |
 | 3   | Repair PATH | `WinGet\Links` can be empty, so `WinGet\Packages` is added to the user PATH                                         |
 | 4   | Build       | `-r win-x64 --self-contained`, flattens its own single-file bundle up to `bin\Release\net8.0-windows\*-win-x64.exe` |
-| 5   | Install     | `%LOCALAPPDATA%\Programs\Helide\`, on the user PATH, Start Menu entry, and `AutoUpdater.exe` beside it              |
+| 5   | Install     | `%LOCALAPPDATA%\Programs\Helide\`, on the user PATH, Start Menu entry                                               |
+
+`AutoUpdater` is deprecated and is no longer built or installed by this tool.

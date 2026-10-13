@@ -54,9 +54,7 @@ internal static class Program
     private const string StepInstall = "Install missing tools";
     private const string StepPath = "Repair PATH";
     private const string StepBuildApp = "Build Helide";
-    private const string StepBuildUpdater = "Build AutoUpdater";
     private const string StepInstallApp = "Install Helide";
-    private const string StepInstallUpdater = "Install AutoUpdater";
 
     // Shorter than the shell manual it replaces, because the pane it renders into is a
     // fixed height and the rest is reached by scrolling.
@@ -73,7 +71,7 @@ internal static class Program
         WORKFLOWS
             Set up everything        check, install missing tools, repair PATH, build, install
             Fix tools                check, winget install what is missing, repair PATH
-            Build & install Helide   publish Helide and AutoUpdater, then install both
+            Build & install Helide   publish Helide, then install it
 
         KEYS
             Up / Down  move          Enter    run the selected workflow
@@ -85,11 +83,11 @@ internal static class Program
             1  Check          lazygit, hx, yazi. The agents (opencode, codex, claude) are optional and only reported.
             2  Install        winget install each missing one. Agents are never installed.
             3  Repair PATH    The real directory under WinGet\Packages is added to the user PATH, and refused past 2000 characters.
-            4  Build          dotnet publish, Helide then AutoUpdater, excluded from Helide.csproj. PublishSingleFile is -time only, so a plain build cannot make it.
-            5  Install        %LOCALAPPDATA%\Programs\Helide\Helide.exe, on the user PATH, with a Start Menu entry. AutoUpdater.exe beside it.
+            4  Build          dotnet publish Helide. PublishSingleFile is publish-time only, so a plain build cannot make the single exe.
+            5  Install        %LOCALAPPDATA%\Programs\Helide\Helide.exe, on the user PATH, with a Start Menu entry.
 
         NOTES
-            Restart the shell after any phase that touched PATH. Helide.exe and AutoUpdater.exe are the only files installed. This tool is for building and installing; it is never copied anywhere.
+            Restart the shell after any phase that touched PATH. Helide.exe is the only file installed; AutoUpdater is deprecated and no longer built or installed here. This tool is for building from source and is never copied anywhere.
         """;
 
     private static string _repoRoot = AppContext.BaseDirectory;
@@ -102,12 +100,6 @@ internal static class Program
     // names it after the RID, so this is where a finished build actually lands.
     private static string AppArtifact =>
         Path.Combine(_repoRoot, "bin", "Release", "net8.0-windows", "Helide-win-x64.exe");
-
-    private static string UpdaterProject =>
-        Path.Combine(_repoRoot, "tools", "AutoUpdater", "AutoUpdater.csproj");
-
-    private static string UpdaterArtifact => Path.Combine(
-        _repoRoot, "tools", "AutoUpdater", "bin", "Release", "net8.0-windows", "AutoUpdater-win-x64.exe");
 
     private static string InstallDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Helide");
@@ -279,19 +271,18 @@ internal static class Program
             }
 
             case Workflow.BuildInstall:
-                Plan(StepBuildApp, StepBuildUpdater, StepInstallApp, StepInstallUpdater);
+                Plan(StepBuildApp, StepInstallApp);
                 return BuildAndInstall();
 
             case Workflow.BuildOnly:
-                Plan(StepBuildApp, StepBuildUpdater);
-                if (!BuildSteps()) { Error("publish failed"); return ExitFailed; }
+                Plan(StepBuildApp);
+                if (!Do(StepBuildApp, BuildApp)) { Error("publish failed"); return ExitFailed; }
                 Ok("publish succeeded");
                 return ExitOk;
 
             default:
             {
-                Plan(StepCheck, StepInstall, StepPath,
-                    StepBuildApp, StepBuildUpdater, StepInstallApp, StepInstallUpdater);
+                Plan(StepCheck, StepInstall, StepPath, StepBuildApp, StepInstallApp);
 
                 var unresolved = FixTools();
 
@@ -340,15 +331,9 @@ internal static class Program
         return FindMissing();
     }
 
-    private static bool BuildSteps()
-    {
-        if (!Do(StepBuildApp, BuildApp)) return false;
-        return Do(StepBuildUpdater, BuildUpdater);
-    }
-
     private static int BuildAndInstall()
     {
-        if (!BuildSteps())
+        if (!Do(StepBuildApp, BuildApp))
         {
             Error("publish failed");
             return ExitFailed;
@@ -356,10 +341,7 @@ internal static class Program
 
         Ok("publish succeeded");
 
-        var installedApp = Do(StepInstallApp, InstallApp);
-        var installedUpdater = Do(StepInstallUpdater, InstallUpdater);
-
-        if (!installedApp || !installedUpdater) return ExitFailed;
+        if (!Do(StepInstallApp, InstallApp)) return ExitFailed;
 
         Ok("done. restart your shell, then run: helide");
         return ExitOk;
@@ -556,23 +538,6 @@ internal static class Program
         return Run("dotnet", $"publish \"{AppProject}\" -c Release -r win-x64 {selfContained}", _repoRoot) == 0;
     }
 
-    private static bool BuildUpdater()
-    {
-        // The updater is its own project and is excluded from Helide.csproj, so nothing
-        // above built it.
-        if (!File.Exists(UpdaterProject))
-        {
-            Note("no AutoUpdater.csproj under tools\\, skipping");
-            return true;
-        }
-
-        var selfContained = _selfContained ? "--self-contained" : "--self-contained:false";
-
-        Emit("build", $"dotnet publish AutoUpdater.csproj -c Release -r win-x64 {selfContained}");
-        return Run("dotnet",
-            $"publish \"{UpdaterProject}\" -c Release -r win-x64 {selfContained}", _repoRoot) == 0;
-    }
-
     private static bool InstallApp()
     {
         if (!File.Exists(AppArtifact))
@@ -620,28 +585,6 @@ internal static class Program
         return true;
     }
 
-    private static bool InstallUpdater()
-    {
-        if (!File.Exists(UpdaterArtifact))
-        {
-            Error($"no published updater at {UpdaterArtifact}");
-            Note("Helide itself is still installed");
-            return false;
-        }
-
-        Directory.CreateDirectory(InstallDir);
-
-        var exe = Path.Combine(InstallDir, "AutoUpdater.exe");
-        File.Copy(UpdaterArtifact, exe, overwrite: true);
-
-        var megabytes = Math.Round(new FileInfo(exe).Length / 1024d / 1024d, 1);
-        Emit("copied", $"AutoUpdater.exe ({megabytes} MB) -> {InstallDir}");
-
-        // Deliberately no PATH entry and no Start Menu shortcut: it is an internal tool
-        // that finds the app by looking next to itself, so it needs nothing else.
-        return true;
-    }
-
     // ------------------------------------------------------------------ snapshot
 
     // What the menu shows before anything is run, so the first screen answers "what state
@@ -650,10 +593,9 @@ internal static class Program
         List<(string Label, string Exe, bool Found)> Tools,
         List<(string Label, bool Found)> Agents,
         string? AppVersion,
-        bool UpdaterInstalled,
         bool Built);
 
-    private static Snapshot _snapshot = new([], [], null, false, false);
+    private static Snapshot _snapshot = new([], [], null, false);
 
     private static Snapshot TakeSnapshot()
     {
@@ -679,7 +621,6 @@ internal static class Program
             tools,
             agents,
             version,
-            File.Exists(Path.Combine(InstallDir, "AutoUpdater.exe")),
             File.Exists(AppArtifact));
     }
 
@@ -1348,12 +1289,6 @@ internal static class Program
             new Cell((snap.AppVersion is null ? "-" : "√") + "  ", snap.AppVersion is null ? _theme.TextFaint : _theme.Success),
             new Cell("app".PadRight(10), _theme.TextMuted),
             new Cell(snap.AppVersion is null ? "not installed" : $"v{snap.AppVersion}", _theme.TextFaint),
-        ]);
-        lines.Add(
-        [
-            new Cell((snap.UpdaterInstalled ? "√" : "-") + "  ", snap.UpdaterInstalled ? _theme.Success : _theme.TextFaint),
-            new Cell("updater".PadRight(10), _theme.TextMuted),
-            new Cell(snap.UpdaterInstalled ? "installed" : "not installed", _theme.TextFaint),
         ]);
         lines.Add(
         [
