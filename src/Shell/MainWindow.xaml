@@ -234,6 +234,87 @@
             </Setter>
         </Style>
 
+        <!-- A square button for a pane's header strip: the + that adds a tab, and the git and
+             project actions. Its content is a GlyphIcon, which draws the glyph small and
+             heavier than the icon font does. As tall as the strip and flush with its edge, so
+             it docks rather than floats. It never takes keyboard focus, so a click on it
+             leaves the pane that had the cursor where it was. BorderBrush is the colour the
+             glyph turns on hover, and is only borrowed for that: the template draws no border,
+             and a template trigger has no other way to be given a value per button. -->
+        <Style x:Key="PaneIconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="27" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="Surface"
+                            Background="{TemplateBinding Background}"
+                            SnapsToDevicePixels="True"
+                        >
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
+                                <Setter Property="Foreground" Value="{Binding BorderBrush, RelativeSource={RelativeSource Self}}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource PressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.35" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- One segment of the title bar's project strip, as a button. The fill is the
+             segment's own colour, set where it is used, and the pointer only lays a veil over
+             it, so every segment keeps its colour and still reads as something to press. -->
+        <Style x:Key="TitlePillStyle" TargetType="Button">
+            <Setter Property="Height" Value="18" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid SnapsToDevicePixels="True">
+                            <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </Border>
+                            <Border
+                                x:Name="Veil"
+                                Background="{DynamicResource TextStrongBrush}"
+                                Opacity="0"
+                                IsHitTestVisible="False"
+                            />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Veil" Property="Opacity" Value="0.14" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Veil" Property="Opacity" Value="0.24" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="ChromeButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{DynamicResource TextStrongBrush}" />
@@ -530,17 +611,21 @@
                                 RenderOptions.BitmapScalingMode="HighQuality"
                             />
                     </Button>
-                    <!-- One strip in three segments: which project, where it is, which
-                         branch. The name is the accent block because it is the one
-                         thing that tells two Helide windows apart at a glance. -->
-                    <Border
+                    <!-- One strip in three segments: which project, where it is, which branch. Flat
+                         and butted together, so it reads as one strip, with the colour of each
+                         segment doing the dividing. The name is the accent block because it is the
+                         one thing that tells two Helide windows apart at a glance. The name and the
+                         branch are buttons (a project picker and a branch picker) and the path, which
+                         has nothing to choose, is not. -->
+                    <Button
                             x:Name="ProjectNamePill"
+                            Style="{DynamicResource TitlePillStyle}"
                             Visibility="Collapsed"
-                            Height="18"
                             Margin="8,0,0,0"
-                            Padding="9,0"
-                            VerticalAlignment="Center"
                             Background="{DynamicResource AccentBrush}"
+                            Click="ProjectNamePill_Click"
+                            ToolTip="Switch project"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         >
                         <TextBlock
                                 x:Name="ProjectNamePillText"
@@ -550,7 +635,7 @@
                                 FontWeight="SemiBold"
                                 Foreground="{DynamicResource TextOnAccentBrush}"
                             />
-                    </Border>
+                    </Button>
                     <Border
                             x:Name="ProjectPathPill"
                             Visibility="Collapsed"
@@ -569,13 +654,15 @@
                                 TextTrimming="CharacterEllipsis"
                             />
                     </Border>
-                    <Border
+                    <Button
                             x:Name="GitBranchPill"
+                            Style="{DynamicResource TitlePillStyle}"
                             Visibility="Collapsed"
-                            Height="18"
                             Padding="8,0,9,0"
-                            VerticalAlignment="Center"
                             Background="{DynamicResource PressedBrush}"
+                            Click="GitBranchPill_Click"
+                            ToolTip="Switch branch"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         >
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Image
@@ -594,7 +681,7 @@
                                     Foreground="{DynamicResource MauveBrush}"
                                 />
                         </StackPanel>
-                    </Border>
+                    </Button>
                 </StackPanel>
 
                 <StackPanel
@@ -1125,37 +1212,143 @@
                                 Grid.Row="0"
                                 Style="{DynamicResource PaneHeaderStyle}"
                             >
-                            <Grid Margin="9,0">
+                            <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
+                                <!-- The git tool's origin commands. They run git in the project rather than
+                                     typing into lazygit, whose keys mean whatever its current panel says. -->
+                                <StackPanel x:Name="GitToolStrip" Grid.Column="0" Orientation="Horizontal">
+                                    <Button
+                                            x:Name="GitFetchButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="GitFetchButton_Click"
+                                            ToolTip="Fetch all remotes"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE895;" />
+                                    </Button>
+                                    <Button
+                                            x:Name="GitPullButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="GitPullButton_Click"
+                                            ToolTip="Pull"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE896;" />
+                                    </Button>
+                                    <Button
+                                            x:Name="GitPushButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="GitPushButton_Click"
+                                            ToolTip="Push"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE898;" />
+                                    </Button>
+                                    <Button
+                                            x:Name="GitForcePushButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            BorderBrush="{DynamicResource DangerBrush}"
+                                            Click="GitForcePushButton_Click"
+                                            ToolTip="Force push (--force-with-lease)"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE945;" />
+                                    </Button>
+                                    <Border
+                                            Width="1"
+                                            Height="14"
+                                            Margin="4,0"
+                                            VerticalAlignment="Center"
+                                            Background="{DynamicResource PressedBrush}"
+                                        />
+                                    <Button
+                                            x:Name="GitOpenRemoteButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="GitOpenRemoteButton_Click"
+                                            ToolTip="Open the remote in the browser"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE774;" />
+                                    </Button>
+                                    <Button
+                                            x:Name="GitCopyBranchButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="GitCopyBranchButton_Click"
+                                            ToolTip="Copy branch name"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE8C8;" />
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel x:Name="ProjectToolStrip" Grid.Column="0" Orientation="Horizontal" Visibility="Collapsed">
+                                    <Button
+                                            x:Name="ProjectNewFileButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="ProjectNewFileButton_Click"
+                                            ToolTip="New file in the project root"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE7C3;" />
+                                    </Button>
+                                    <Button
+                                            x:Name="ProjectNewFolderButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="ProjectNewFolderButton_Click"
+                                            ToolTip="New folder in the project root"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE8F4;" />
+                                    </Button>
+                                    <Border
+                                            Width="1"
+                                            Height="14"
+                                            Margin="4,0"
+                                            VerticalAlignment="Center"
+                                            Background="{DynamicResource PressedBrush}"
+                                        />
+                                    <Button
+                                            x:Name="ProjectRootButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="ProjectRootButton_Click"
+                                            ToolTip="Back to project root"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE80F;" />
+                                    </Button>
+                                    <Button
+                                            x:Name="ProjectRevealButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="ProjectRevealButton_Click"
+                                            ToolTip="Show in File Explorer"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE838;" />
+                                    </Button>
+                                    <Button
+                                            x:Name="ProjectCopyPathButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="ProjectCopyPathButton_Click"
+                                            ToolTip="Copy project path"
+                                        >
+                                        <ui:GlyphIcon Glyph="&#xE8C8;" />
+                                    </Button>
+                                </StackPanel>
+                                <!-- What fills the rest of the strip: where the branch stands, or what the project
+                                     root holds. Quiet, and it gives way to the buttons when the pane is narrow. -->
                                 <TextBlock
-                                        Grid.Column="0"
-                                        x:Name="LeftPaneTitle"
-                                        Text="GIT"
+                                        x:Name="GitStatusText"
+                                        Grid.Column="1"
+                                        Margin="10,0,10,0"
+                                        HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
+                                        TextTrimming="CharacterEllipsis"
                                         FontFamily="{DynamicResource UiMonoFontFamily}"
-                                        FontSize="{DynamicResource FontSizeCaption}"
-                                        Foreground="{DynamicResource TextPaneTitleBrush}"
+                                        FontSize="{DynamicResource FontSizeSmall}"
+                                        Foreground="{DynamicResource TextFaintBrush}"
                                     />
                                 <TextBlock
+                                        x:Name="ProjectInfoText"
                                         Grid.Column="1"
-                                        x:Name="GitPaneState"
-                                        Text="starting"
+                                        Margin="10,0,10,0"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
-                                        Foreground="{DynamicResource TextIdleBrush}"
+                                        TextTrimming="CharacterEllipsis"
+                                        FontFamily="{DynamicResource UiMonoFontFamily}"
                                         FontSize="{DynamicResource FontSizeSmall}"
-                                    />
-                                <TextBlock
-                                        Grid.Column="1"
-                                        x:Name="ProjectPaneState"
-                                        Text="starting"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Center"
-                                        Foreground="{DynamicResource TextIdleBrush}"
-                                        FontSize="{DynamicResource FontSizeSmall}"
+                                        Foreground="{DynamicResource TextFaintBrush}"
                                         Visibility="Collapsed"
                                     />
                             </Grid>
@@ -1207,92 +1400,47 @@
                                      flexible element so it gives up width when the pane is
                                      narrow. Docked children are measured in order and each
                                      takes what it asks for, so a capped strip still pushed the
-                                     + button and the state text off the right edge once the
+                                     + button off the right edge once the
                                      tab list grew. -->
-                                <Grid Margin="9,0">
+                                <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock
+                                    <Border
                                             Grid.Column="0"
-                                            Text="HELIX"
-                                            VerticalAlignment="Center"
-                                            FontFamily="{DynamicResource UiMonoFontFamily}"
-                                            FontSize="{DynamicResource FontSizeCaption}"
-                                            Foreground="{DynamicResource TextPaneTitleBrush}"
-                                        />
-                                    <Border
-                                            Grid.Column="1"
-                                            Width="1"
-                                            Margin="8,6"
-                                            Background="{DynamicResource BorderBrush}"
-                                            VerticalAlignment="Center"
-                                        />
-                                    <Border
-                                            Grid.Column="2"
                                             VerticalAlignment="Stretch"
                                             Height="27"
-                                            Margin="9,0,4,0"
                                             Background="Transparent"
-                                            ClipToBounds="True">
-                                            <!-- The tab strip is clipped to the header row, so a
-                                                 long list of tabs slides out of sight instead of
-                                                 spilling down the pane. -->
-                                            <ScrollViewer
-                                                    x:Name="EditorTabStripScroll"
-                                                    PreviewMouseWheel="TabStrip_MouseWheel"
-                                                    HorizontalScrollBarVisibility="Hidden"
-                                                    VerticalScrollBarVisibility="Disabled"
-                                                    Focusable="False"
-                                            >
-                                                <ItemsControl x:Name="EditorTabStrip" ItemTemplate="{StaticResource PaneTabTemplate}">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate>
-                                                            <StackPanel Orientation="Horizontal" />
-                                                        </ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                </ItemsControl>
-                                            </ScrollViewer>
-                                        </Border>
-                                        <Button
-                                                Grid.Column="3"
-                                                VerticalAlignment="Center"
-                                                x:Name="EditorTabSplitButton"
-                                                Width="22"
-                                                Height="27"
-                                                Margin="0,0,4,0"
-                                                Padding="0"
-                                                Click="EditorTabSplitButton_Click"
-                                                Content="+"
-                                                FontFamily="{DynamicResource UiMonoFontFamily}"
-                                                FontSize="{DynamicResource FontSizeMedium}"
-                                                Foreground="{DynamicResource TextSubtleBrush}"
-                                                Background="Transparent"
-                                                BorderThickness="0"
-                                                Cursor="Hand"
-                                                ToolTip="New empty editor tab"
+                                            ClipToBounds="True"
                                         >
-                                            <Button.Template>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border
-                                                            x:Name="SplitSurface"
-                                                            Background="{TemplateBinding Background}"
-                                                            Width="22"
-                                                            Height="27"
-                                                    >
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="SplitSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
-                                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Button.Template>
+                                        <!-- The tab strip is clipped to the header row, so a
+                                             long list of tabs slides out of sight instead of
+                                             spilling down the pane. -->
+                                        <ScrollViewer
+                                                x:Name="EditorTabStripScroll"
+                                                PreviewMouseWheel="TabStrip_MouseWheel"
+                                                HorizontalScrollBarVisibility="Hidden"
+                                                VerticalScrollBarVisibility="Disabled"
+                                                Focusable="False"
+                                        >
+                                            <ItemsControl x:Name="EditorTabStrip" ItemTemplate="{StaticResource PaneTabTemplate}">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </Border>
+                                    <Button
+                                            Grid.Column="1"
+                                            x:Name="EditorTabSplitButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
+                                            Click="EditorTabSplitButton_Click"
+                                            ToolTip="New empty editor tab"
+                                        >
+                                            <ui:GlyphIcon Glyph="&#xE710;" />
                                         </Button>
                                 </Grid>
                             </Border>
@@ -1322,33 +1470,15 @@
                                     Grid.Row="0"
                                     Style="{DynamicResource PaneHeaderStyle}"
                                 >
-                                <Grid Margin="9,0">
+                                <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock
+                                    <Border
                                             Grid.Column="0"
-                                            Text="RUN"
-                                            VerticalAlignment="Center"
-                                            FontFamily="{DynamicResource UiMonoFontFamily}"
-                                            FontSize="{DynamicResource FontSizeCaption}"
-                                            Foreground="{DynamicResource TextPaneTitleBrush}"
-                                        />
-                                    <Border
-                                            Grid.Column="1"
-                                            Width="1"
-                                            Margin="8,6"
-                                            Background="{DynamicResource BorderBrush}"
-                                            VerticalAlignment="Center"
-                                        />
-                                    <Border
-                                            Grid.Column="2"
                                             VerticalAlignment="Stretch"
                                             Height="27"
-                                            Margin="9,0,4,0"
                                             Background="Transparent"
                                             ClipToBounds="True"
                                         >
@@ -1369,42 +1499,14 @@
                                         </ScrollViewer>
                                     </Border>
                                     <Button
-                                            Grid.Column="3"
-                                            VerticalAlignment="Center"
+                                            Grid.Column="1"
                                             x:Name="RunnerNewSessionButton"
+                                            Style="{DynamicResource PaneIconButtonStyle}"
                                             Click="RunnerNewSessionButton_Click"
                                             ToolTip="New runner session"
-                                            Background="Transparent"
-                                            BorderThickness="0"
-                                            Width="22"
-                                            Height="27"
-                                            Margin="0,0,4,0"
-                                            Padding="0"
-                                            Foreground="{DynamicResource TextSubtleBrush}"
-                                            Cursor="Hand"
-                                            FontFamily="{DynamicResource UiMonoFontFamily}"
-                                            FontSize="{DynamicResource FontSizeMedium}"
-                                            Content="+"
                                         >
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border
-                                                        x:Name="SplitSurface"
-                                                        Background="{TemplateBinding Background}"
-                                                        Width="22"
-                                                        Height="27"
-                                                    >
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="SplitSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
-                                                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                    </Button>
+                                            <ui:GlyphIcon Glyph="&#xE710;" />
+                                        </Button>
                                 </Grid>
                             </Border>
                             <ui:PaneSplitPanel
@@ -1436,37 +1538,16 @@
                                 Grid.Row="0"
                                 Style="{DynamicResource PaneHeaderStyle}"
                             >
-                            <Grid Margin="9,0">
+                            <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <!-- Title -->
-                                <TextBlock
+                                <!-- Session tab strip. It starts at the pane's own edge; there is no title in front of it. -->
+                                <Border
                                         Grid.Column="0"
-                                        x:Name="AgentPaneTitle"
-                                        Text="OPENCODE"
-                                        VerticalAlignment="Center"
-                                        FontFamily="{DynamicResource UiMonoFontFamily}"
-                                        FontSize="{DynamicResource FontSizeCaption}"
-                                        Foreground="{DynamicResource TextPaneTitleBrush}"
-                                    />
-                                <!-- Separator -->
-                                <Border
-                                        Grid.Column="1"
-                                        Width="1"
-                                        Margin="8,6"
-                                        Background="{DynamicResource BorderBrush}"
-                                        VerticalAlignment="Center"
-                                    />
-                                <!-- Session tab strip -->
-                                <Border
-                                        Grid.Column="2"
                                         VerticalAlignment="Stretch"
                                         Height="27"
-                                        Margin="9,0,4,0"
                                         Background="Transparent"
                                         ClipToBounds="True"
                                     >
@@ -1486,44 +1567,16 @@
                                         </ItemsControl>
                                     </ScrollViewer>
                                 </Border>
-                                <!-- + icon -->
+                                <!-- + icon, docked to the right edge -->
                                 <Button
-                                        Grid.Column="3"
-                                        VerticalAlignment="Center"
+                                        Grid.Column="1"
                                         x:Name="AgentNewSessionButton"
+                                        Style="{DynamicResource PaneIconButtonStyle}"
                                         Click="AgentNewSessionButton_Click"
                                         ToolTip="New agent session"
-                                        Background="Transparent"
-                                        BorderThickness="0"
-                                        Width="22"
-                                        Height="27"
-                                        Margin="0,0,4,0"
-                                        Padding="0"
-                                        Foreground="{DynamicResource TextSubtleBrush}"
-                                        Cursor="Hand"
-                                        FontFamily="{DynamicResource UiMonoFontFamily}"
-                                        FontSize="{DynamicResource FontSizeMedium}"
-                                        Content="+"
                                     >
-                                    <Button.Template>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border
-                                                    x:Name="SplitSurface"
-                                                    Background="{TemplateBinding Background}"
-                                                    Width="22"
-                                                    Height="27"
-                                                >
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="SplitSurface" Property="Background" Value="{DynamicResource InteractiveBrush}" />
-                                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Button.Template>
-                                </Button>
+                                        <ui:GlyphIcon Glyph="&#xE710;" />
+                                    </Button>
                             </Grid>
                         </Border>
                         <!-- Flyout for new agent session -->

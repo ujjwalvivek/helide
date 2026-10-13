@@ -21,7 +21,6 @@ using Helide.Terminal;
 using Button = System.Windows.Controls.Button;
 using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
-using MessageBox = System.Windows.MessageBox;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using Point = System.Windows.Point;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
@@ -97,7 +96,6 @@ public partial class MainWindow : Window
     public bool IsUpdateReadyToRestart => HelideUpdateState.IsReadyToRestart;
     private string _runCommand = "pwsh";
     private bool _loaded;
-    private bool _closingWorkspace;
     private double _leftPaneMinWidth;
     private GridLength _leftSplitterWidth;
     private double _rightPaneMinWidth;
@@ -183,12 +181,16 @@ public partial class MainWindow : Window
         {
             ThemePalette.ThemeChanged -= ThemePalette_ThemeChanged;
             HelideUpdateState.Changed -= OnUpdateStateChanged;
+            StopWatchingGitHead();
         };
 
         // The update state lives outside both the pill and the About window so they
         // cannot disagree. Whoever downloads the update raises this, and the pill
         // follows rather than the two of them racing to guess.
         HelideUpdateState.Changed += OnUpdateStateChanged;
+
+        DialogControl.Finished += CompleteDialog;
+        DialogPopup.Closed += (_, _) => CompleteDialog(false, null, false);
 
         CommandPaletteControl.Chosen += CommandPalette_Chosen;
         CommandPaletteControl.Dismissed += CloseCommandPalette;
@@ -250,6 +252,7 @@ public partial class MainWindow : Window
             return;
 
         _loaded = true;
+        Activated += (_, _) => RefreshGitBranch();
         StartOpenRequestWatcher();
         // Yazi and Helix are launched by Helide, so they inherit this and route
         // "open this file" back to us instead of spawning their own windows.
@@ -311,9 +314,6 @@ public partial class MainWindow : Window
 
         if (!LeftToolStack.Children.Contains(_yaziPromptCard))
             LeftToolStack.Children.Add(_yaziPromptCard);
-
-        ProjectPaneState.Text = "offer";
-        ProjectPaneState.Foreground = ThemePalette.Brush(ThemePalette.TextIdleBrush);
     }
 
     private void DismissYaziPrompt()
@@ -382,25 +382,12 @@ public partial class MainWindow : Window
             // A failed install leaves yazi exactly as it was, so the fallback still
             // works and there is nothing to roll back. The offer stays up: it is what
             // the pane is showing, and clearing it would leave nothing behind.
-            MessageBox.Show(this,
-                $"Could not install the yazi config:\n\n{exception.Message}",
-                "Helide", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ShowNotice("Could not install the yazi config", exception.Message);
         }
     }
 
-    private void OpenProjectButton_Click(object sender, RoutedEventArgs e)
-    {
-        using var dialog = new System.Windows.Forms.FolderBrowserDialog
-        {
-            Description = "Select a project folder for Helide",
-            ShowNewFolderButton = true,
-            UseDescriptionForTitle = true,
-            SelectedPath = ResolveInitialFolder(),
-        };
-
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-            OpenWorkspace(dialog.SelectedPath);
-    }
+    private void OpenProjectButton_Click(object sender, RoutedEventArgs e) =>
+        BrowseFolders(ResolveInitialFolder(), path => OpenWorkspace(path));
 
     private string ResolveInitialFolder()
     {
@@ -436,6 +423,24 @@ public partial class MainWindow : Window
         // that does not own the foreground, which is exactly our case.
         [DllImport("user32.dll")]
         public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
+
+        // What a key produces under the current layout and modifier state. Used to hand
+        // typed characters to an overlay when a pane still owns the keyboard, where
+        // guessing from the key's name gets case and punctuation wrong.
+        [DllImport("user32.dll")]
+        public static extern bool GetKeyboardState(byte[] keyState);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int ToUnicode(
+            uint virtualKey,
+            uint scanCode,
+            byte[] keyState,
+            [Out, MarshalAs(UnmanagedType.LPWStr, SizeConst = 8)] StringBuilder buffer,
+            int bufferSize,
+            uint flags);
+
+        [DllImport("user32.dll")]
+        public static extern uint MapVirtualKey(uint code, uint mapType);
     }
 
     private bool _paletteOpen;
@@ -447,6 +452,16 @@ public partial class MainWindow : Window
         if (_paletteOpen)
             return;
 
+        ShowPalette(BuildPaletteCommands(), PaletteMode.Commands);
+    }
+
+    // The palette's popup, for anything laid out like it: the command list itself, and
+    // the project and branch pickers the title bar opens.
+    private void ShowPalette(List<PaletteCommand> commands, PaletteMode mode)
+    {
+        if (_paletteOpen)
+            return;
+
         _paletteOpen = true;
 
         // Anchored to the root grid rather than left to default. A Popup placed with no
@@ -454,7 +469,7 @@ public partial class MainWindow : Window
         // happens to be instead of in the window.
         CommandPalettePopup.PlacementTarget = RootGrid;
         CommandPalettePopup.IsOpen = true;
-        CommandPaletteControl.Load(BuildPaletteCommands());
+        CommandPaletteControl.Load(commands, mode);
 
         // Focus comes from the popup's own Opened event, which is the first moment its
         // HwndSource exists. Asking earlier just queues focus against a window that is
@@ -562,66 +577,22 @@ public partial class MainWindow : Window
         });
     }
 
-    // The native browser, for the one folder the picker's tree cannot show: one outside
-    // the project.
+    // The folder the picker's tree cannot show: one outside the project. Handed to the
+    // in-app browser, which opens on the project and can go anywhere from there.
     //
-    // The picker is closed BEFORE the dialog opens, not after it is cancelled. A
-    // parentless WinForms dialog adopts whatever window is active when it opens, and
-    // under an open popup that is the popup's own HWND -- so the deactivation that
-    // closes a StaysOpen popup destroys the dialog's owner, and the dialog with it.
-    // That is the flicker, the instant close, and the window left minimised with
-    // nothing to activate back to.
+    // Deferred for the palette's reason: the picker is closed first, and the browser
+    // opens with the desktop settled rather than from inside the click that asked.
     private void FolderPicker_BrowseRequested()
     {
         var open = _pendingFolderAction;
         if (open is null)
             return;
 
-        // Deferred for the palette's reason: a modal loop started inside a mouse
-        // handler re-enters WPF input from under that handler.
-        Dispatcher.BeginInvoke(DispatcherPriority.Input, () => BrowseHandoff(open));
-    }
-
-    private void BrowseHandoff(Action<string> open)
-    {
-        CloseFolderPicker();
-
-        if (PickFolderWithDialog() is not { } path)
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
-            // Cancelled. The pick comes back rather than dropping the user out of the
-            // command they asked for -- closing the picker was a means to an end, not
-            // the thing they did.
-            OpenFolderPicker(open);
-            return;
-        }
-
-        // Deferred again so the dialog is gone before the terminal appears.
-        Dispatcher.BeginInvoke(DispatcherPriority.Input, () => open(path));
-    }
-
-    private string? PickFolderWithDialog()
-    {
-        using var dialog = new System.Windows.Forms.FolderBrowserDialog
-        {
-            Description = "Select a folder to open in",
-            ShowNewFolderButton = true,
-            UseDescriptionForTitle = true,
-            SelectedPath = _currentProject ?? ResolveInitialFolder(),
-        };
-
-        return dialog.ShowDialog(DialogOwner) == System.Windows.Forms.DialogResult.OK
-            ? dialog.SelectedPath
-            : null;
-    }
-
-    // This window as an IWin32Window, so the dialog is owned by it: without an owner
-    // the dialog lands on whichever monitor is active and is parented to a popup.
-    private System.Windows.Forms.IWin32Window DialogOwner =>
-        new DialogOwnerWindow(new WindowInteropHelper(this).Handle);
-
-    private sealed class DialogOwnerWindow(IntPtr handle) : System.Windows.Forms.IWin32Window
-    {
-        public IntPtr Handle { get; } = handle;
+            CloseFolderPicker();
+            BrowseFolders(_currentProject, open);
+        });
     }
 
     private List<PaletteCommand> BuildPaletteCommands()
@@ -866,9 +837,7 @@ private void OpenInNewWindow(string? projectPath)
     catch (Exception exception)
     {
         // Failing to spawn is not worth a crash: this window is unaffected either way.
-        MessageBox.Show(this,
-            $"Could not open a new Helide window:\n\n{exception.Message}",
-            "Helide", MessageBoxButton.OK, MessageBoxImage.Warning);
+        ShowNotice("Could not open a new Helide window", exception.Message);
     }
 }
 
@@ -897,23 +866,38 @@ private void OpenInNewWindow(string? projectPath)
         return NativeMethods.GetFocus() == source.Handle;
     }
 
-    // The character a key produces, or null when it is not printable. Only plain
-    // unmodified keys are forwarded; anything with a modifier is a shortcut.
+    // The character a key produces, or null when it is not printable. Only keys with no
+    // Ctrl or Alt are forwarded: those are shortcuts. Shift is not one, and it is what
+    // makes a capital or a symbol, so the layout is asked rather than the key's name.
     private static string? PrintableText(Key key)
     {
-        if (Keyboard.Modifiers != ModifierKeys.None)
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) || Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
             return null;
 
-        if (key == Key.Space)
-            return " ";
+        var virtualKey = (uint)KeyInterop.VirtualKeyFromKey(key);
+        if (virtualKey == 0)
+            return null;
 
-        if (key is >= Key.A and <= Key.Z)
-            return key.ToString();
+        var state = new byte[256];
+        if (!NativeMethods.GetKeyboardState(state))
+            return null;
 
-        if (key is >= Key.D0 and <= Key.D9)
-            return ((char)('0' + (key - Key.D0))).ToString();
+        var buffer = new StringBuilder(8);
 
-        return null;
+        // 0x4 leaves the keyboard's dead-key state alone, so asking does not change what
+        // the next real keystroke produces.
+        var count = NativeMethods.ToUnicode(
+            virtualKey,
+            NativeMethods.MapVirtualKey(virtualKey, 0),
+            state,
+            buffer,
+            buffer.Capacity,
+            0x4);
+
+        if (count != 1 || char.IsControl(buffer[0]))
+            return null;
+
+        return buffer.ToString();
     }
 
     private void ToggleCommandPalette()
@@ -1463,8 +1447,6 @@ private void OpenInNewWindow(string? projectPath)
 
         if (AgentProviders.Installed().FirstOrDefault() is { } provider)
             CreateAgentSession(provider.Type, provider.Label);
-        else
-            AgentPaneTitle.Text = "AGENT";
     }
 
     // Back to the workspace that was kept alive behind the welcome screen.
@@ -1532,8 +1514,7 @@ private void OpenInNewWindow(string? projectPath)
     {
         if (!Directory.Exists(project))
         {
-            MessageBox.Show(this, $"The project folder does not exist:\n\n{project}",
-                "Helide", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ShowNotice("The project folder does not exist", project);
             ShowWelcome();
             return false;
         }
@@ -1620,23 +1601,12 @@ private void OpenInNewWindow(string? projectPath)
 
             _runCommand = ProjectDetector.DetectRunCommand(project);
             var projectName = new DirectoryInfo(project).Name;
-            var branch = ProjectDetector.DetectGitBranch(project);
 
             ProjectNamePillText.Text = projectName;
             ProjectNamePill.Visibility = Visibility.Visible;
             ProjectPathPillText.Text = project;
             ProjectPathPill.Visibility = Visibility.Visible;
-            if (branch is not null)
-            {
-                GitBranchPillText.Text = branch;
-                GitBranchPill.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                GitBranchPillText.Text = string.Empty;
-                GitBranchPill.Visibility = Visibility.Collapsed;
-            }
-            ResetPaneStates();
+            RefreshGitBranch();
 
             ShowWorkspace();
 
@@ -1752,30 +1722,6 @@ private void OpenInNewWindow(string? projectPath)
         }
     }
 
-    private NativeTerminalHost? CreateTerminal(
-        ContentControl slot,
-        TextBlock stateText,
-        string label,
-        string commandLine,
-        string workingDirectory)
-    {
-        try
-        {
-            var host = new NativeTerminalHost(label, commandLine, workingDirectory);
-            host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
-            slot.Content = host;
-            _terminalHosts.Add(host);
-            return host;
-        }
-        catch (Exception exception)
-        {
-            slot.Content = CreateErrorPanel(label, exception);
-            stateText.Text = "failed";
-            stateText.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
-            return null;
-        }
-    }
-
 // Exactly one terminal host is ever parented in the left stack. Two renderer
     // windows stacked in one Grid is not a thing WPF can arbitrate: the terminal
     // renderer is a child HWND (Microsoft.Terminal.Wpf.TerminalContainer derives from
@@ -1785,25 +1731,22 @@ private void OpenInNewWindow(string? projectPath)
     private NativeTerminalHost? StartLeftTool(LeftTool tool)
     {
         var label = tool == LeftTool.Project ? "yazi" : "lazygit";
-        var stateText = tool == LeftTool.Project ? ProjectPaneState : GitPaneState;
 
         // A pane whose executable is missing never fails: it sits on "Starting…" for
         // good. So the question is asked here, and the pane says what it needs instead.
         var managed = ToolLocator.Tools.First(candidate => candidate.Label == label);
         if (!ToolLocator.IsInstalled(managed))
         {
-            ShowMissingLeftTool(tool, managed, stateText);
+            ShowMissingLeftTool(tool, managed);
             return null;
         }
 
         var arguments = tool == LeftTool.Git ? ToolDefaults.LazygitArguments() : [];
         var host = new NativeTerminalHost(label, ToolCommand($"{label}.exe", arguments), _currentProject!);
-        host.StateChanged += (_, state) => UpdatePaneState(stateText, state);
         LeftToolStack.Children.Add(host);
         _terminalHosts.Add(host);
         _leftHost = host;
         _leftHostTool = tool;
-        stateText.Text = "starting";
             Dispatcher.BeginInvoke(
                 DispatcherPriority.ContextIdle,
                 new Action(() => host.BringToFront()));
@@ -1816,7 +1759,7 @@ private void OpenInNewWindow(string? projectPath)
     // Takes the place of the pane the missing tool would have filled. When the tool turns
     // up -- installed from the card, from the welcome screen, or by hand -- the card goes
     // and the real pane starts, as long as that pane is still the one being shown.
-    private void ShowMissingLeftTool(LeftTool tool, ManagedTool managed, TextBlock stateText)
+    private void ShowMissingLeftTool(LeftTool tool, ManagedTool managed)
     {
         var purpose = tool == LeftTool.Project
             ? "The project browser is yazi, and it was not found on this machine."
@@ -1834,8 +1777,6 @@ private void OpenInNewWindow(string? projectPath)
         });
 
         LeftToolStack.Children.Add(card);
-        stateText.Text = "missing";
-        stateText.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
     }
 
     private void StopLeftTool()
@@ -2919,35 +2860,6 @@ private void OpenInNewWindow(string? projectPath)
     // in the project instead; files arrive by picking them in the left pane.
     private void EditorTabSplitButton_Click(object sender, RoutedEventArgs e) => CreateEditorTab(null);
 
-    private void UpdatePaneState(TextBlock stateText, TerminalHostState state)
-    {
-        if (_closingWorkspace)
-            return;
-
-        stateText.Text = state switch
-        {
-            TerminalHostState.Starting => "starting",
-            TerminalHostState.Ready => "ready",
-            TerminalHostState.Failed => "failed",
-            _ => "stopped",
-        };
-        stateText.Foreground = state switch
-        {
-            TerminalHostState.Ready => ThemePalette.Brush(ThemePalette.SuccessBrush),
-            TerminalHostState.Failed => ThemePalette.Brush(ThemePalette.DangerBrush),
-            _ => ThemePalette.Brush(ThemePalette.TextIdleBrush),
-        };
-    }
-
-    private void ResetPaneStates()
-    {
-        foreach (var stateText in new[] { GitPaneState, ProjectPaneState })
-        {
-            stateText.Text = "starting";
-            stateText.Foreground = ThemePalette.Brush(ThemePalette.TextIdleBrush);
-        }
-    }
-
     private static Border CreateErrorPanel(string label, Exception exception) => new()
     {
         Background = ThemePalette.Brush(ThemePalette.TerminalBrush),
@@ -3331,9 +3243,10 @@ private void OpenInNewWindow(string? projectPath)
         _activeLeftTool = tool;
         var showingGit = tool == LeftTool.Git;
 
-        LeftPaneTitle.Text = showingGit ? "GIT" : "PROJECT";
-        GitPaneState.Visibility = showingGit ? Visibility.Visible : Visibility.Collapsed;
-        ProjectPaneState.Visibility = showingGit ? Visibility.Collapsed : Visibility.Visible;
+        GitToolStrip.Visibility = showingGit ? Visibility.Visible : Visibility.Collapsed;
+        ProjectToolStrip.Visibility = showingGit ? Visibility.Collapsed : Visibility.Visible;
+        GitStatusText.Visibility = showingGit ? Visibility.Visible : Visibility.Collapsed;
+        ProjectInfoText.Visibility = showingGit ? Visibility.Collapsed : Visibility.Visible;
 
         GitPanelToggle.IsChecked = showingGit;
         ProjectPanelToggle.IsChecked = !showingGit;
@@ -3356,9 +3269,6 @@ private void OpenInNewWindow(string? projectPath)
             {
                 LeftToolStack.Children.Add(CreateErrorPanel(
                     showingGit ? "lazygit" : "yazi", exception));
-                var stateText = showingGit ? GitPaneState : ProjectPaneState;
-                stateText.Text = "failed";
-                stateText.Foreground = ThemePalette.Brush(ThemePalette.DangerBrush);
             }
         }
         else
@@ -3812,7 +3722,6 @@ private void OpenInNewWindow(string? projectPath)
         _activeAgentSession = held;
 
         AgentSlot.Content = OpenCodeCard();
-        AgentPaneTitle.Text = typeLabel.ToUpper();
         UpdateAgentSessionUI();
 
         if (!_restoringAgentSessions)
@@ -4042,7 +3951,6 @@ private void OpenInNewWindow(string? projectPath)
             _activeAgentSession = newSession;
 
             // Update UI
-            AgentPaneTitle.Text = typeLabel.ToUpper();
             UpdateAgentSessionUI();
 
             if (!_restoringAgentSessions)
@@ -4131,7 +4039,6 @@ private void OpenInNewWindow(string? projectPath)
             if (AgentContentFor(target) is { } content)
             {
                 AgentSlot.Content = content;
-                AgentPaneTitle.Text = target.TypeLabel.ToUpper();
             }
 
             UpdateAgentSessionUI();
@@ -4493,30 +4400,22 @@ private void OpenInNewWindow(string? projectPath)
 
     private void CloseWorkspace()
     {
-        _closingWorkspace = true;
-        try
-        {
-            // Detach every host before disposing any of them, for the same reason
-            // CloseEditorTab does: a host that is still in the visual tree can be sent
-            // a focus change, and answering that on a torn-down pseudoconsole throws
-            // out of an HWND message hook.
-            LeftToolStack.Children.Clear();
-            EditorSlot.Clear();
-            RunnerSlot.Clear();
-            AgentSlot.Content = null;
+        // Detach every host before disposing any of them, for the same reason
+        // CloseEditorTab does: a host that is still in the visual tree can be sent
+        // a focus change, and answering that on a torn-down pseudoconsole throws
+        // out of an HWND message hook.
+        LeftToolStack.Children.Clear();
+        EditorSlot.Clear();
+        RunnerSlot.Clear();
+        AgentSlot.Content = null;
 
-            foreach (var host in _terminalHosts.ToArray())
-                host.Dispose();
+        foreach (var host in _terminalHosts.ToArray())
+            host.Dispose();
 
-            _terminalHosts.Clear();
-            _editorTabs.Clear();
-            _activeEditorTab = null;
-            _leftHost = null;
-        }
-        finally
-        {
-            _closingWorkspace = false;
-        }
+        _terminalHosts.Clear();
+        _editorTabs.Clear();
+        _activeEditorTab = null;
+        _leftHost = null;
     }
 
     // The startup script is handed to pwsh as -EncodedCommand rather than -Command.
@@ -5014,7 +4913,6 @@ private void OpenInNewWindow(string? projectPath)
             if (session.Host is not null)
             {
                 AgentSlot.Content = session.Host;
-                AgentPaneTitle.Text = session.TypeLabel.ToUpper();
                 _activeAgentSession = session;
                 session.ClearAttention();
                 session.Host.BringToFront();
@@ -5022,7 +4920,6 @@ private void OpenInNewWindow(string? projectPath)
             else if (IsHeld(session))
             {
                 AgentSlot.Content = OpenCodeCard();
-                AgentPaneTitle.Text = session.TypeLabel.ToUpper();
                 _activeAgentSession = session;
                 OpenCodeCard().FocusInput();
             }
@@ -5056,14 +4953,12 @@ private void OpenInNewWindow(string? projectPath)
                 var nextSession = _agentSessions.Last();
                 nextSession.IsActive = true;
                 AgentSlot.Content = AgentContentFor(nextSession);
-                AgentPaneTitle.Text = nextSession.TypeLabel.ToUpper();
                 _activeAgentSession = nextSession;
                 nextSession.Host?.BringToFront();
             }
             else
             {
                 AgentSlot.Content = null;
-                AgentPaneTitle.Text = "AGENT";
                 _activeAgentSession = null;
             }
         }
