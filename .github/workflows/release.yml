@@ -25,29 +25,36 @@ jobs:
       - name: build
         run: dotnet build -c Release --no-restore
 
-      # The updater is a project of its own rather than a part of the app build,
-      # so it publishes separately. It lands next to nothing else, which is why
-      # it needs its own output folder.
       - name: publish app
         run: dotnet publish -c Release -r win-x64 --self-contained -p:DebugType=None -p:DebugSymbols=false -p:AllowedReferenceRelatedFileExtensions= -o publish
 
-      - name: publish autoupdater
-        run: dotnet publish tools/AutoUpdater/AutoUpdater.csproj -c Release -r win-x64 --self-contained -p:DebugType=None -p:DebugSymbols=false -p:AllowedReferenceRelatedFileExtensions= -o publish-updater
-
-      # Both exes end up at the root of the archive rather than under their build
-      # folders, so the updater sits beside Helide.exe and can find it by path
-      # without any install step.
+      # AutoUpdater is deprecated and no longer shipped: the app updates itself. Its
+      # source stays under tools/AutoUpdater, and builds that already have it installed
+      # keep working, because the archive still carries Helide.exe at its root.
+      #
+      # The name of the archive is a contract: installed copies fall back to
+      # releases/latest/download/helide-win-x64.zip when the API will not answer.
       - name: package
-        run: Compress-Archive -Path publish/Helide.exe, publish-updater/AutoUpdater.exe -DestinationPath helide-win-x64.zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path publish/Helide.exe -DestinationPath helide-win-x64.zip
+          # Published beside the archive so a download can be verified, by the app's own
+          # updater and by a package manifest. sha256sum's layout: hash, two spaces, name.
+          $hash = (Get-FileHash helide-win-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  helide-win-x64.zip" | Set-Content -Path SHA256SUMS.txt -Encoding ascii
 
       - uses: actions/upload-artifact@v4
         with:
           name: helide-win-x64
-          path: helide-win-x64.zip
+          path: |
+            helide-win-x64.zip
+            SHA256SUMS.txt
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: helide-win-x64.zip
+          files: |
+            helide-win-x64.zip
+            SHA256SUMS.txt
           body_path: .github/release-body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
