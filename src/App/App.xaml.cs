@@ -139,7 +139,17 @@ public partial class App : Application
                     // the gate, so on its own it would render nothing -- hidden pill,
                     // About offering a download -- for as long as the other installs.
                     var shared = HelideUpdateBroadcast.ReadStatus();
-                    if (shared != HelideUpdateState.Status)
+
+                    // A label that says work is under way, with nobody doing the work:
+                    // the window that wrote it has gone. Dropped, or it never changes.
+                    if (shared.Length > 0 && shared != "restart to update"
+                        && HelideUpdateState.NobodyInstalling())
+                    {
+                        HelideUpdateBroadcast.ClearStatusForSession();
+                        shared = string.Empty;
+                    }
+
+                    if (shared != (HelideUpdateState.Status ?? string.Empty))
                         HelideUpdateState.MirrorStatus(shared);
 
                     // Guarded so a window that already knows does not re-announce it.

@@ -573,6 +573,27 @@ public static class HelideUpdateState
         }
     }
 
+    /// True when no process holds the gate, so nothing is being downloaded or installed
+    /// whatever the shared label says. A window that is closed or dies part-way leaves
+    /// its "downloading" behind, and every other window would go on showing it.
+    public static bool NobodyInstalling()
+    {
+        try
+        {
+            using var gate = new Mutex(false, UpdateGateName);
+            bool free;
+            try { free = gate.WaitOne(0); }
+            catch (AbandonedMutexException) { free = true; }
+
+            if (free) gate.ReleaseMutex();
+            return free;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// Waits for whichever process is mid-install, then reports whether the new exe
     /// landed on disk. Callers that lost the gate use this to reach the same
     /// "restart to update" state as the installer instead of downloading again.
