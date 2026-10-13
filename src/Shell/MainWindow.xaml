@@ -659,7 +659,7 @@
                             Width="26"
                             Height="26"
                             Padding="1"
-                            ToolTip="Command palette (Ctrl+P)"
+                            ToolTip="Command palette (Ctrl+Shift+P)"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         >
                         <Image
@@ -1875,7 +1875,7 @@
                             Height="26"
                             Padding="1"
                             VerticalAlignment="Center"
-                            ToolTip="Command palette (Ctrl+P)"
+                            ToolTip="Command palette (Ctrl+Shift+P)"
                         >
                         <Image
                                 Source="/src/Assets/helide.png"
