@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using Helide.Theme;
@@ -7,6 +7,7 @@ namespace Helide.Interop;
 
 internal static class DwmNative
 {
+    private const uint DwmwaCloak = 13;
     private const uint DwmwaUseImmersiveDarkMode = 20;
     private const uint DwmwaWindowCornerPreference = 33;
     private const uint DwmwaBorderColor = 34;
@@ -42,6 +43,28 @@ internal static class DwmNative
         catch
         {
             // The opaque theme remains available on older Windows builds.
+        }
+    }
+
+    /// <summary>
+    /// Keeps a window off the screen while leaving it shown as far as everything else is
+    /// concerned: it is laid out, drawn and given focus as usual. A window is put on
+    /// screen the moment it is shown, which is before its first frame exists, and what
+    /// is there until then is whatever each part of it happens to start as. The panes
+    /// are windows of their own and are their own colour at once; everything between
+    /// them is not drawn yet, and showed as gaps around them.
+    /// </summary>
+    public static void Cloak(Window window, bool cloaked)
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(window).Handle;
+            if (hwnd != 0)
+                Set(hwnd, DwmwaCloak, cloaked ? 1 : 0);
+        }
+        catch
+        {
+            // Shown as it always was, on a Windows without it.
         }
     }
 

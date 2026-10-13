@@ -369,7 +369,10 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     // terminal's own colour.
     private void Renderer_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (_disposed || _growthTimer is not null)
+        // Not while the pane is still starting. Clipping makes Windows clear the window to
+        // its class colour, which is white until the renderer has been given the theme's:
+        // every pane flashed white as the window opened and its panes took their sizes.
+        if (_disposed || _growthTimer is not null || State != TerminalHostState.Ready)
             return;
 
         var was = e.PreviousSize;

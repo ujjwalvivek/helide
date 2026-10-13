@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Helide.Theme;
 
 namespace Helide.Interop;
@@ -50,6 +51,9 @@ internal static class MaximizeBounds
     // whole monitor rather than to the space around the taskbar.
     public static bool FillMonitor { get; set; }
 
+    private const int WmEraseBackground = 0x0014;
+    private const int WmSettingChange = 0x001A;
+    private const int WmDisplayChange = 0x007E;
     private const int WmNcCalcSize = 0x0083;
     private const int WmNcPaint = 0x0085;
     private const int WmNcUahDrawCaption = 0x00AE;
@@ -104,6 +108,7 @@ internal static class MaximizeBounds
     /// </summary>
     public static void Attach(Window window)
     {
+        ReadTaskbar();
         var source = HwndSource.FromHwnd(new WindowInteropHelper(window).Handle);
         source?.AddHook(WindowProc);
     }
@@ -124,9 +129,32 @@ internal static class MaximizeBounds
             case WmNcCalcSize:
                 return CalcSize(hwnd, wParam, lParam, ref handled);
 
-            case WmNcPaint:
-                PaintHeldBack(hwnd);
+            case WmSettingChange or WmDisplayChange:
+                TaskbarMayHaveChanged(hwnd);
                 return nint.Zero;
+
+            // The pixel held back gives the window a sliver of frame, and left to itself
+            // Windows then draws the whole stock frame, caption and all, across the window
+            // every time it is shown: on starting, and on coming back from the taskbar.
+            // The sliver is all there is to draw, and it is drawn here.
+            case WmNcPaint:
+                if (!PaintHeldBack(hwnd))
+                    return nint.Zero;
+
+                handled = true;
+                return nint.Zero;
+
+            // With that sliver of frame the window is also cleared to white before its
+            // first frame is drawn. Cleared to its own colour instead.
+            case WmEraseBackground:
+                if (!HeldBack(hwnd, out _, out _) || !GetClientRect(hwnd, out var client))
+                    return nint.Zero;
+
+                var fill = CreateSolidBrush(WindowColor());
+                FillRect(wParam, ref client, fill);
+                DeleteObject(fill);
+                handled = true;
+                return 1;
 
             default:
                 return nint.Zero;
@@ -162,10 +190,10 @@ internal static class MaximizeBounds
 
     // Nothing draws on the pixel held back, so it keeps whatever was last there: white on
     // a window that has just opened. It is filled with the window's own colour.
-    private static void PaintHeldBack(nint hwnd)
+    private static bool PaintHeldBack(nint hwnd)
     {
         if (!HeldBack(hwnd, out var monitor, out var edge) || !GetWindowRect(hwnd, out var window))
-            return;
+            return false;
 
         // The row or column of the monitor along the taskbar's edge, in the window's own
         // coordinates.
@@ -184,14 +212,36 @@ internal static class MaximizeBounds
 
         var dc = GetWindowDC(hwnd);
         if (dc == nint.Zero)
-            return;
+            return false;
 
-        // A COLORREF is 0x00BBGGRR.
-        var color = ThemePalette.Color(ThemePalette.WindowBrush);
-        var brush = CreateSolidBrush(color.R | (color.G << 8) | (color.B << 16));
+        var brush = CreateSolidBrush(WindowColor());
         FillRect(dc, ref strip, brush);
         DeleteObject(brush);
         ReleaseDC(hwnd, dc);
+        return true;
+    }
+
+    // A COLORREF is 0x00BBGGRR.
+    private static int WindowColor()
+    {
+        var color = ThemePalette.Color(ThemePalette.WindowBrush);
+        return color.R | (color.G << 8) | (color.B << 16);
+    }
+
+    // Nothing is held back until the window has drawn its first frame. A window that
+    // opens with a sliver of frame is shown white, for as long as it takes the content to
+    // arrive; one that opens without is not, and the pixel can be taken a moment later
+    // without anything showing.
+    private static bool _started;
+
+    /// <summary>Called once the window's first frame is on screen.</summary>
+    public static void Started(Window window)
+    {
+        if (_started)
+            return;
+
+        _started = true;
+        Reapply(window);
     }
 
     // Whether a pixel is being held back from an auto-hiding taskbar, and on which edge of
@@ -201,23 +251,67 @@ internal static class MaximizeBounds
         monitor = default;
         edge = 0;
 
-        if (FillMonitor || !IsZoomed(hwnd) || !MonitorOf(hwnd, out var info))
+        if (!_started || FillMonitor || !IsZoomed(hwnd) || !MonitorOf(hwnd, out var info))
             return false;
 
         monitor = info.Monitor;
 
-        var bar = new AppBarData { Size = Marshal.SizeOf<AppBarData>() };
-        if ((SHAppBarMessage(AbmGetState, ref bar) & AbsAutoHide) == 0
-            || SHAppBarMessage(AbmGetTaskbarPos, ref bar) == nint.Zero)
+        if (!_taskbarAutoHides)
             return false;
 
         // Only the monitor the taskbar is on.
-        if (bar.Bounds.Right <= monitor.Left || bar.Bounds.Left >= monitor.Right
-            || bar.Bounds.Bottom <= monitor.Top || bar.Bounds.Top >= monitor.Bottom)
+        var bar = _taskbarBounds;
+        if (bar.Right <= monitor.Left || bar.Left >= monitor.Right
+            || bar.Bottom <= monitor.Top || bar.Top >= monitor.Bottom)
             return false;
 
-        edge = bar.Edge;
+        edge = _taskbarEdge;
         return true;
+    }
+
+    // What the taskbar was last seen doing. Asking is a message to the shell that waits
+    // for its answer, and this is read while the window is being sized and painted, which
+    // the shell can itself be waiting on: bringing the window back from the taskbar is
+    // the shell's doing. So the answer is held, and asked for again only from outside a
+    // window message.
+    private static bool _taskbarAutoHides;
+    private static uint _taskbarEdge;
+    private static Rect _taskbarBounds;
+    private static bool _taskbarCheckPending;
+
+    // True when the answer is not the one already held.
+    private static bool ReadTaskbar()
+    {
+        var bar = new AppBarData { Size = Marshal.SizeOf<AppBarData>() };
+        var autoHides = (SHAppBarMessage(AbmGetState, ref bar) & AbsAutoHide) != 0
+            && SHAppBarMessage(AbmGetTaskbarPos, ref bar) != nint.Zero;
+
+        var changed = autoHides != _taskbarAutoHides
+            || (autoHides && (bar.Edge != _taskbarEdge
+                || bar.Bounds.Left != _taskbarBounds.Left || bar.Bounds.Top != _taskbarBounds.Top
+                || bar.Bounds.Right != _taskbarBounds.Right || bar.Bounds.Bottom != _taskbarBounds.Bottom));
+
+        _taskbarAutoHides = autoHides;
+        _taskbarEdge = bar.Edge;
+        _taskbarBounds = bar.Bounds;
+        return changed;
+    }
+
+    // The taskbar's settings, or the screens, changed. Looked at once the message that
+    // said so has been answered, and the frame worked out again if it matters.
+    private static void TaskbarMayHaveChanged(nint hwnd)
+    {
+        if (_taskbarCheckPending)
+            return;
+
+        _taskbarCheckPending = true;
+        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            _taskbarCheckPending = false;
+            if (ReadTaskbar() && IsZoomed(hwnd))
+                SetWindowPos(hwnd, nint.Zero, 0, 0, 0, 0,
+                    SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
+        }));
     }
 
     private static bool MonitorOf(nint hwnd, out MonitorInfo info)
@@ -244,6 +338,8 @@ internal static class MaximizeBounds
 
     private const int SmCxSizeFrame = 32;
     private const int SmCxPaddedBorder = 92;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpFrameChanged = 0x0020;
@@ -268,6 +364,8 @@ internal static class MaximizeBounds
     {
         // Only a window Windows itself holds as maximised. One restored as maximised is
         // not yet, when its handle is first made, and must not be moved as if it were.
+        ReadTaskbar();
+
         var hwnd = new WindowInteropHelper(window).Handle;
         if (hwnd == nint.Zero || !IsZoomed(hwnd) || !MonitorOf(hwnd, out var info))
             return;

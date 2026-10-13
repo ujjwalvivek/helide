@@ -162,6 +162,8 @@ public partial class MainWindow : Window
 
         SourceInitialized += (_, _) =>
         {
+            // Out of sight until there is a frame to show.
+            DwmNative.Cloak(this, true);
             DwmNative.Apply(this);
             MaximizeBounds.Attach(this);
             MaximizeBounds.Reapply(this);
@@ -175,6 +177,16 @@ public partial class MainWindow : Window
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         StateChanged += MainWindow_StateChanged;
         SizeChanged += (_, _) => ApplyMaximizeInset();
+        ContentRendered += (_, _) =>
+        {
+            // Queued first, so nothing below can leave the window hidden. It runs after
+            // the frame that the pixel taken below asks for, which is the one to show.
+            Dispatcher.BeginInvoke(
+                DispatcherPriority.Loaded, new Action(() => DwmNative.Cloak(this, false)));
+
+            MaximizeBounds.Started(this);
+            ApplyMaximizeInset();
+        };
 
         // Subscribed once here rather than per tab: the view models below hand
         // brushes to their bindings as values, so they are the one part of the UI
