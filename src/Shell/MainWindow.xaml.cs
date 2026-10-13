@@ -163,6 +163,8 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) =>
         {
             DwmNative.Apply(this);
+            MaximizeBounds.Attach(this);
+            MaximizeBounds.Reapply(this);
 
             // A window restored as maximised got there before the handler that insets
             // it was attached, so the inset is applied once here.
@@ -172,6 +174,7 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         StateChanged += MainWindow_StateChanged;
+        SizeChanged += (_, _) => ApplyMaximizeInset();
 
         // Subscribed once here rather than per tab: the view models below hand
         // brushes to their bindings as values, so they are the one part of the UI
@@ -774,6 +777,12 @@ public partial class MainWindow : Window
             "F11",
             keywords: "focus fullscreen distraction hide panels",
             canInvoke: workspace));
+        commands.Add(new PaletteCommand(
+            _state.ZenFullScreen ? "Zen Mode: Keep Taskbar Visible" : "Zen Mode: Cover Taskbar",
+            ToggleZenFullScreen,
+            "View",
+            _state.ZenFullScreen ? "now covers taskbar" : "now keeps taskbar",
+            keywords: "zen fullscreen full screen taskbar setting"));
         if (_state.AiEnabled)
             commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanelFromKey(ToolPanel.Agent, _activeAgentSession?.Host), "View", PaletteCommand.Gesture(Key.D4), canInvoke: workspace));
         commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
@@ -1115,11 +1124,16 @@ private void OpenInNewWindow(string? projectPath)
     private void CloseCaptionButton_Click(object sender, RoutedEventArgs e) =>
         SystemCommands.CloseWindow(this);
 
-    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    private void MainWindow_StateChanged(object? sender, EventArgs e) => ApplyMaximizeInset();
+
+    // Also run whenever the window's size changes, not only its state: a window restored
+    // as maximised is measured before it has been shown at that size, and the pixel held
+    // back from an auto-hiding taskbar comes and goes with zen mode.
+    private void ApplyMaximizeInset()
     {
-        MaximizeInset.Margin = WindowState == WindowState.Maximized
-            ? MaximizeBounds.Measure(this)
-            : new Thickness(0);
+        var maximized = WindowState == WindowState.Maximized;
+        MaximizeInset.Margin = maximized ? MaximizeBounds.Measure(this) : new Thickness(0);
+        WindowOutline.Visibility = maximized ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void ShowWelcome()
@@ -4391,6 +4405,9 @@ private void OpenInNewWindow(string? projectPath)
 
         ZenToggle.IsChecked = zen;
 
+        // Set before the window is maximised, since the size is read as it happens.
+        MaximizeBounds.FillMonitor = zen && _state.ZenFullScreen;
+
         if (zen)
         {
             if (WindowState != WindowState.Maximized)
@@ -4400,6 +4417,28 @@ private void OpenInNewWindow(string? projectPath)
         {
             ZenBarPopup.IsOpen = false;
         }
+
+        // A window that was already maximised is not asked its size again, so it is moved.
+        // Once now, and once more when the layout pass has finished: a window restored
+        // maximised is put at the stock size again by its own startup.
+        ReapplyMaximizeBounds();
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(ReapplyMaximizeBounds));
+    }
+
+    private void ReapplyMaximizeBounds()
+    {
+        MaximizeBounds.Reapply(this);
+        ApplyMaximizeInset();
+    }
+
+    private void ToggleZenFullScreen()
+    {
+        _state.ZenFullScreen = !_state.ZenFullScreen;
+        _stateStore.Save(_state);
+
+        // Takes effect now when zen mode is already on.
+        if (_workspace.Layout.Zen)
+            ApplyZenChrome(true);
     }
 
     // The top edge opens the zen bar. It is placed over the reveal strip, so the

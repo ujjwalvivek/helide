@@ -45,6 +45,16 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         [DllImport("gdi32.dll")]
         public static extern IntPtr CreateSolidBrush(uint colorRef);
 
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+
+        [DllImport("gdi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool DeleteObject(IntPtr handle);
+
+        [DllImport("user32.dll")]
+        public static extern int SetWindowRgn(IntPtr hWnd, IntPtr region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
         public delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
 
         [DllImport("user32.dll")]
@@ -78,6 +88,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     private readonly TextBlock _startupStatus;
     private DispatcherTimer? _revealTimer;
     private HwndHost? _rendererHost;
+    private DispatcherTimer? _growthTimer;
     private bool _disposed;
 
     public NativeTerminalHost(
@@ -341,11 +352,66 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             if (match is not null)
             {
                 _rendererHost = match;
+                match.SizeChanged += Renderer_SizeChanged;
                 return match;
             }
         }
 
         return null;
+    }
+
+    // The renderer draws into a surface of its own, and resizes it a frame or two after
+    // its window. A window that has just grown shows black over the part the surface does
+    // not reach yet: the flash down one side when a panel closes and this pane takes its
+    // space, as going into zen mode does. For that moment the window is clipped to the
+    // size it had, so what shows in the new part is this host behind it, which is the
+    // terminal's own colour.
+    private void Renderer_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_disposed || _growthTimer is not null)
+            return;
+
+        var was = e.PreviousSize;
+        if (was.Width <= 0 || was.Height <= 0
+            || (e.NewSize.Width <= was.Width && e.NewSize.Height <= was.Height))
+            return;
+
+        var handle = RendererHandle();
+        if (handle == IntPtr.Zero)
+            return;
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var region = NativeMethods.CreateRectRgn(
+            0, 0, (int)Math.Floor(was.Width * dpi.DpiScaleX), (int)Math.Floor(was.Height * dpi.DpiScaleY));
+        if (region == IntPtr.Zero)
+            return;
+
+        // The window owns the region once it is set.
+        if (NativeMethods.SetWindowRgn(handle, region, true) == 0)
+        {
+            NativeMethods.DeleteObject(region);
+            return;
+        }
+
+        _growthTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(60),
+        };
+        _growthTimer.Tick += (_, _) => ReleaseGrowthClip();
+        _growthTimer.Start();
+    }
+
+    private void ReleaseGrowthClip()
+    {
+        if (_growthTimer is null)
+            return;
+
+        _growthTimer.Stop();
+        _growthTimer = null;
+
+        var handle = RendererHandle();
+        if (handle != IntPtr.Zero)
+            NativeMethods.SetWindowRgn(handle, IntPtr.Zero, true);
     }
 
     private static HwndHost? FindRendererHost(DependencyObject root)
@@ -807,6 +873,9 @@ private void Fail(string message)
 
         _disposed = true;
         _revealTimer?.Stop();
+        ReleaseGrowthClip();
+        if (_rendererHost is not null)
+            _rendererHost.SizeChanged -= Renderer_SizeChanged;
 
         ThemePalette.ThemeChanged -= Palette_ThemeChanged;
         _terminal.Terminal.Loaded -= Terminal_Loaded;

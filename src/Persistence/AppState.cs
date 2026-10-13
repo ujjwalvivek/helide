@@ -45,6 +45,11 @@ internal sealed class AppState
     // project, so it is kept here and every workspace follows it.
     public bool SidesSwapped { get; set; }
 
+    // Whether zen mode covers the whole monitor, taskbar included, or only fills the
+    // space the taskbar leaves. On by default: zen is meant to leave nothing but the
+    // editor. Kept here because it is a preference about the machine, not the project.
+    public bool ZenFullScreen { get; set; } = true;
+
     // Dialogs the user ticked "don't ask again" on, by the key each one is shown under.
     // A confirmation in this list is answered yes without being shown, and a notice is
     // not shown at all. Kept here and not per project: it is about how annoying a

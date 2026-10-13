@@ -601,9 +601,11 @@
         <!-- The window's own edge. Windows stops drawing one once the corners are
              squared, and without it the window has no outline against whatever is
              behind it. Drawn above everything and never hit-tested, so it costs the
-             content one pixel and the resize grip nothing. When maximised it falls
-             outside the screen along with the rest of the frame. -->
+             content one pixel and the resize grip nothing. Hidden when maximised: most
+             of it falls outside the screen with the rest of the frame, but the side an
+             auto-hiding taskbar is on stops a pixel short and would show as a line. -->
         <Border
+            x:Name="WindowOutline"
             Panel.ZIndex="100"
             BorderBrush="{DynamicResource PressedBrush}"
             BorderThickness="1"
