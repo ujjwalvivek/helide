@@ -609,7 +609,11 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
     // given to the renderer again when the pane comes into view.
     private static readonly System.Text.RegularExpressions.Regex PrivateModes =
         new(@"\u001b\[\?([0-9;]+)([hl])", System.Text.RegularExpressions.RegexOptions.Compiled);
-    private static readonly int[] MouseModeNumbers = [1000, 1002, 1003, 1005, 1006, 1015];
+    // The alternate screen is kept with them, first, for the same reason. A pane that
+    // missed its program's switch to it draws every frame into the main buffer, and
+    // that fills the renderer's scrollback with repeated copies of the screen: scrolling
+    // up runs past the start of the document and loops through them.
+    private static readonly int[] MouseModeNumbers = [1049, 1047, 47, 1000, 1002, 1003, 1005, 1006, 1015];
     private readonly Dictionary<int, bool> _mouseModes = [];
     private string _mouseTail = "";
     private bool _mouseModesReplayed;
@@ -640,6 +644,37 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         }
     }
 
+    private void NudgeSize()
+    {
+        var columns = _terminal.Terminal.Columns;
+        var rows = _terminal.Terminal.Rows;
+        if (columns <= 0 || rows <= 1 || _terminal.ConPTYTerm is not { } pty)
+            return;
+
+        pty.Resize(columns, rows - 1);
+
+        var timer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(60),
+        };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (_disposed)
+                return;
+
+            try
+            {
+                pty.Resize(columns, rows);
+            }
+            catch
+            {
+                // The pseudoconsole is gone.
+            }
+        };
+        timer.Start();
+    }
+
     private void Host_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         // Once: the first time the pane is shown is the only time the renderer has missed
@@ -658,7 +693,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
 
             string modes;
             lock (_mouseModes)
-                modes = string.Concat(_mouseModes.Where(m => m.Value).Select(m => $"\u001b[?{m.Key}h"));
+                modes = string.Concat(_mouseModes.Where(m => m.Value).OrderBy(m => Array.IndexOf(MouseModeNumbers, m.Key)).Select(m => $"\u001b[?{m.Key}h"));
 
             if (modes.Length == 0)
                 return;
@@ -666,6 +701,13 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
             try
             {
                 _terminal.ConPTYTerm?.WriteToUITerminal(modes);
+
+                // The switch to the alternate screen gives the renderer an empty one, and
+                // what the program drew before there was a window is gone. A change of
+                // size is what makes it draw again, so the pane is made a row shorter and
+                // put back.
+                if (modes.Contains("?1049h") || modes.Contains("?1047h") || modes.Contains("?47h"))
+                    NudgeSize();
             }
             catch
             {
