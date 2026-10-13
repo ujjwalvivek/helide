@@ -59,9 +59,18 @@ public partial class AboutWindow : Window
             UpdateButton.Content = "Restart to update";
             UpdateButton.IsEnabled = true;
         }
+        else if (HelideUpdater.IsWingetManaged)
+        {
+            // winget owns this install, so Helide does not replace it behind winget's
+            // back. The command is on the tooltip rather than a button that does nothing.
+            UpdateButton.Content = "Updates via winget";
+            UpdateButton.ToolTip = $"winget upgrade {HelideUpdater.WingetPackageId}";
+            UpdateButton.IsEnabled = false;
+        }
         else
         {
             UpdateButton.Content = "Check for Updates";
+            UpdateButton.ToolTip = null;
             UpdateButton.IsEnabled = true;
         }
     }

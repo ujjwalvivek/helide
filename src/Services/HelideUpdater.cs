@@ -10,8 +10,45 @@ namespace Helide;
 public class HelideUpdater
 {
     private static readonly HttpClient Client = new();
+
+    // Reads the redirect from the release page instead of following it. Unlike the API,
+    // the page is not metered, which is what makes it the answer once the API says no.
+    private static readonly HttpClient NoRedirectClient = new(new HttpClientHandler { AllowAutoRedirect = false });
+
     private const string ReleasesApi = "https://api.github.com/repos/ujjwalvivek/helide/releases/latest";
+    private const string LatestPage = "https://github.com/ujjwalvivek/helide/releases/latest";
     private const string DownloadBaseUrl = "https://github.com/ujjwalvivek/helide/releases/latest/download";
+
+    // The asset names a release carries. The fallback URL has to be one of them: it used
+    // to name an .exe the release has never had, so it could only ever 404.
+    private const string ReleaseArchive = "helide-win-x64.zip";
+    private const string ReleaseChecksums = "SHA256SUMS.txt";
+
+    /// <summary>The winget package id, for the message a winget-managed install shows.</summary>
+    public const string WingetPackageId = "ujjwalvivek.Helide";
+
+    /// <summary>
+    /// True when this exe sits in winget's package folder. winget owns an install that
+    /// lives there, so Helide does not replace it behind winget's back: winget would keep
+    /// recording the old version and offer the same upgrade again.
+    /// </summary>
+    public static bool IsWingetManaged
+    {
+        get
+        {
+            try
+            {
+                var exe = Environment.ProcessPath;
+                return !string.IsNullOrEmpty(exe)
+                    && exe.Contains(@"\Microsoft\WinGet\Packages\", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
     private readonly string _currentVer;
     private readonly string _exePath;
 
@@ -26,10 +63,55 @@ public class HelideUpdater
             ?? Environment.ProcessPath
             ?? string.Empty;
         _currentVer = ReadInstalledVersion();
-        Client.DefaultRequestHeaders.UserAgent.ParseAdd("Helide-Updater/1.0");
+
+        // Both clients are shared by every instance, so a header is only added once: it
+        // used to be appended on each `new HelideUpdater()` and grew by one per check.
+        if (Client.DefaultRequestHeaders.UserAgent.Count == 0)
+            Client.DefaultRequestHeaders.UserAgent.ParseAdd("Helide-Updater/1.0");
+        if (NoRedirectClient.DefaultRequestHeaders.UserAgent.Count == 0)
+            NoRedirectClient.DefaultRequestHeaders.UserAgent.ParseAdd("Helide-Updater/1.0");
+
         var token = System.Environment.GetEnvironmentVariable("GITHUB_TOKEN");
         if (!string.IsNullOrEmpty(token))
             Client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+    }
+
+    // The tag of the latest release, or null when neither route could say. The API is
+    // asked first because it also lists the assets; it allows 60 anonymous requests an
+    // hour per address, which a shared office or VPN address spends quickly, and every
+    // check after that used to read as "no update".
+    private static async Task<string?> LatestTagAsync()
+    {
+        try
+        {
+            var json = await Client.GetStringAsync(ReleasesApi);
+            using var doc = JsonDocument.Parse(json);
+            var tag = doc.RootElement.GetProperty("tag_name").GetString();
+            if (!string.IsNullOrEmpty(tag))
+                return tag;
+        }
+        catch
+        {
+            // Rate limited or offline; the release page is tried next.
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, LatestPage);
+            using var response = await NoRedirectClient.SendAsync(request);
+
+            // .../releases/tag/v1.7.3
+            var location = response.Headers.Location?.ToString();
+            var marker = location?.LastIndexOf("/tag/", StringComparison.Ordinal) ?? -1;
+            if (location is not null && marker >= 0)
+                return location[(marker + "/tag/".Length)..].Trim('/');
+        }
+        catch
+        {
+            // Offline: there is nothing to report either way.
+        }
+
+        return null;
     }
 
     private string ReadInstalledVersion()
@@ -51,11 +133,14 @@ public class HelideUpdater
     public async Task<bool> CheckAsync(Action<string>? status = null)
     {
         status?.Invoke("downloading");
+        // A winget install is updated by winget. Reported as nothing pending so neither
+        // the pill nor a background download ever starts for it.
+        if (IsWingetManaged)
+            return false;
+
         try
         {
-            var json = await Client.GetStringAsync(ReleasesApi);
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            var tag = doc.RootElement.GetProperty("tag_name").GetString();
+            var tag = await LatestTagAsync();
             if (!string.IsNullOrEmpty(tag))
             {
                 var remoteStr = tag.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? tag.Substring(1) : tag;
@@ -81,23 +166,37 @@ public class HelideUpdater
 
         try
         {
-            var releaseJson = await Client.GetStringAsync(ReleasesApi);
-            using var doc = System.Text.Json.JsonDocument.Parse(releaseJson);
-            var assets = doc.RootElement.GetProperty("assets").EnumerateArray();
+            if (IsWingetManaged)
+                throw new Exception($"managed by winget. Run: winget upgrade {WingetPackageId}");
+
             string? downloadUrl = null;
-            foreach (var a in assets)
+            string? checksumUrl = null;
+
+            try
             {
-                var n = a.GetProperty("name").GetString() ?? "";
-                if (n.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                var releaseJson = await Client.GetStringAsync(ReleasesApi);
+                using var doc = System.Text.Json.JsonDocument.Parse(releaseJson);
+                foreach (var a in doc.RootElement.GetProperty("assets").EnumerateArray())
                 {
-                    downloadUrl = a.GetProperty("browser_download_url").GetString();
-                    break;
+                    var n = a.GetProperty("name").GetString() ?? "";
+                    var url = a.GetProperty("browser_download_url").GetString();
+
+                    if (downloadUrl is null
+                        && (n.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)))
+                        downloadUrl = url;
+
+                    if (string.Equals(n, ReleaseChecksums, StringComparison.OrdinalIgnoreCase))
+                        checksumUrl = url;
                 }
             }
-            if (string.IsNullOrEmpty(downloadUrl))
-                downloadUrl = $"{DownloadBaseUrl}/Helide-win-x64.exe";
-            if (string.IsNullOrEmpty(downloadUrl))
-                throw new Exception("No download URL.");
+            catch
+            {
+                // Rate limited or unreachable. The assets have stable names, so the
+                // download does not need the listing to be found.
+            }
+
+            downloadUrl ??= $"{DownloadBaseUrl}/{ReleaseArchive}";
+            checksumUrl ??= $"{DownloadBaseUrl}/{ReleaseChecksums}";
 
             Directory.CreateDirectory(tempDir);
             var tempFile = Path.Combine(tempDir, $"helide.{LatestAvailable}.tmp");
@@ -124,6 +223,8 @@ public class HelideUpdater
 
             progress?.Invoke(100);
 
+            await VerifyChecksumAsync(tempFile, Path.GetFileName(new Uri(downloadUrl).AbsolutePath), checksumUrl);
+
             // Extract zip or copy exe
             string installedFile = tempFile;
             if (downloadUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
@@ -136,18 +237,11 @@ public class HelideUpdater
                     throw new Exception("Update zip missing .exe.");
                 installedFile = PickAppExecutable(files);
 
-                // The archive ships the updater beside the app, so it has to move too.
-                // Without this the two drift apart: the app reports the new version and
-                // the tool meant to keep it current is still the old one.
-                var newUpdater = files.FirstOrDefault(f =>
-                    string.Equals(Path.GetFileName(f), "AutoUpdater.exe", StringComparison.OrdinalIgnoreCase));
-                if (newUpdater is not null)
-                {
-                    var target = Path.Combine(Path.GetDirectoryName(_exePath)!, "AutoUpdater.exe");
-                    // Not this process's image, so no rename dance is needed -- nothing
-                    // is holding it open, unless the user launched it by hand.
-                    ReplaceExecutable(newUpdater, target, isRunning: false);
-                }
+                // AutoUpdater.exe is deprecated and no longer shipped, so an update does
+                // not touch one that is already beside the app: it keeps working against
+                // the release asset, which still carries Helide.exe, and nothing replaces
+                // it. Releases that predate this still contain one; it is simply ignored,
+                // which is what PickAppExecutable already guarantees.
             }
 
             // Rename running .exe first (Windows allows), then move new file in
@@ -163,6 +257,45 @@ public class HelideUpdater
             // has to go or every update leaves two stale exes behind in temp.
             TryDeleteTree(tempDir);
         }
+    }
+
+    // Compares the download with the checksum the release publishes. Releases from before
+    // checksums existed have none, and that is not a failure: with no published value
+    // there is nothing to compare against. A value that is published and does not match is
+    // a hard stop, because installing it would replace the running app with a file that
+    // is not the one that was released.
+    private static async Task VerifyChecksumAsync(string file, string assetName, string checksumUrl)
+    {
+        string sums;
+        try
+        {
+            sums = await Client.GetStringAsync(checksumUrl);
+        }
+        catch
+        {
+            return;
+        }
+
+        string? expected = null;
+        foreach (var line in sums.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length == 2 &&
+                string.Equals(parts[1].TrimStart('*'), assetName, StringComparison.OrdinalIgnoreCase))
+            {
+                expected = parts[0];
+                break;
+            }
+        }
+
+        if (expected is null)
+            return;
+
+        await using var stream = File.OpenRead(file);
+        var actual = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(stream));
+
+        if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+            throw new Exception("the download does not match its published checksum.");
     }
 
     // Puts newFile at targetPath. A file this process is executing cannot be overwritten
