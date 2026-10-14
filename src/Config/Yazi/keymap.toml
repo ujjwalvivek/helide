@@ -42,8 +42,20 @@ desc = "Open hovered file"
 # sidebar hides the parent column (ratio[0] = 0) so there is no column to move into.
 # `leave` is also what actually moves the listing, so bind it explicitly and keep
 # the keys working whether or not the parent column is ever turned back on.
+# One entry per key: a list in `on` is keys pressed one after another, not a
+# choice between them.
 [[mgr.prepend_keymap]]
-on   = [ "h", "<Left>", "<BS>" ]
+on   = "h"
+run  = "leave"
+desc = "Go back to the parent directory"
+
+[[mgr.prepend_keymap]]
+on   = "<Left>"
+run  = "leave"
+desc = "Go back to the parent directory"
+
+[[mgr.prepend_keymap]]
+on   = "<BS>"
 run  = "leave"
 desc = "Go back to the parent directory"
 
@@ -51,6 +63,11 @@ desc = "Go back to the parent directory"
 # rules, and a directory matching a rule is handed to the opener instead of being
 # descended into -- which is why folders stopped expanding.
 [[mgr.prepend_keymap]]
-on   = [ "l", "<Right>" ]
+on   = "l"
+run  = "enter"
+desc = "Enter the hovered directory"
+
+[[mgr.prepend_keymap]]
+on   = "<Right>"
 run  = "enter"
 desc = "Enter the hovered directory"
