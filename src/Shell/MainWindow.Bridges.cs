@@ -24,6 +24,7 @@ public partial class MainWindow
         AlertTurnFinished(session);
         LoadTurnEdits(session);
         RefreshContextMeter();
+        RefreshAgentTitle(session);
     }
 
     // ---- editors follow the files an agent writes ------------------------------------
@@ -416,7 +417,7 @@ public partial class MainWindow
             "Mention Current File in Agent",
             MentionFileInAgent,
             "AI",
-            PaletteCommand.Gesture(System.Windows.Input.Key.A, System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift),
+            Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Mention),
             keywords: "@ reference file path send editor",
             canInvoke: () => workspace() && _activeEditorTab?.Path is not null && _activeAgentSession is not null));
 

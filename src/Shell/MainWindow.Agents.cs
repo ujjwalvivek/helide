@@ -71,6 +71,28 @@ public partial class MainWindow
         ShowPalette(commands, PastConversationsMode);
     }
 
+    // ---- tab names -------------------------------------------------------------------
+
+    // A tab is named after its conversation once the agent has written a title for it.
+    // That happens after the first prompt -- or later, when the agent names it itself --
+    // so a finished turn looks again, and so does the usage tick for any tab still
+    // without one.
+    private async void RefreshAgentTitle(AgentSessionView session)
+    {
+        if (session.SessionId is not { Length: > 0 } id)
+            return;
+
+        var title = await Task.Run(() => PastConversations.TitleOf(session.Type, id));
+        if (title is not null && _agentSessions.Contains(session))
+            session.Title = title;
+    }
+
+    private void RefreshUntitledAgents()
+    {
+        foreach (var session in _agentSessions.Where(session => session.Title is null).ToList())
+            RefreshAgentTitle(session);
+    }
+
     private AgentSessionView? OpenAgentTab(PastConversation conversation) =>
         _agentSessions.FirstOrDefault(session =>
             session.Type == conversation.Agent

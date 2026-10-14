@@ -38,6 +38,127 @@ internal static class PastConversations
         return all.OrderByDescending(conversation => conversation.LastUsed).ToList();
     }
 
+    /// <summary>
+    /// One conversation's title, or null while it has none worth showing: nothing asked
+    /// yet, or only the agent's placeholder.
+    /// </summary>
+    public static string? TitleOf(string agent, string sessionId)
+    {
+        try
+        {
+            var title = agent switch
+            {
+                AgentProviders.Claude => ClaudeTitleOf(sessionId),
+                AgentProviders.Codex => CodexTitleOf(sessionId),
+                AgentProviders.OpenCode => OpenCodeTitleOf(sessionId),
+                _ => null,
+            };
+
+            return string.IsNullOrWhiteSpace(title) ? null : Shorten(title);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? ClaudeTitleOf(string id)
+    {
+        if (ClaudeSessions.FindTranscriptPath(id) is { } transcript && ClaudeTitle(transcript, id) is { } named)
+            return named;
+
+        var file = Path.Combine(ClaudeSessions.ConfigDirectory, "history.jsonl");
+        if (!File.Exists(file))
+            return null;
+
+        foreach (var line in File.ReadLines(file))
+        {
+            if (!line.Contains(id, StringComparison.Ordinal))
+                continue;
+
+            using var document = Parse(line);
+            if (document is not null
+                && Text(document.RootElement, "sessionId") == id
+                && Text(document.RootElement, "display") is { Length: > 0 } said
+                && !said.StartsWith('/') && !said.StartsWith('!')
+                && !said.StartsWith("[Pasted") && !said.StartsWith("[Image"))
+                return said;
+        }
+
+        return null;
+    }
+
+    private static string? CodexTitleOf(string id)
+    {
+        // The thread's name, which a later rename appends; failing that, the first prompt.
+        string? named = null;
+        var index = Path.Combine(CodexUsageReader.Home, "session_index.jsonl");
+        if (File.Exists(index))
+        {
+            foreach (var line in File.ReadLines(index))
+            {
+                if (!line.Contains(id, StringComparison.Ordinal))
+                    continue;
+
+                using var document = Parse(line);
+                if (document is not null
+                    && Text(document.RootElement, "id") == id
+                    && Text(document.RootElement, "thread_name") is { Length: > 0 } name)
+                    named = name;
+            }
+        }
+
+        if (named is not null)
+            return named;
+
+        var history = Path.Combine(CodexUsageReader.Home, "history.jsonl");
+        if (!File.Exists(history))
+            return null;
+
+        foreach (var line in File.ReadLines(history))
+        {
+            if (!line.Contains(id, StringComparison.Ordinal))
+                continue;
+
+            using var document = Parse(line);
+            if (document is not null
+                && Text(document.RootElement, "session_id") == id
+                && Text(document.RootElement, "text") is { Length: > 0 } text)
+                return text;
+        }
+
+        return null;
+    }
+
+    private static string? OpenCodeTitleOf(string id)
+    {
+        var path = OpenCodeSessions.DatabasePath;
+        if (!File.Exists(path))
+            return null;
+
+        using var connection = OpenCodeSessions.Connect(path);
+        foreach (var table in new[] { "session_v2", "session" })
+        {
+            try
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = $"SELECT title FROM {table} WHERE id = $id";
+                command.Parameters.AddWithValue("$id", id);
+                if (command.ExecuteScalar() is string title)
+                {
+                    // What OpenCode calls a session before anything is asked in it.
+                    return title.StartsWith("New session", StringComparison.OrdinalIgnoreCase) ? null : title;
+                }
+            }
+            catch (Exception)
+            {
+                // That layout is not in this database.
+            }
+        }
+
+        return null;
+    }
+
     private static void Try(Action read)
     {
         try

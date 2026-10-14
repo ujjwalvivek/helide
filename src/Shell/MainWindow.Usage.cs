@@ -73,6 +73,7 @@ public partial class MainWindow
 
             RefreshUsageSummary();
             RefreshContextMeter();
+            RefreshUntitledAgents();
         };
         _usageTimer.Start();
         Closed += (_, _) => _usageTimer.Stop();
