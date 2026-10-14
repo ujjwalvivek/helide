@@ -7,7 +7,7 @@ using Helide.Shell;
 namespace Helide;
 
 /// <summary>How an in-app dialog was answered.</summary>
-internal readonly record struct DialogOutcome(bool Accepted, string? Text, bool Suppress = false);
+internal readonly record struct DialogOutcome(bool Accepted, string? Text, bool Suppress = false, bool Link = false);
 
 // Everything that stands in for a system dialog. Helide shows none of the system's own:
 // a message, a question, a prompt for a name and the folder browser are all drawn inside
@@ -58,7 +58,10 @@ public partial class MainWindow
     // Raised by the card's buttons and by the popup closing underneath it -- an outside
     // click, or another application coming forward. Both mean an answer, and the second
     // one is "no".
-    private void CompleteDialog(bool accepted, string? text, bool suppress)
+    private void CompleteDialog(bool accepted, string? text, bool suppress) =>
+        CompleteDialog(new DialogOutcome(accepted, text, suppress));
+
+    private void CompleteDialog(DialogOutcome outcome)
     {
         if (_dialogCompletion is not { } completion)
             return;
@@ -67,17 +70,17 @@ public partial class MainWindow
         _dialogOpen = false;
         DialogPopup.IsOpen = false;
 
-        completion.TrySetResult(new DialogOutcome(accepted, text, suppress));
+        completion.TrySetResult(outcome);
     }
 
     private void DialogPopup_Opened(object sender, EventArgs e)
     {
-        DialogControl.FocusDefault();
-
         // WPF focus alone is not enough when a pane held the keyboard: see the same
-        // handoff in the palette's Opened handler.
+        // handoff in the palette's Opened handler, and why the window comes first.
         if (PresentationSource.FromVisual(DialogControl) is HwndSource source)
             NativeMethods.SetFocus(source.Handle);
+
+        DialogControl.FocusDefault();
     }
 
     private bool DialogHasOsFocus()
