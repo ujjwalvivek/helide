@@ -30,6 +30,9 @@ internal sealed class AppStateStore
         _statePath = Path.Combine(_stateDirectory, "state.json");
     }
 
+    /// <summary>The folder Helide keeps its own files in; moved by HELIDE_STATE_DIR.</summary>
+    public string StateDirectory => _stateDirectory;
+
     public AppState Load()
     {
         try

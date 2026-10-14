@@ -128,7 +128,7 @@ internal static class OpenCodeSessions
             reader.IsDBNull(1) ? null : reader.GetInt64(1));
     }
 
-    private static SqliteConnection Connect(string databasePath)
+    internal static SqliteConnection Connect(string databasePath)
     {
         var connection = new SqliteConnection(
             new SqliteConnectionStringBuilder

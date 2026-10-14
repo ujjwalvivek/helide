@@ -335,7 +335,7 @@ internal static class ClaudeSessions
             || text.StartsWith("<local-command", StringComparison.Ordinal)
             || text.StartsWith("<bash-", StringComparison.Ordinal));
 
-    private static string ConfigDirectory
+    internal static string ConfigDirectory
     {
         get
         {
