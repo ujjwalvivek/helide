@@ -122,7 +122,12 @@ internal sealed class PaneSplitPanel : Panel
     // ----------------------------------------------------------------- hosts
 
     /// <summary>Takes a host in. It is not shown until <see cref="Show"/> says where.</summary>
-    public void Add(NativeTerminalHost host)
+    /// <param name="startWhenShown">
+    /// Keep it out of the window until it is first on screen. A host starts its program
+    /// when it enters the window, so a tab restored behind others costs nothing at launch
+    /// and starts when it is first looked at.
+    /// </param>
+    public void Add(NativeTerminalHost host, bool startWhenShown = false)
     {
         if (_hosts.Contains(host))
             return;
@@ -130,7 +135,26 @@ internal sealed class PaneSplitPanel : Panel
         _hosts.Add(host);
         host.Visibility = Visibility.Collapsed;
         host.AddHandler(Keyboard.GotKeyboardFocusEvent, _focusHandler, handledEventsToo: true);
-        Children.Add(host);
+
+        if (startWhenShown)
+            _notStarted.Add(host);
+        else
+            Children.Add(host);
+    }
+
+    // Hosts added to start when shown, and not shown yet.
+    private readonly HashSet<NativeTerminalHost> _notStarted = [];
+
+    // While a set of tabs is being restored each is shown in turn as it is made; only
+    // the ones still on screen at the end are started.
+    private bool _holdingStarts;
+
+    public void HoldStarts() => _holdingStarts = true;
+
+    public void ReleaseStarts()
+    {
+        _holdingStarts = false;
+        Refresh();
     }
 
     /// <summary>
@@ -174,6 +198,7 @@ internal sealed class PaneSplitPanel : Panel
         var leaf = FindLeaf(host);
 
         _hosts.Remove(host);
+        _notStarted.Remove(host);
         host.RemoveHandler(Keyboard.GotKeyboardFocusEvent, _focusHandler);
         host.Visibility = Visibility.Collapsed;
         Children.Remove(host);
@@ -206,6 +231,7 @@ internal sealed class PaneSplitPanel : Panel
         }
 
         _hosts.Clear();
+        _notStarted.Clear();
         Children.Clear();
         _root = null;
         _focused = null;
@@ -672,6 +698,15 @@ internal sealed class PaneSplitPanel : Panel
     {
         var shown = new HashSet<NativeTerminalHost>();
         CollectHosts(_root, shown);
+
+        if (!_holdingStarts)
+        {
+            foreach (var host in shown)
+            {
+                if (_notStarted.Remove(host))
+                    Children.Add(host);
+            }
+        }
 
         foreach (var host in _hosts)
             host.Visibility = shown.Contains(host) ? Visibility.Visible : Visibility.Collapsed;

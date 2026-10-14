@@ -46,6 +46,11 @@ internal sealed partial class NativeTerminalHost : Grid, IDisposable
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool IsChild(IntPtr parent, IntPtr window);
 
+        public const uint GwHwndPrev = 3;
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetWindow(IntPtr window, uint command);
+
         [DllImport("user32.dll", EntryPoint = "SetClassLongPtrW", SetLastError = true)]
         public static extern IntPtr SetClassLongPtr(IntPtr hWnd, int index, IntPtr value);
 
@@ -326,7 +331,7 @@ internal sealed partial class NativeTerminalHost : Grid, IDisposable
         // last held it: arrows would move the cursor in one pane while typing landed
         // in another.
         var handle = RendererHandle();
-        if (handle != IntPtr.Zero)
+        if (handle != IntPtr.Zero && !HasKeyboardFocus())
             NativeMethods.SetFocus(handle);
     }
 
@@ -487,6 +492,14 @@ internal sealed partial class NativeTerminalHost : Grid, IDisposable
         if (_disposed)
             return;
 
+        // Already in front with the keyboard: laying it out and raising it again only
+        // repaints it, which shows as a blink of an empty pane.
+        var handle = RendererHandle();
+        if (handle != IntPtr.Zero
+            && NativeMethods.GetWindow(handle, NativeMethods.GwHwndPrev) == IntPtr.Zero
+            && HasKeyboardFocus())
+            return;
+
         UpdateLayout();
         InvalidateVisual();
         _terminal.InvalidateMeasure();
@@ -499,6 +512,12 @@ internal sealed partial class NativeTerminalHost : Grid, IDisposable
     {
         var handle = RendererHandle();
         if (handle == IntPtr.Zero)
+            return;
+
+        // Already on top: moving it there again makes Windows repaint it with its plain
+        // background before the terminal draws again, which shows as a blink of an
+        // empty pane.
+        if (NativeMethods.GetWindow(handle, NativeMethods.GwHwndPrev) == IntPtr.Zero)
             return;
 
         try
@@ -1029,7 +1048,22 @@ private void Fail(string message)
     {
         State = state;
         StateChanged?.Invoke(this, state);
+
+        if (state == TerminalHostState.Ready && _commandsWhenReady.Count > 0)
+        {
+            var waiting = _commandsWhenReady.ToList();
+            _commandsWhenReady.Clear();
+            foreach (var command in waiting)
+                RunEditorCommand(command);
+        }
+        else if (state is TerminalHostState.Failed or TerminalHostState.Stopped)
+        {
+            _commandsWhenReady.Clear();
+        }
     }
+
+    // Editor commands asked for before the pane was up; see RunEditorCommand.
+    private readonly List<string> _commandsWhenReady = [];
 
     public void Dispose()
     {

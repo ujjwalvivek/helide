@@ -2178,7 +2178,7 @@ private void OpenInNewWindow(string? projectPath)
             var tab = new EditorTab(path, host);
             host.ModifiedChanged += (_, modified) => tab.SetModified(modified);
 
-            EditorSlot.Add(host);
+            EditorSlot.Add(host, startWhenShown: _restoringEditorTabs);
             _editorTabs.Add(tab);
             _terminalHosts.Add(host);
             ScrollStripToEnd(EditorTabStripScroll);
@@ -2244,8 +2244,10 @@ private void OpenInNewWindow(string? projectPath)
         MarkActiveEditorTab(tab);
 
         // The renderer only exists once WPF has laid the host out at a real size, so
-        // the raise has to wait for a pass that has actually happened.
-        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(tab.Host.BringToFront));
+        // the raise has to wait for a pass that has actually happened. Not for each tab
+        // a restore goes through: only the one left on screen is raised, once, at the end.
+        if (!_restoringEditorTabs)
+            Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(tab.Host.BringToFront));
     }
 
     // Which tab is the active one: the one in the pane that has focus. Clicking into
@@ -4342,6 +4344,7 @@ private void OpenInNewWindow(string? projectPath)
         var bySavedIndex = new Dictionary<int, EditorTab>();
 
         _restoringEditorTabs = true;
+        EditorSlot.HoldStarts();
         try
         {
             for (var index = 0; index < _workspace.EditorTabs.Count; index++)
@@ -4377,19 +4380,23 @@ private void OpenInNewWindow(string? projectPath)
                     var active = _editorTabs.FirstOrDefault(tab => ReferenceEquals(tab.Host, host));
                     if (active is not null)
                         MarkActiveEditorTab(active);
-
-                    // Each tab asked for the keyboard when it was made, and those requests
-                    // are still queued; the one that runs last wins. So this one is queued
-                    // behind them.
-                    Dispatcher.BeginInvoke(
-                        DispatcherPriority.ContextIdle,
-                        new Action(() => EditorSlot.FocusedHost?.BringToFront()));
                 }
             }
         }
         finally
         {
             _restoringEditorTabs = false;
+
+            // Only the tabs on screen start now; the rest when first switched to.
+            EditorSlot.ReleaseStarts();
+
+            // The pane left with the keyboard is raised and given it, once.
+            if (restored > 0)
+            {
+                Dispatcher.BeginInvoke(
+                    DispatcherPriority.ContextIdle,
+                    new Action(() => EditorSlot.FocusedHost?.BringToFront()));
+            }
         }
 
         return restored;

@@ -66,6 +66,14 @@ internal sealed partial class NativeTerminalHost
     /// </remarks>
     public void RunEditorCommand(string command)
     {
+        // A pane still starting -- a tab restored behind others and only now switched
+        // to -- runs it once its editor is up.
+        if (!_disposed && State == TerminalHostState.Starting)
+        {
+            _commandsWhenReady.Add(command);
+            return;
+        }
+
         if (_disposed || State != TerminalHostState.Ready || _statusProbe is null)
             return;
 
