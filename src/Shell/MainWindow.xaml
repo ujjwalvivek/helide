@@ -1479,6 +1479,9 @@
                                 Grid.Row="1"
                                 x:Name="LeftToolStack"
                                 Background="{DynamicResource TerminalBrush}"
+                                AllowDrop="True"
+                                DragOver="LeftToolStack_DragOver"
+                                Drop="LeftToolStack_Drop"
                             />
                     </Grid>
 
@@ -1672,6 +1675,9 @@
                                     Grid.Row="1"
                                     x:Name="RunnerSlot"
                                     Background="{DynamicResource TerminalBrush}"
+                                    AllowDrop="True"
+                                    DragOver="RunnerSlot_DragOver"
+                                    Drop="RunnerSlot_Drop"
                                 />
                         </Grid>
                     </Grid>

@@ -195,6 +195,7 @@ public partial class MainWindow : Window
         ThemePalette.ThemeChanged += ThemePalette_ThemeChanged;
         Closed += (_, _) =>
         {
+            StopYaziFolderWatch();
             ThemePalette.ThemeChanged -= ThemePalette_ThemeChanged;
             HelideUpdateState.Changed -= OnUpdateStateChanged;
             StopWatchingGitHead();
@@ -1862,6 +1863,11 @@ private void OpenInNewWindow(string? projectPath)
         _terminalHosts.Add(host);
         _leftHost = host;
         _leftHostTool = tool;
+        if (tool == LeftTool.Project)
+        {
+            _yaziFolder = _currentProject;
+            WatchYaziFolder();
+        }
             Dispatcher.BeginInvoke(
                 DispatcherPriority.ContextIdle,
                 new Action(() => host.BringToFront()));
