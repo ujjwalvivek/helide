@@ -335,7 +335,10 @@ public partial class MainWindow
         if (IsActive && WindowState != WindowState.Minimized)
             return;
 
-        if (_state.AgentDoneSound)
+        // A notification brings Windows' own sound, which Do not disturb silences along
+        // with it. Windows does not tell an app that DND is on, so Helide's chime only
+        // plays when there is no notification to carry a sound.
+        if (_state.AgentDoneSound && !_state.AgentDoneNotification)
             System.Media.SystemSounds.Asterisk.Play();
 
         if (_state.AgentDoneNotification)

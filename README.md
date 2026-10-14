@@ -193,7 +193,7 @@ Settings and configs are persisted under `%LOCALAPPDATA%\Helide`.
 | `state-ws-{hash}.json` | `OpenSeconds`      | `double`                                        | Time the project has been open |
 | `state-ws-{hash}.json` | `Commands[]`       | `Name`, `CommandLine`, `Folder`                 | Project commands               |
 | `state.json`           | `KeyBindings`      | action id → shortcuts                           | Helide shortcuts you changed   |
-| `state.json`           | `AgentDoneSound`   | `bool`                                          | Sound when an agent finishes   |
+| `state.json`           | `AgentDoneSound`   | `bool`                                          | Sound when an agent finishes, unless a notification brings Windows' own |
 | `state.json`           | `AgentDoneNotification` | `bool`                                     | Notification when it finishes  |
 | `state.json`           | `UsageAlertsSeen`  | agent → `80` or `95`                            | Limit warnings already seen    |
 
