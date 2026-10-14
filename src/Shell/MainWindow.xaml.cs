@@ -5101,7 +5101,7 @@ private void OpenInNewWindow(string? projectPath)
         public string Name => Path is null ? "files" : System.IO.Path.GetFileName(Path);
 
         public string ToolTipText => _changedOnDisk && _modified
-            ? (Path ?? "Project file picker") + "\nChanged on disk while you had unsaved edits. Saving keeps yours; :reload takes the file's."
+            ? (Path ?? "Project file picker") + "\nChanged on disk while you had unsaved edits. :w! keeps yours; :reload takes the file's."
             : Path ?? "Project file picker";
 
         public System.Windows.Media.Brush Foreground => IsActive
