@@ -1075,6 +1075,16 @@ private void OpenInNewWindow(string? projectPath)
         }
     }
 
+    private bool _updatePillDismissed;
+
+    private void UpdatePillDismiss_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        // Not a click on the pill: that would restart.
+        e.Handled = true;
+        _updatePillDismissed = true;
+        UpdatePill.Visibility = Visibility.Collapsed;
+    }
+
     // Raised by HelideUpdateState, which both the pill and the About window write to.
     // Following the shared state instead of each window's own TextBlock is what keeps
     // "the pill says restart but About offers to download again" from coming back.

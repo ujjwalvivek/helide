@@ -848,6 +848,30 @@
                                     FontWeight="SemiBold"
                                     Foreground="{DynamicResource TextOnAccentBrush}"
                                 />
+                            <!-- Waiting for the restart is not urgent, so it can be put
+                                 away; About still offers the restart. -->
+                            <Border
+                                    x:Name="UpdatePillDivider"
+                                    Visibility="Collapsed"
+                                    Width="1"
+                                    Margin="8,3,0,3"
+                                    Opacity="0.45"
+                                    Background="{DynamicResource TextOnAccentBrush}"
+                                />
+                            <TextBlock
+                                    x:Name="UpdatePillDismiss"
+                                    Visibility="Collapsed"
+                                    MouseLeftButtonUp="UpdatePillDismiss_Click"
+                                    Text="&#xE711;"
+                                    FontFamily="Segoe Fluent Icons"
+                                    FontSize="8"
+                                    Padding="7,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Background="Transparent"
+                                    ToolTip="Hide. Restart from About when you like"
+                                    AutomationProperties.Name="Hide update notice"
+                                    Foreground="{DynamicResource TextOnAccentBrush}"
+                                />
                         </StackPanel>
                     </Border>
                     <!-- Zen mode: every panel closed, and this bar and the editor's tab
