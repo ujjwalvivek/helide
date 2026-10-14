@@ -133,6 +133,8 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(startupProject) && Directory.Exists(startupProject))
             _workspace = stateStore.LoadWorkspace(startupProject);
 
+        // Before any button exists, so every one is caught as it loads.
+        NameIconButtons();
         InitializeComponent();
 
         CommandPalettePopup.CustomPopupPlacementCallback = (popup, target, _) => OnOverlayLine(popup, target);
