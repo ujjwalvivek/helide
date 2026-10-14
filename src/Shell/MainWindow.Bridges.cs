@@ -23,6 +23,7 @@ public partial class MainWindow
         ScheduleEditorReload();
         AlertTurnFinished(session);
         LoadTurnEdits(session);
+        RefreshContextMeter();
     }
 
     // ---- editors follow the files an agent writes ------------------------------------

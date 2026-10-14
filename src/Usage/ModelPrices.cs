@@ -43,6 +43,8 @@ internal sealed class ModelPrices
 
     private readonly Dictionary<string, ModelPrice> _byProviderModel = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ModelPrice> _byModel = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _contextByProviderModel = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _contextByModel = new(StringComparer.OrdinalIgnoreCase);
 
     public static readonly ModelPrices Empty = new();
 
@@ -95,6 +97,18 @@ internal sealed class ModelPrices
 
             foreach (var model in models.EnumerateObject())
             {
+                if (model.Value.ValueKind == JsonValueKind.Object
+                    && model.Value.TryGetProperty("limit", out var limit)
+                    && limit.ValueKind == JsonValueKind.Object
+                    && limit.TryGetProperty("context", out var context)
+                    && context.ValueKind == JsonValueKind.Number
+                    && context.TryGetInt64(out var tokens)
+                    && tokens > 0)
+                {
+                    prices._contextByProviderModel[provider.Name + "/" + model.Name] = tokens;
+                    prices._contextByModel.TryAdd(Normalize(model.Name), tokens);
+                }
+
                 if (ReadPrice(model.Value) is not { } price)
                     continue;
 
@@ -121,6 +135,15 @@ internal sealed class ModelPrices
             return exact;
 
         return _byModel.TryGetValue(Normalize(model), out var elsewhere) ? elsewhere : null;
+    }
+
+    /// <summary>How many tokens the model's context window holds, or null when unknown.</summary>
+    public long? ContextWindow(string provider, string model)
+    {
+        if (_contextByProviderModel.TryGetValue(provider + "/" + model, out var exact))
+            return exact;
+
+        return _contextByModel.TryGetValue(Normalize(model), out var elsewhere) ? elsewhere : null;
     }
 
     // "openrouter/z-ai/glm-5.2:free" and "glm-5.2-free" are both glm-5.2. A dated

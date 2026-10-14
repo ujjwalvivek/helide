@@ -72,6 +72,7 @@ public partial class MainWindow
                 RefreshUsageLimits();
 
             RefreshUsageSummary();
+            RefreshContextMeter();
         };
         _usageTimer.Start();
         Closed += (_, _) => _usageTimer.Stop();
@@ -98,12 +99,18 @@ public partial class MainWindow
                 NotifyFilter = System.IO.NotifyFilters.LastWrite | System.IO.NotifyFilters.FileName,
             };
 
+            // The context meter reads the same file.
+            Action relayed = () =>
+            {
+                RefreshUsageLimits();
+                RefreshContextMeter();
+            };
             System.IO.FileSystemEventHandler changed = (_, _) =>
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RefreshUsageLimits));
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, relayed);
             _claudeRelayWatcher.Changed += changed;
             _claudeRelayWatcher.Created += changed;
             _claudeRelayWatcher.Renamed += (_, _) =>
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(RefreshUsageLimits));
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, relayed);
             _claudeRelayWatcher.EnableRaisingEvents = true;
 
             Closed += (_, _) => _claudeRelayWatcher?.Dispose();
@@ -200,6 +207,7 @@ public partial class MainWindow
 
         UpdateAgentEditsStrip();
         UpdateEditorFileActions();
+        RefreshContextMeter();
     }
 
     private async void RefreshUsageSummary()
