@@ -66,6 +66,12 @@
     <SolidColorBrush x:Key="AccentBrush" Color="#FFFFFFFF" />
     <SolidColorBrush x:Key="DangerBrush" Color="#FFD06C6C" />
     <SolidColorBrush x:Key="SuccessBrush" Color="#FF8FCF8F" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#FFD9C48A" />
+
+    <!-- One colour per agent, dimmed like the ANSI table for the same reason. -->
+    <SolidColorBrush x:Key="AgentClaudeBrush" Color="#FFB79ACB" />
+    <SolidColorBrush x:Key="AgentCodexBrush" Color="#FF7EC8C0" />
+    <SolidColorBrush x:Key="AgentOpenCodeBrush" Color="#FFD9A47F" />
     <SolidColorBrush x:Key="CaptionCloseBrush" Color="#FF7A2626" />
     <SolidColorBrush x:Key="CaptionClosePressedBrush" Color="#FF521818" />
 

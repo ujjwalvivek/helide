@@ -18,6 +18,7 @@ using Helide.Shell;
 using Helide.Theme;
 using Helide.Projects;
 using Helide.Terminal;
+using Helide.Usage;
 using Button = System.Windows.Controls.Button;
 using Color = System.Windows.Media.Color;
 using FontFamily = System.Windows.Media.FontFamily;
@@ -269,6 +270,7 @@ public partial class MainWindow : Window
             return;
 
         _loaded = true;
+        InitializeUsage();
         // Not while minimised. A click on the taskbar button brings a minimised window
         // forward first and restores it second, and git started in between costs the
         // click its second half: the window stays down and Windows sounds its error
@@ -1454,6 +1456,7 @@ private void OpenInNewWindow(string? projectPath)
             : "No agent found on PATH. Install opencode, codex or claude to use this.";
 
         AgentPanelToggle.Visibility = _state.AiEnabled ? Visibility.Visible : Visibility.Collapsed;
+        RefreshUsageLimits();
     }
 
     private void AiBanner_Click(object sender, RoutedEventArgs e) =>
@@ -1671,6 +1674,7 @@ private void OpenInNewWindow(string? projectPath)
             // Loaded before anything reads it: RestoreWorkspaceLayout, RestoreEditorTabs
             // and InitializeAgentSessions all come further down this method.
             _workspace = _stateStore.LoadWorkspace(project);
+            StartOpenClock();
 
             // With AI off there is no agent pane to show, whatever this workspace last
             // had. Its saved sessions are not touched.
@@ -1813,6 +1817,7 @@ private void OpenInNewWindow(string? projectPath)
             if (failures > 0)
                 WelcomeStatus.Text = $"{failures} tool pane{(failures == 1 ? "" : "s")} failed to start.";
 
+            RefreshUsageSummary();
             return true;
         }
         catch (Exception exception)
@@ -3753,7 +3758,7 @@ private void OpenInNewWindow(string? projectPath)
         // the pane has been used at all. Only then is there genuinely nothing to read,
         // and the quiet-period source covers that window instead of guessing once a real
         // signal exists.
-        session.AttachStatusSource(type switch
+        ISessionStatusSource source = type switch
         {
             "opencode" when session.SessionId is { Length: > 0 } openCodeId =>
                 new OpenCodeStatusSource(OpenCodeSessions.DatabasePath, openCodeId, Dispatcher),
@@ -3777,7 +3782,11 @@ private void OpenInNewWindow(string? projectPath)
                     ClaudeSessions.ReadTurn,
                     Dispatcher),
             _ => new QuietPeriodStatusSource(host),
-        });
+        };
+
+        // The usage figures follow every turn that ends, in whichever tab.
+        source.BecameIdle += OnAgentTurnFinished;
+        session.AttachStatusSource(source);
     }
 
     // The command line and the status source must agree on the port, so both are
@@ -4041,12 +4050,18 @@ private void OpenInNewWindow(string? projectPath)
             // Past that, resuming an id that has no conversation yet makes claude exit,
             // and that is exactly what a pane that was opened and never typed into has.
             // So the transcript decides: continue it if it is there, otherwise start it.
+            //
+            // A pane it starts or resumes also relays its status line, which is the only
+            // place Claude's live usage limits are handed out (ClaudeStatusRelay).
+            var relay = ClaudeStatusRelay.SettingsFor(_stateStore.StateDirectory, workingDirectory ?? _currentProject!);
+            string[] relaySettings = relay is null ? [] : ["--settings", relay];
+
             if (ClaudeSessions.FindBackgroundJobId(sessionId!) is { } jobId)
                 commandLine = ToolCommand(claude, "attach", jobId);
             else if (ClaudeSessions.FindTranscriptPath(sessionId!) is null)
-                commandLine = ToolCommand(claude, "--session-id", sessionId!);
+                commandLine = ToolCommand(claude, ["--session-id", sessionId!, .. relaySettings]);
             else
-                commandLine = ToolCommand(claude, "--resume", sessionId!);
+                commandLine = ToolCommand(claude, ["--resume", sessionId!, .. relaySettings]);
         }
         else
         {
@@ -4094,6 +4109,7 @@ private void OpenInNewWindow(string? projectPath)
         AgentTabStrip.ItemsSource = null;
         AgentTabStrip.ItemsSource = _agentSessions;
         ScrollStripToEnd(AgentTabStripScroll);
+        OnAgentTabsChanged();
     }
 
     private void InitializeAgentSessions(string project)
@@ -4742,6 +4758,7 @@ private void OpenInNewWindow(string? projectPath)
         if (_currentProject is null || !_ownsProject)
             return;
 
+        AccrueOpenTime();
         _stateStore.SaveWorkspace(_workspace, _currentProject);
     }
 

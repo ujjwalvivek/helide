@@ -55,6 +55,11 @@ internal sealed class AppState
     // not shown at all. Kept here and not per project: it is about how annoying a
     // question is, not about any one repository.
     public List<string> HiddenDialogs { get; set; } = [];
+
+    // The usage drawer under the agent tabs: whether it is open, and which scope it
+    // shows. A way of working rather than part of a project, so every window follows it.
+    public bool UsageDrawerOpen { get; set; }
+    public string UsageScope { get; set; } = "project";  // "session", "project" or "lifetime"
 }
 
 /// <summary>Everything describing one project's workspace, persisted per project path.</summary>
@@ -63,6 +68,10 @@ internal sealed class WorkspaceState
     public WindowGeometryState Window { get; set; } = new();
     public WorkspaceLayoutState Layout { get; set; } = new();
     public List<AgentSessionState> AgentSessions { get; set; } = [];
+
+    // How long this project has been open in Helide, in seconds, across every launch.
+    // Counted from the version that added it; nothing earlier was recorded.
+    public double OpenSeconds { get; set; }
 
     // Which agent tab was selected when the window closed. Every new session is made
     // active on creation, so without this it is always the last one.
