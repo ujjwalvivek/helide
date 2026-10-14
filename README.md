@@ -83,6 +83,7 @@ helide/
 │   ├── Projects/         # Project loader / session manager
 │   ├── Services/         # Update service, per-tool defaults for clean installs
 │   ├── Sessions/         # Agent session tracking
+│   ├── Usage/            # Agent usage, cost and plan-limit readers
 │   ├── Shell/            # Command palette, folder picker, and split panes
 │   ├── Terminal/         # Native terminal host (ConPTY)
 │   └── Theme/            # Theme palette and XAML resources
@@ -130,11 +131,11 @@ Interactive TUI that checks the CLIs Helide shells out to, installs what is miss
 
 It opens on a status screen (tools, agents, what is installed) and offers three workflows:
 
-| Workflow               | Does                                                          |
-| ---------------------- | ------------------------------------------------------------- |
-| Set up everything      | Fix tools, then build and install Helide                      |
-| Fix tools              | Check, `winget install` what is missing, repair PATH          |
-| Build & install Helide | Publish Helide, then install it                               |
+| Workflow               | Does                                                 |
+| ---------------------- | ---------------------------------------------------- |
+| Set up everything      | Fix tools, then build and install Helide             |
+| Fix tools              | Check, `winget install` what is missing, repair PATH |
+| Build & install Helide | Publish Helide, then install it                      |
 
 #### Build and Run
 
@@ -183,6 +184,18 @@ Settings and configs are persisted under `%LOCALAPPDATA%\Helide`.
 | `state-ws-{hash}.json` | `Layout.Zen`       | `bool`                                          | Zen mode, and what to restore  |
 | `state.json`           | `YaziOpenInHelide` | `bool`                                          | yazi config installed          |
 | `state.json`           | `AiEnabled`        | `bool`                                          | Whether the agent pane exists  |
+| `state.json`           | `UsageDrawerOpen`  | `bool`                                          | Usage drawer shown             |
+| `state.json`           | `UsageScope`       | `"session"`, `"project"`, `"lifetime"`          | What the usage drawer counts   |
+| `state-ws-{hash}.json` | `OpenSeconds`      | `double`                                        | Time the project has been open |
+
+A few more files live beside them for [Agent Sessions](#agent-sessions). All of them are derived and safe to delete:
+
+| File                          | What it holds                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------- |
+| `usage-cache.json`            | How far each Claude and Codex transcript has been read, and what it added up to |
+| `claude-status-settings.json` | The status-line setting Helide's Claude panes are launched with                 |
+| `claude-status.json`          | The last status update a Claude pane relayed                                    |
+| `claude-limits.json`          | The last of those that carried usage limits                                     |
 
 **Reset**: delete the `.json` files. Per-project workspace files are named by a SHA-256 hash of the full project path (`state-ws-*.json`). `%LOCALAPPDATA%\Helide\open-request.txt` is deleted and recreated on every launch, so removing it by hand changes nothing.
 
@@ -224,12 +237,12 @@ Helide offers to install its own yazi config. While it is missing, the project b
 
 Accepting this will install four files in your Yazi's config directory at `%APPDATA%\yazi\config\` and restarts the app. Declining it will open Yazi with your/default config. Nothing is installed. The same install is available any time from the command palette as **Open Project Browser Files in Helide** (View).
 
-| File                   | What it does                                                                    |
-| ---------------------- | ------------------------------------------------------------------------------  |
-| `yazi.toml`            | Sidebar layout (`ratio = [0, 1, 0]`), sorting, mouse, and the `[opener]` rules  |
-| `keymap.toml`          | `g d`, `g o`, `S`, `H`, `L`, `O`, `h`/`l` and arrow/`BS` movement for a sidebar |
-| `theme.toml`           | Helide's own palette so yazi does not read as a foreign app in the pane         |
-| `open-with-helix.ps1`  | The script the openers call. Also the marker file for "installed"               |
+| File                  | What it does                                                                    |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `yazi.toml`           | Sidebar layout (`ratio = [0, 1, 0]`), sorting, mouse, and the `[opener]` rules  |
+| `keymap.toml`         | `g d`, `g o`, `S`, `H`, `L`, `O`, `h`/`l` and arrow/`BS` movement for a sidebar |
+| `theme.toml`          | Helide's own palette so yazi does not read as a foreign app in the pane         |
+| `open-with-helix.ps1` | The script the openers call. Also the marker file for "installed"               |
 
 Anything inside that folder is backed up to `%APPDATA%\yazi\config\helide-backup-<yyyyMMdd-HHmmss>\`, so accepting the offer costs nothing that cannot be undone. Restore by deleting the four installed files and moving the backup contents back. Deleting `open-with-helix.ps1` (or restoring a backup) makes Helide offer again.
 
@@ -280,7 +293,19 @@ To restore a conversation Helide has to know which session a pane is on. Where t
 | `TranscriptStatusSource.cs`  | Busy/idle for Codex and Claude from their own transcripts     |
 | `QuietPeriodStatusSource.cs` | Fallback that guesses from terminal silence                   |
 
-Codex and Claude both keep a transcript on disk and mark turn boundaries in it, so they share `TranscriptStatusSource`; only which record means "started" and "finished" differs. OpenCode keeps its sessions in one SQLite database, so `OpenCodeStatusSource` polls that instead, off the UI thread, and reports idle only on a transition from _was running_ to _finished_.
+Codex and Claude both keep a transcript on disk and mark turn boundaries in it, so they share `TranscriptStatusSource`; only which record means "started" and "finished" differs. OpenCode keeps its sessions in one SQLite database, so `OpenCodeStatusSource` polls that instead, off the UI thread, and reports idle only on a transition from _was running_ to _finished_. Usage is read back from the records the agents already keep. No credentials are read and no network is used. Both refresh when a turn ends, and every ten seconds while open.
+
+| Agent    | Usage                                  | Limits                                                      |
+| -------- | -------------------------------------- | ----------------------------------------------------------- |
+| Claude   | `~/.claude/projects/**/*.jsonl`        | Status line of Helide's Claude panes, else `~/.claude.json` |
+| Codex    | `~/.codex/sessions/**/rollout-*.jsonl` | `rate_limits` and refused turns in the rollouts             |
+| OpenCode | Its SQLite database                    | None; shows what paid providers billed                      |
+
+### Details Worth Knowing
+
+- **Cost** is priced from OpenCode's models.dev catalogue (`~/.cache/opencode/models.json`), free models at their paid price. Unpriced models are left out and marked `+`.
+- **Claude's limits** come from a status line Helide adds to its own Claude panes via `--settings`. It prints nothing, and is skipped if you have a status line of your own.
+- **Transcripts are read incrementally**, with progress kept in `usage-cache.json`.
 
 ## FAQs
 
