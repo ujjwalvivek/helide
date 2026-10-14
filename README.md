@@ -79,6 +79,7 @@ helide/
 │   ├── Assets/           # Images (duplicated to www/images/)
 │   ├── Config/           # Bundled yazi config + opener script (embedded)
 │   ├── Interop/          # Win32 / P/Invoke helpers, process tree
+│   ├── Keys/             # Keybinding readers for Helide and each tool, Helix defaults
 │   ├── Persistence/      # AppState, WorkspaceState (JSON)
 │   ├── Projects/         # Project loader / session manager
 │   ├── Services/         # Update service, per-tool defaults for clean installs
@@ -89,8 +90,11 @@ helide/
 │   └── Theme/            # Theme palette and XAML resources
 ├── tools/
 │   ├── AutoUpdater/      # TUI updater CLI (deprecated, kept for reference)
-│   └── CheckNInstall/    # Dependency checker / installer
+│   ├── CheckNInstall/    # Dependency checker / installer
+│   └── keymaps/          # Generates Helix's default keymaps, run by the release build
+├── packaging/winget/     # winget manifests and the script that writes them
 ├── www/                  # Static Helide site
+├── install.ps1           # One-line installer, updater and uninstaller
 ├── check'n'install.ps1   # Launcher for tools/CheckNInstall
 └── README.md
 ```
@@ -187,6 +191,11 @@ Settings and configs are persisted under `%LOCALAPPDATA%\Helide`.
 | `state.json`           | `UsageDrawerOpen`  | `bool`                                          | Usage drawer shown             |
 | `state.json`           | `UsageScope`       | `"session"`, `"project"`, `"lifetime"`          | What the usage drawer counts   |
 | `state-ws-{hash}.json` | `OpenSeconds`      | `double`                                        | Time the project has been open |
+| `state-ws-{hash}.json` | `Commands[]`       | `Name`, `CommandLine`, `Folder`                 | Project commands               |
+| `state.json`           | `KeyBindings`      | action id → shortcuts                           | Helide shortcuts you changed   |
+| `state.json`           | `AgentDoneSound`   | `bool`                                          | Sound when an agent finishes   |
+| `state.json`           | `AgentDoneNotification` | `bool`                                     | Notification when it finishes  |
+| `state.json`           | `UsageAlertsSeen`  | agent → `80` or `95`                            | Limit warnings already seen    |
 
 A few more files live beside them for [Agent Sessions](#agent-sessions). All of them are derived and safe to delete:
 
@@ -228,6 +237,13 @@ The layout engine (`WorkspaceLayoutState`) divides the window into ratios, and e
 Project browser via `yazi` that helps navigates, selects, and opens files directly in the Helix editor. See [Yazi Configuration](#yazi-configuration).
 
 **TLDR;** The pane runs the real `yazi.exe` in its own ConPTY, so the tree is yazi itself rather than a reimplementation. Selection is handed to Helide through yazi's own `[opener]` rules: a script appends the chosen path to `open-request.txt`, which Helide watches and drains by byte offset into an editor tab. Each new file opens in its own tab in the center panel, and the open tabs are persisted per project (`EditorTabState.Path`).
+
+### Between the Panes
+
+- **Keybindings** (`Ctrl+Shift+K`): every control in Helide, Helix, yazi and lazygit as bound on this machine, defaults merged with your own config.
+- **Project commands** (`Ctrl+Shift+R`): commands saved per project, each run in a terminal tab of its own, in the folder you set.
+- **Agent hand-offs**: mention the open file (`Ctrl+Shift+A`), send the terminal's last output, send one agent's last reply to another, or drag-drop files when you need.
+- **Past conversations**: every agent's conversations in this project, searched by what was said, reopened in their own agent.
 
 ## Yazi Configuration
 
