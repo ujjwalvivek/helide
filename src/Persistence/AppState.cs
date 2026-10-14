@@ -66,6 +66,11 @@ internal sealed class AppState
     // green dot is always there.
     public bool AgentDoneSound { get; set; }
     public bool AgentDoneNotification { get; set; }
+
+    // The usage-limit warning each agent's ring was last clicked at: 80 or 95, by agent.
+    // A ring pulses while its agent is past a level not yet seen, and the level drops
+    // back when the window resets, so the next crossing pulses again.
+    public Dictionary<string, int> UsageAlertsSeen { get; set; } = [];
 }
 
 /// <summary>Everything describing one project's workspace, persisted per project path.</summary>

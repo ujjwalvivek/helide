@@ -197,6 +197,9 @@ public partial class MainWindow
     {
         if (CurrentUsageScope() == UsageScope.Session)
             RefreshUsageSummary();
+
+        UpdateAgentEditsStrip();
+        UpdateEditorFileActions();
     }
 
     private async void RefreshUsageSummary()
@@ -427,6 +430,8 @@ public partial class MainWindow
                 Opacity = now - limits.ReadAt > StaleReading ? 0.5 : 1,
             };
             ring.SetResourceReference(UsageRing.RingBrushProperty, SeverityBrushKey(percent, limits.Agent));
+            if (UnseenAlert(limits.Agent, percent))
+                Pulse(ring);
             ring.SetResourceReference(UsageRing.TrackBrushProperty, "PressedBrush");
             UsagePillRings.Children.Add(new Grid { Width = 18, Children = { ring } });
 
@@ -435,6 +440,62 @@ public partial class MainWindow
 
         UsagePill.ToolTip = "Usage limits: " + string.Join(" · ", tips);
         UsagePill.Visibility = Visibility.Visible;
+    }
+
+    private static int AlertLevel(double percent) => percent >= 95 ? 95 : percent >= 80 ? 80 : 0;
+
+    // Whether the agent has crossed a warning level since its ring was last clicked. A
+    // level that has dropped -- the window reset -- is forgotten, so crossing it again
+    // pulses again.
+    private bool UnseenAlert(string agent, double percent)
+    {
+        var level = AlertLevel(percent);
+        var seen = _state.UsageAlertsSeen.GetValueOrDefault(agent);
+
+        if (level < seen)
+        {
+            _state.UsageAlertsSeen[agent] = level;
+            _stateStore.Save(_state);
+        }
+
+        return level > seen;
+    }
+
+    // Clicking the rings is having seen them.
+    private void AcknowledgeUsageAlerts()
+    {
+        var now = DateTimeOffset.Now;
+        var changed = false;
+        foreach (var limits in _usageLimits)
+        {
+            var level = AlertLevel(limits.TightestPercent(now));
+            if (_state.UsageAlertsSeen.GetValueOrDefault(limits.Agent) != level)
+            {
+                _state.UsageAlertsSeen[limits.Agent] = level;
+                changed = true;
+            }
+        }
+
+        if (!changed)
+            return;
+
+        _stateStore.Save(_state);
+        RenderUsagePill();
+    }
+
+    // A dip and back, every two seconds, until the warning has been seen.
+    private static void Pulse(UIElement ring)
+    {
+        var pulse = new System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
+        {
+            Duration = TimeSpan.FromSeconds(2),
+            RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever,
+        };
+        pulse.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(1, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        pulse.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(0.2, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(350))));
+        pulse.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(1, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(700))));
+        pulse.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(1, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.FromSeconds(2))));
+        ring.BeginAnimation(UIElement.OpacityProperty, pulse);
     }
 
     // An agent's own colour while there is room, then the warning colours.
@@ -455,6 +516,7 @@ public partial class MainWindow
 
         RenderUsageFlyout();
         UsageFlyout.IsOpen = true;
+        AcknowledgeUsageAlerts();
         RefreshUsageLimits();
     }
 
