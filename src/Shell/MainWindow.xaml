@@ -2128,6 +2128,36 @@
                                 Orientation="Horizontal"
                                 VerticalAlignment="Center"
                             >
+                            <!-- The project's own commands, as a menu above it. Lit while the
+                                 menu is open, dimmed like a hidden panel otherwise. -->
+                            <ToggleButton
+                                    x:Name="ProjectCommandsButton"
+                                    Margin="0,0,2,0"
+                                    Click="ProjectCommandsButton_Click"
+                                    IsChecked="False"
+                                    Style="{DynamicResource PanelToggleStyle}"
+                                    ToolTip="Project commands"
+                                >
+                                    <ui:GlyphIcon Glyph="&#xE768;" GlyphSize="13" Foreground="{DynamicResource AccentBrush}" />
+                                </ToggleButton>
+                            <Popup
+                                    x:Name="ProjectCommandsFlyout"
+                                    PlacementTarget="{Binding ElementName=ProjectCommandsButton}"
+                                    Placement="Top"
+                                    StaysOpen="False"
+                                    AllowsTransparency="True"
+                                    Closed="ProjectCommandsFlyout_Closed"
+                                >
+                                <Border
+                                        Background="{DynamicResource PopoverBrush}"
+                                        BorderBrush="{DynamicResource PressedBrush}"
+                                        BorderThickness="1"
+                                        Padding="0,3"
+                                        MinWidth="200"
+                                    >
+                                    <StackPanel x:Name="ProjectCommandsRows" />
+                                </Border>
+                            </Popup>
                             <ToggleButton
                                     x:Name="TerminalPanelToggle"
                                     Click="TerminalPanelToggle_Click"
@@ -2405,7 +2435,7 @@
              palette is one, and a separate one so it can be raised while the palette's list is
              closing. -->
         <Popup x:Name="DialogPopup"
-               Placement="Center"
+               Placement="Custom"
                AllowsTransparency="True"
                Focusable="True"
                StaysOpen="False"

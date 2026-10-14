@@ -135,8 +135,9 @@ public partial class MainWindow : Window
 
         InitializeComponent();
 
-        CommandPalettePopup.CustomPopupPlacementCallback = (popup, target, _) => AnchoredTop(ref _paletteTop, popup, target);
-        FolderPickerPopup.CustomPopupPlacementCallback = (popup, target, _) => AnchoredTop(ref _folderPickerTop, popup, target);
+        CommandPalettePopup.CustomPopupPlacementCallback = (popup, target, _) => OnOverlayLine(popup, target);
+        FolderPickerPopup.CustomPopupPlacementCallback = (popup, target, _) => OnOverlayLine(popup, target);
+        DialogPopup.CustomPopupPlacementCallback = (popup, target, _) => OnOverlayLine(popup, target);
 
         // The collection is observable and bound once. Reassigning ItemsSource to the
         // same List instance on every change is a no-op as far as WPF is concerned,
@@ -211,6 +212,7 @@ public partial class MainWindow : Window
         HelideUpdateState.Changed += OnUpdateStateChanged;
 
         DialogControl.Finished += CompleteDialog;
+        DialogControl.LinkChosen += text => CompleteDialog(new DialogOutcome(false, text, Link: true));
         DialogPopup.Closed += (_, _) => CompleteDialog(false, null, false);
 
         CommandPaletteControl.Chosen += CommandPalette_Chosen;
@@ -510,13 +512,17 @@ public partial class MainWindow : Window
         if (_paletteOpen)
             return;
 
+        // Asked before the palette takes the keyboard: Ctrl+P belongs to an agent pane
+        // that has it, so from there the badge shows the key that still reaches Helide.
+        CommandPaletteControl.Shortcut = Helide.Keys.HelideKeymap.GestureFor(
+            Helide.Keys.HelideKeymap.Palette, AgentHasKeyboard());
+
         _paletteOpen = true;
 
         // Anchored to the root grid rather than left to default. A Popup placed with no
         // target centres on the pointer, which puts the overlay wherever the mouse
         // happens to be instead of in the window.
         CommandPalettePopup.PlacementTarget = RootGrid;
-        _paletteTop = null;
 
         // Filled before it opens, so the first placement is of the list it will show.
         CommandPaletteControl.Load(commands, mode);
@@ -527,19 +533,22 @@ public partial class MainWindow : Window
         // not there yet.
     }
 
-    // Where the overlay's top edge was put when it opened. It stays there while the list
-    // under it grows and shrinks with the search, so the search box does not move under
-    // the eye; only the bottom edge does.
-    private double? _paletteTop;
-    private double? _folderPickerTop;
+    // How tall the palette is with its list full: search row, list, footer.
+    private const double FullPaletteHeight = 466;
 
-    // Centred across, and centred down only once: the first height it opens at sets the
-    // top. A list that later grows past the window's bottom is pushed up just enough.
-    private static System.Windows.Controls.Primitives.CustomPopupPlacement[] AnchoredTop(
-        ref double? top, System.Windows.Size popup, System.Windows.Size target)
+    // The palette, the folder picker and the dialog cards all hang from one line: where
+    // a full palette's top edge sits when centred. They often follow one another -- the
+    // palette, a card asking a name, the picker, the card again -- and each centring on
+    // its own height moved the place to look at every step. From one line only the
+    // bottom edge moves, as a list is searched or a card is taller. One that would run
+    // past the window's bottom is pushed up just enough.
+    private System.Windows.Controls.Primitives.CustomPopupPlacement[] OnOverlayLine(
+        System.Windows.Size popup, System.Windows.Size target)
     {
-        top ??= Math.Max(0, (target.Height - popup.Height) / 2);
-        var y = Math.Max(0, Math.Min(top.Value, target.Height - popup.Height));
+        // The sizes come in device pixels.
+        var full = FullPaletteHeight * VisualTreeHelper.GetDpi(this).DpiScaleY;
+        var top = Math.Max(0, (target.Height - full) / 2);
+        var y = Math.Max(0, Math.Min(top, target.Height - popup.Height));
 
         return
         [
@@ -600,7 +609,6 @@ public partial class MainWindow : Window
         _pendingFolderAction = open;
 
         FolderPickerPopup.PlacementTarget = RootGrid;
-        _folderPickerTop = null;
         FolderPickerControl.Load(_currentProject);
         FolderPickerPopup.IsOpen = true;
 
@@ -651,9 +659,36 @@ public partial class MainWindow : Window
     {
         Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
+            var fromDialog = _folderPickerFromDialog;
             CloseFolderPicker();
-            OpenCommandPalette();
+            if (!fromDialog)
+                OpenCommandPalette();
         });
+    }
+
+    // Set while the picker answers a dialog (see PickFolderAsync): going back returns to
+    // the dialog, which is shown again by whoever asked.
+    private bool _folderPickerFromDialog;
+
+    /// <summary>A folder chosen in the picker, or null when it was closed without one.</summary>
+    private Task<string?> PickFolderAsync()
+    {
+        var picked = new TaskCompletionSource<string?>();
+        _folderPickerFromDialog = true;
+
+        EventHandler? closed = null;
+        closed = (_, _) =>
+        {
+            FolderPickerPopup.Closed -= closed;
+            _folderPickerFromDialog = false;
+
+            // After a pick has had its turn: that is queued at Input, ahead of this.
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, () => picked.TrySetResult(null));
+        };
+        FolderPickerPopup.Closed += closed;
+
+        OpenFolderPicker(path => picked.TrySetResult(path));
+        return picked.Task;
     }
 
     // The folder the picker's tree cannot show: one outside the project. Handed to the
@@ -680,7 +715,7 @@ public partial class MainWindow : Window
         var commands = new List<PaletteCommand>();
 
         // --- File ---
-        commands.Add(new PaletteCommand("Open Folder", OpenProjectFolder, "File", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.OpenFolder)));
+        commands.Add(new PaletteCommand("Open Folder", OpenProjectFolder, "File", Shortcut(Helide.Keys.HelideKeymap.OpenFolder)));
         commands.Add(new PaletteCommand("Close Workspace", ShowWelcome, "File", canInvoke: workspace));
         commands.Add(ReloadFilesCommand(workspace));
         commands.Add(new PaletteCommand("Exit", Close, "File"));
@@ -821,15 +856,16 @@ public partial class MainWindow : Window
 
         // --- Focus ---
         commands.Add(new PaletteCommand("Focus Left Panel", () => FocusPanel(ToolPanel.Left, ActiveLeftHost()), "Focus", canInvoke: workspace));
-        commands.Add(new PaletteCommand("Focus Editor", () => FocusPanel(null, ActiveEditorHost()), "Focus", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Editor), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Focus Editor", () => FocusPanel(null, ActiveEditorHost()), "Focus", Shortcut(Helide.Keys.HelideKeymap.Editor), canInvoke: workspace));
         commands.Add(new PaletteCommand("Focus Runner", () => FocusPanel(ToolPanel.Runner, _activeRunnerSession?.Host), "Focus", canInvoke: workspace));
         if (_state.AiEnabled)
             commands.Add(new PaletteCommand("Focus Agent", () => FocusPanel(ToolPanel.Agent, _activeAgentSession?.Host), "Focus", canInvoke: workspace));
 
         // --- Navigate ---
-        commands.Add(new PaletteCommand("Toggle Lazygit Panel", () => ToggleLeftToolFromKey(LeftTool.Git), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Lazygit), keywords: "git left show hide", canInvoke: workspace));
-        commands.Add(new PaletteCommand("Toggle Project Browser", () => ToggleLeftToolFromKey(LeftTool.Project), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Files), keywords: "yazi files left show hide", canInvoke: workspace));
-        commands.Add(new PaletteCommand("Show Keybindings", () => Dispatcher.BeginInvoke(ShowKeybindings), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Keybindings), keywords: "shortcuts keys keymap bindings hotkeys"));
+        commands.Add(new PaletteCommand("Toggle Lazygit Panel", () => ToggleLeftToolFromKey(LeftTool.Git), "View", Shortcut(Helide.Keys.HelideKeymap.Lazygit), keywords: "git left show hide", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Project Browser", () => ToggleLeftToolFromKey(LeftTool.Project), "View", Shortcut(Helide.Keys.HelideKeymap.Files), keywords: "yazi files left show hide", canInvoke: workspace));
+        AddProjectCommands(commands, workspace);
+        commands.Add(new PaletteCommand("Show Keybindings", () => Dispatcher.BeginInvoke(ShowKeybindings), "View", Shortcut(Helide.Keys.HelideKeymap.Keybindings), keywords: "shortcuts keys keymap bindings hotkeys"));
         // The same offer the first-run toast makes, reachable any time -- the toast is
         // driven by the config file's absence, so a user who dismissed it once can still
         // turn the whole thing on without hunting for the file themselves.
@@ -839,7 +875,7 @@ public partial class MainWindow : Window
             "View",
             _state.YaziOpenInHelide ? "on · restarts Helide" : "restarts Helide",
             keywords: "yazi file tree editor helix open config"));
-        commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanelFromKey(ToolPanel.Runner, _activeRunnerSession?.Host), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Terminal), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanelFromKey(ToolPanel.Runner, _activeRunnerSession?.Host), "View", Shortcut(Helide.Keys.HelideKeymap.Terminal), canInvoke: workspace));
         commands.Add(new PaletteCommand(
             _workspace.Layout.Zen ? "Leave Zen Mode" : "Zen Mode",
             ToggleZen,
@@ -854,7 +890,7 @@ public partial class MainWindow : Window
             _state.ZenFullScreen ? "now covers taskbar" : "now keeps taskbar",
             keywords: "zen fullscreen full screen taskbar setting"));
         if (_state.AiEnabled)
-            commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanelFromKey(ToolPanel.Agent, _activeAgentSession?.Host), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Agent), canInvoke: workspace));
+            commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanelFromKey(ToolPanel.Agent, _activeAgentSession?.Host), "View", Shortcut(Helide.Keys.HelideKeymap.Agent), canInvoke: workspace));
         commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
         commands.Add(new PaletteCommand("Previous Editor Tab", () => CycleEditorTab(-1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
 
@@ -3108,6 +3144,17 @@ private void OpenInNewWindow(string? projectPath)
         if (bound == Helide.Keys.HelideKeymap.ErrorLocation && WorkspaceRoot.Visibility == Visibility.Visible)
         {
             OpenErrorLocation();
+            e.Handled = true;
+            return;
+        }
+
+        if (bound == Helide.Keys.HelideKeymap.ProjectCommands && WorkspaceRoot.Visibility == Visibility.Visible)
+        {
+            if (_paletteOpen)
+                CloseCommandPalette();
+            else
+                ShowProjectCommands();
+
             e.Handled = true;
             return;
         }
@@ -5541,6 +5588,12 @@ private void OpenInNewWindow(string? projectPath)
         // `resume <id>` was already told which thread to open. The timestamp is what
         // decides which rollout file belongs to which pane when several start at once.
         public DateTime? AwaitingSessionSince { get; set; }
+
+        // For a terminal tab opened by a project command: that command's name, so running
+        // it again comes back to this tab.
+        public string? ProjectCommand { get; set; }
+
+        public bool IsBusy => _busy;
 
         // The files this pane's last turn edited, as its agent recorded them, each with
         // the line its first change sits on.
