@@ -128,6 +128,11 @@ public partial class App : Application
 
                 if (IsShuttingDown) return;
 
+                // This window is already on its way out. Its own restart request would
+                // read as a second one, and the shared "restart to update" label would
+                // be mirrored back over "restarting...".
+                if (HelideUpdateState.IsRestarting) continue;
+
                 try
                 {
                     var ticket = HelideUpdateBroadcast.ReadTicket();
@@ -181,10 +186,13 @@ public partial class App : Application
 
     // Every process restarts itself, so every workspace comes back on its own project
     // rather than only the window whose button was pressed.
-    private void RestartForUpdate(MainWindow window)
+    private async void RestartForUpdate(MainWindow window)
     {
+        // The request this window made itself, caught before its restart began.
+        if (HelideUpdateState.IsRestarting) return;
+
         HelideUpdateState.MarkUpdateApplied(window.CurrentProject);
-        try { HelideUpdateState.Restart(); }
+        try { await HelideUpdateState.RestartAsync(); }
         catch (Exception ex)
         {
             window.UpdatePillText.Text = $"failed: {ex.Message}";

@@ -1057,7 +1057,7 @@ private void OpenInNewWindow(string? projectPath)
         about.ShowDialog();
     }
 
-    private void UpdatePill_Click(object sender, RoutedEventArgs e)
+    private async void UpdatePill_Click(object sender, RoutedEventArgs e)
     {
         // Non-clickable until restart state
         if (UpdatePillText.Text != "restart to update") return;
@@ -1067,7 +1067,7 @@ private void OpenInNewWindow(string? projectPath)
             // will not notice this one leaving otherwise. Each restores its own
             // workspace from its own watcher.
             HelideUpdateBroadcast.RequestRestart();
-            HelideUpdateState.Restart();
+            await HelideUpdateState.RestartAsync();
         }
         catch (Exception ex)
         {
@@ -1088,6 +1088,20 @@ private void OpenInNewWindow(string? projectPath)
 
         var status = HelideUpdateState.Status;
         if (string.IsNullOrEmpty(status)) return;
+
+        // Put away while the update waits; anything new about it brings the pill back.
+        var waiting = HelideUpdateState.IsReadyToRestart || HelideUpdateState.IsRestarting;
+        if (!waiting)
+            _updatePillDismissed = false;
+
+        if (_updatePillDismissed)
+        {
+            UpdatePill.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        UpdatePillDivider.Visibility = UpdatePillDismiss.Visibility =
+            HelideUpdateState.IsReadyToRestart ? Visibility.Visible : Visibility.Collapsed;
 
         UpdatePill.Visibility = Visibility.Visible;
         UpdatePillText.Text = status;

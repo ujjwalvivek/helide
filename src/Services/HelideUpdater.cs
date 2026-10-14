@@ -507,9 +507,15 @@ public static class HelideUpdateState
 
     public const string RestartingStatus = "restarting...";
 
+    // Long enough for a frame or two to reach the screen.
+    private static readonly TimeSpan RestartPaintDelay = TimeSpan.FromMilliseconds(200);
+
     /// The single restart path. The pill and the About window both go through it.
-    public static void Restart()
+    public static async Task RestartAsync()
     {
+        if (IsRestarting)
+            return;
+
         // Published locally only: the other windows restart off the ticket, and echoing
         // the label through the shared file would race their own state.
         IsRestarting = true;
@@ -517,15 +523,11 @@ public static class HelideUpdateState
         Status = RestartingStatus;
         Changed?.Invoke();
 
-        // Restarting blocks this thread (spawning the exe, then a settle delay), so
-        // without a paint here the label is set but never drawn, and the button looks
-        // stuck on "restart to update" until the window vanishes.
-        try
-        {
-            System.Windows.Application.Current?.Dispatcher.Invoke(
-                () => { }, System.Windows.Threading.DispatcherPriority.Render);
-        }
-        catch { /* a missed repaint is cosmetic */ }
+        // Restarting blocks this thread (spawning the exe, then a settle delay), so the
+        // label has to be on screen first. A forced repaint is not enough: WPF holds a
+        // frame back while the last one is still being presented -- nearly always, with
+        // an agent's spinner turning -- and the process was gone before it was drawn.
+        await Task.Delay(RestartPaintDelay);
 
         try
         {

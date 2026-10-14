@@ -124,7 +124,7 @@ public partial class AboutWindow : Window
                 // Every window restarts, not just this one -- Helide is one process
                 // per project, so the others never see a process of their own leave.
                 HelideUpdateBroadcast.RequestRestart();
-                HelideUpdateState.Restart();
+                await HelideUpdateState.RestartAsync();
             }
             catch (Exception ex)
             {
