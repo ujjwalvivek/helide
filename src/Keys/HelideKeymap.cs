@@ -30,6 +30,7 @@ internal static class HelideKeymap
     public const string Terminal = "pane-terminal";
     public const string Agent = "pane-agent";
     public const string Files = "pane-files";
+    public const string ProjectCommands = "project-commands";
 
     public static readonly IReadOnlyList<HelideAction> Actions =
     [
@@ -45,6 +46,7 @@ internal static class HelideKeymap
         new(Files, "Toggle Project Browser", "workspace", ["Ctrl+5"]),
         new(ErrorLocation, "Open Error Location", "workspace", ["Ctrl+Shift+E"]),
         new(Mention, "Mention Current File in Agent", "workspace", ["Ctrl+Shift+A"]),
+        new(ProjectCommands, "Run Project Command", "workspace", ["Ctrl+Shift+R"]),
     ];
 
     /// <summary>Keys Helide handles that belong to one overlay and stay as they are.</summary>
@@ -74,9 +76,6 @@ internal static class HelideKeymap
     }
 
     public static bool IsChanged(string id) => _overrides.ContainsKey(id);
-
-    /// <summary>What the palette prints beside a command: its first shortcut.</summary>
-    public static string? GestureText(string id) => KeysFor(id).FirstOrDefault();
 
     /// <summary>The action another shortcut already belongs to, if any.</summary>
     public static HelideAction? Owner(string gesture, string exceptId) =>
@@ -124,6 +123,27 @@ internal static class HelideKeymap
     /// </summary>
     public static bool YieldsToAgent(Key key, ModifierKeys modifiers) =>
         modifiers == ModifierKeys.Control && key is >= Key.A and <= Key.Z;
+
+    /// <summary>The same question for a shortcut written as text, "Ctrl+P".</summary>
+    public static bool YieldsToAgent(string gesture)
+    {
+        var parts = gesture.Split('+');
+        return parts.Length == 2
+            && string.Equals(parts[0], "Ctrl", StringComparison.OrdinalIgnoreCase)
+            && parts[1].Length == 1
+            && char.IsLetter(parts[1][0]);
+    }
+
+    /// <summary>
+    /// The shortcut to show for an action where it is used: one that works there, and of
+    /// those the one with fewest keys. Where an agent pane has the keyboard, one it would
+    /// take for itself is left out.
+    /// </summary>
+    public static string? GestureFor(string id, bool agentHasKeyboard) =>
+        KeysFor(id)
+            .Where(key => !agentHasKeyboard || !YieldsToAgent(key))
+            .OrderBy(key => key.Count(c => c == '+'))
+            .FirstOrDefault();
 
     /// <summary>A key press as shortcut text, or null for a lone modifier.</summary>
     public static string? Gesture(Key key, ModifierKeys modifiers)

@@ -51,6 +51,12 @@ public partial class CommandPalette : UserControl
     /// What the list is of, which only changes the words around it. The overlay is the
     /// same one whether it is listing commands, recent projects or branches.
     /// </param>
+    /// <summary>
+    /// The shortcut the badge shows: the one that opens the palette from where it was
+    /// opened. Null hides it.
+    /// </summary>
+    public string? Shortcut { get; set; }
+
     public void Load(IReadOnlyList<PaletteCommand> commands, PaletteMode? mode = null)
     {
         _all = commands;
@@ -62,7 +68,8 @@ public partial class CommandPalette : UserControl
 
         // The badge is the shortcut that opens the command list, so it means nothing on
         // any other list.
-        ShortcutBadge.Visibility = ReferenceEquals(_mode, PaletteMode.Commands)
+        ShortcutBadgeText.Text = Shortcut?.Replace('+', ' ') ?? string.Empty;
+        ShortcutBadge.Visibility = ReferenceEquals(_mode, PaletteMode.Commands) && Shortcut is not null
             ? Visibility.Visible
             : Visibility.Collapsed;
 

@@ -418,7 +418,7 @@ public partial class MainWindow
             "Mention Current File in Agent",
             MentionFileInAgent,
             "AI",
-            Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Mention),
+            Shortcut(Helide.Keys.HelideKeymap.Mention),
             keywords: "@ reference file path send editor",
             canInvoke: () => workspace() && _activeEditorTab?.Path is not null && _activeAgentSession is not null));
 

@@ -253,7 +253,7 @@ public partial class MainWindow
             "Open Error Location",
             OpenErrorLocation,
             "Go",
-            Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.ErrorLocation),
+            Shortcut(Helide.Keys.HelideKeymap.ErrorLocation),
             keywords: "jump line file compiler stack trace",
             canInvoke: workspace));
 

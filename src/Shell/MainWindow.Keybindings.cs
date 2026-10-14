@@ -72,6 +72,10 @@ public partial class MainWindow
         }
     });
 
+    // The shortcut a palette row shows: one that works from where the palette was
+    // opened, so a key an agent pane keeps for itself is not offered from there.
+    private string? Shortcut(string id) => HelideKeymap.GestureFor(id, AgentHasKeyboard());
+
     private string FocusedTool()
     {
         if (_editorTabs.Any(tab => tab.Host.HasKeyboardFocus()))
