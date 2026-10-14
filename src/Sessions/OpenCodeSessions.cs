@@ -10,10 +10,13 @@ namespace Helide.Sessions;
 /// </summary>
 /// <param name="Id">The session id.</param>
 /// <param name="IdleAt">
-/// When the last turn finished, or null while one is still running. OpenCode leaves this
-/// null until the agent settles and stamps it alongside an outcome.
+/// When the last turn finished, or null before the first one has. A new turn does not
+/// clear it: the old stamp stays until that turn ends and replaces it.
 /// </param>
-internal sealed record OpenCodeSessionRow(string Id, long? IdleAt);
+/// <param name="Running">
+/// Whether a turn is in progress: a message has been sent since the last turn ended.
+/// </param>
+internal sealed record OpenCodeSessionRow(string Id, long? IdleAt, bool Running);
 
 /// <summary>
 /// Reads session state out of the OpenCode database.
@@ -109,9 +112,13 @@ internal static class OpenCodeSessions
         using var connection = Connect(databasePath);
 
         using var command = connection.CreateCommand();
+        // Each turn adds a user message, and an idle one when it ends, so a user message
+        // later than the last idle one is a turn still running.
         command.CommandText =
             """
-            SELECT id, time_idle
+            SELECT id, time_idle,
+                (SELECT max(seq) FROM session_message WHERE session_id = $id AND type = 'user'),
+                (SELECT max(seq) FROM session_message WHERE session_id = $id AND type = 'idle')
             FROM session_v2
             WHERE id = $id
             LIMIT 1
@@ -123,9 +130,14 @@ internal static class OpenCodeSessions
         if (!reader.Read() || reader.IsDBNull(0))
             return null;
 
+        long? idleAt = reader.IsDBNull(1) ? null : reader.GetInt64(1);
+        long? sent = reader.IsDBNull(2) ? null : reader.GetInt64(2);
+        long? settled = reader.IsDBNull(3) ? null : reader.GetInt64(3);
+
         return new OpenCodeSessionRow(
             reader.GetString(0),
-            reader.IsDBNull(1) ? null : reader.GetInt64(1));
+            idleAt,
+            idleAt is null || sent > (settled ?? -1));
     }
 
     internal static SqliteConnection Connect(string databasePath)

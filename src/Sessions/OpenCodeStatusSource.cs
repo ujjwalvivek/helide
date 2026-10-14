@@ -17,10 +17,11 @@ namespace Helide.Sessions;
 /// to report yet" rather than as a failure.
 /// </para>
 /// <para>
-/// A turn in progress has no <c>time_idle</c>; finishing sets it. The transition from "no
-/// idle time" to "has one" is when the agent stopped, which is when a backgrounded pane is
-/// worth marking. The database is in WAL mode, so these reads never contend with the agent
-/// writing to it.
+/// Each turn ends by stamping a new <c>time_idle</c>, so a stamp that changes is the agent
+/// stopping, which is when a backgrounded pane is worth marking. The stamp is not cleared
+/// while the next turn runs; a turn in progress is a message newer than the last idle one
+/// (<see cref="OpenCodeSessionRow.Running"/>). The database is in WAL mode, so these reads
+/// never contend with the agent writing to it.
 /// </para>
 /// <para>
 /// The timer runs on the dispatcher but each read runs on the thread pool, and only the
@@ -39,7 +40,7 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
     // Only ever touched by the read in flight, and _reading allows one at a time.
     private long? _observedIdleAt;
     private bool _baselineTaken;
-    private bool _sawRunning;
+    private bool _sawMissing;
     private bool _reportedBusy;
 
     private int _reading;
@@ -127,47 +128,42 @@ internal sealed class OpenCodeStatusSource : ISessionStatusSource
         }
 
         // No row yet: the pane has not been sent a message, so the TUI has not created
-        // the session.
+        // the session. Whatever row turns up later came from this pane's first turn.
         if (session is null)
+        {
+            _sawMissing = true;
             return;
+        }
 
         // First sighting of this row. Whatever state it is in now is a starting point,
         // not an event: a pane restored onto a conversation that finished before
         // Helide was launched must not light up, or every restored tab would come back
-        // marked. Record it and wait for something to actually change.
+        // marked. Record it and wait for something to actually change -- unless the row
+        // was missing before, in which case a first turn quick enough to finish between
+        // two reads has just ended.
         if (!_baselineTaken)
         {
             _baselineTaken = true;
-            _observedIdleAt = session.IdleAt;
-            _sawRunning = session.IdleAt is null;
-            ReportBusy(_sawRunning);
-            return;
+            _observedIdleAt = _sawMissing ? null : session.IdleAt;
+            ReportBusy(session.Running);
+            if (session.Running || !_sawMissing)
+                return;
         }
 
-        // No idle timestamp means a turn is in progress.
-        if (session.IdleAt is null)
+        if (session.Running)
         {
-            _observedIdleAt = null;
-            _sawRunning = true;
             ReportBusy(true);
             return;
         }
 
         ReportBusy(false);
 
-        // Only the arrival of an idle timestamp is news, so the same finished turn is
-        // not reported on every poll after it.
+        // A new idle stamp is a turn that ended, whether or not a read caught it running.
+        // The same stamp is the same turn, so it is not reported on every read after it.
         if (_observedIdleAt == session.IdleAt)
             return;
 
-        var justFinished = _sawRunning;
         _observedIdleAt = session.IdleAt;
-        _sawRunning = false;
-
-        // A turn that was already idle when we started watching did not finish while
-        // anyone was away. Only report a turn that was running and then stopped.
-        if (!justFinished)
-            return;
 
         // A pane closed while its last read was in flight has nobody left to tell.
         _dispatcher.BeginInvoke(new Action(() =>
