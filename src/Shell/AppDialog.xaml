@@ -170,6 +170,33 @@
                         </TextBlock>
                     </Grid>
                 </Border>
+                <!-- A choice that needs more than the text box: a quiet label, and a link that
+                     goes to ask it and comes back. -->
+                <StackPanel x:Name="LinkRow"
+                            Orientation="Horizontal"
+                            Margin="1,8,0,0"
+                            Visibility="Collapsed">
+                    <TextBlock x:Name="LinkLabelText"
+                               VerticalAlignment="Center"
+                               FontSize="{DynamicResource FontSizeSmall}"
+                               Foreground="{DynamicResource TextSubtleBrush}" />
+                    <Button x:Name="LinkButton"
+                            Margin="6,0,0,0"
+                            Cursor="Hand"
+                            Focusable="False"
+                            Click="LinkButton_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <TextBlock Text="{TemplateBinding Content}"
+                                           VerticalAlignment="Center"
+                                           FontFamily="{DynamicResource UiMonoFontFamily}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           TextDecorations="Underline" />
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </StackPanel>
                 <CheckBox x:Name="SuppressCheck"
                           Style="{StaticResource DialogCheckStyle}"
                           Margin="0,14,0,0"

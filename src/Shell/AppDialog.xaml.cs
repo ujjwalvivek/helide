@@ -17,6 +17,11 @@ namespace Helide.Shell;
 /// Offers "don't ask again" under this key when not null. Only for dialogs that are safe
 /// to stop showing: a failure that has to be read should not carry one.
 /// </param>
+/// <param name="LinkLabel">A quiet label under the text box, such as "Runs in".</param>
+/// <param name="LinkText">
+/// A link after the label. Choosing it ends the card with <c>Link</c> set and the text
+/// typed so far, so the caller can ask something else and show the card again.
+/// </param>
 public sealed record DialogRequest(
     string Title,
     string Message,
@@ -26,7 +31,9 @@ public sealed record DialogRequest(
     bool Monospace = false,
     string? InputPlaceholder = null,
     string? InputText = null,
-    string? SuppressKey = null);
+    string? SuppressKey = null,
+    string? LinkLabel = null,
+    string? LinkText = null);
 
 /// <summary>
 /// A message, a question or a one-line prompt, drawn inside the window.
@@ -53,6 +60,9 @@ public partial class AppDialog : UserControl
     /// "don't ask again" was ticked.
     /// </summary>
     public event Action<bool, string?, bool>? Finished;
+
+    /// <summary>Raised when the link is chosen, with the text typed so far.</summary>
+    public event Action<string?>? LinkChosen;
 
     /// <summary>Whether the card has a text box.</summary>
     public bool HasInput => InputFrame.Visibility == Visibility.Visible;
@@ -84,6 +94,10 @@ public partial class AppDialog : UserControl
         InputFrame.Visibility = request.InputPlaceholder is null ? Visibility.Collapsed : Visibility.Visible;
         InputPlaceholder.Text = request.InputPlaceholder ?? string.Empty;
         InputBox.Text = request.InputText ?? string.Empty;
+
+        LinkRow.Visibility = request.LinkText is null ? Visibility.Collapsed : Visibility.Visible;
+        LinkLabelText.Text = request.LinkLabel ?? string.Empty;
+        LinkButton.Content = request.LinkText ?? string.Empty;
 
         SuppressCheck.IsChecked = false;
         SuppressCheck.Visibility = request.SuppressKey is null ? Visibility.Collapsed : Visibility.Visible;
@@ -140,4 +154,6 @@ public partial class AppDialog : UserControl
     private void PrimaryButton_Click(object sender, RoutedEventArgs e) => Accept();
 
     private void SecondaryButton_Click(object sender, RoutedEventArgs e) => Cancel();
+
+    private void LinkButton_Click(object sender, RoutedEventArgs e) => LinkChosen?.Invoke(HasInput ? InputBox.Text : null);
 }

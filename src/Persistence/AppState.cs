@@ -107,6 +107,19 @@ internal sealed class WorkspaceState
     public PaneNodeState? RunnerSplit { get; set; }
     public int RunnerFocusedTab { get; set; } = -1;
     public List<RunnerPaneState> RunnerPanes { get; set; } = [];
+
+    // The commands added for this project, in the order they were added.
+    public List<ProjectCommandState> Commands { get; set; } = [];
+}
+
+/// <summary>A command added for a project: run by name in a terminal tab of its own.</summary>
+internal sealed class ProjectCommandState
+{
+    public string Name { get; set; } = string.Empty;
+    public string CommandLine { get; set; } = string.Empty;
+
+    // Where it runs, relative to the project; empty for the project folder itself.
+    public string Folder { get; set; } = string.Empty;
 }
 
 internal sealed class EditorTabState
