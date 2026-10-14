@@ -231,7 +231,7 @@ public partial class MainWindow
             "Open Folder…",
             OpenProjectFolder,
             "File",
-            PaletteCommand.Gesture(Key.O, ModifierKeys.Control | ModifierKeys.Shift),
+            Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.OpenFolder),
             keywords: "new project browse"));
         commands.Add(new PaletteCommand(
             "Close Workspace",

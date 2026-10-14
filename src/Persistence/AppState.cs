@@ -71,6 +71,10 @@ internal sealed class AppState
     // A ring pulses while its agent is past a level not yet seen, and the level drops
     // back when the window resets, so the next crossing pulses again.
     public Dictionary<string, int> UsageAlertsSeen { get; set; } = [];
+
+    // Helide's own shortcuts the user changed, by action id; anything not here keeps
+    // its default. See HelideKeymap.
+    public Dictionary<string, List<string>> KeyBindings { get; set; } = [];
 }
 
 /// <summary>Everything describing one project's workspace, persisted per project path.</summary>

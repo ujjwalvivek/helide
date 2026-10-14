@@ -20,7 +20,9 @@ public sealed class PaletteCommand
         string? group = null,
         string? detail = null,
         string? keywords = null,
-        Func<bool>? canInvoke = null)
+        Func<bool>? canInvoke = null,
+        IReadOnlyList<string>? keys = null,
+        string? scope = null)
     {
         Title = title;
         Invoke = invoke;
@@ -28,7 +30,22 @@ public sealed class PaletteCommand
         Detail = detail;
         Keywords = keywords;
         CanInvoke = canInvoke;
+        Keys = keys;
+        Scope = scope;
     }
+
+    /// <summary>
+    /// Key caps to draw, when they are not a Ctrl/Alt/Shift shortcut that
+    /// <see cref="Detail"/> can carry: a tool's <c>g g</c>, or several keys at once.
+    /// "/" between them is drawn as a plain separator, not a cap.
+    /// </summary>
+    public IReadOnlyList<string>? Keys { get; }
+
+    /// <summary>
+    /// What "scope:" at the start of the query narrows to, e.g. a tool in the keybindings
+    /// list, so "helix:save" searches Helix alone.
+    /// </summary>
+    public string? Scope { get; }
 
     public string Title { get; }
 
@@ -90,7 +107,7 @@ internal sealed class PaletteRow
     {
         Title = title;
         Command = command;
-        Keys = ShortcutKeys(command?.Detail);
+        Keys = command?.Keys ?? ShortcutKeys(command?.Detail);
         Glyph = GlyphFor(command?.Group);
     }
 
@@ -140,7 +157,7 @@ internal sealed class PaletteRow
     public IReadOnlyList<string> Keys { get; }
 
     /// <summary>The hint when it is not a shortcut: a path, or a word of explanation.</summary>
-    public string Note => Keys.Count == 0 ? Detail : string.Empty;
+    public string Note => Keys.Count == 0 || Command?.Keys is not null ? Detail : string.Empty;
 
     /// <summary>The icon for the command's group, from Segoe Fluent Icons.</summary>
     public string Glyph { get; }

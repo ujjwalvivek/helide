@@ -33,6 +33,7 @@
          conversation is still running. The database is opened read-only and is in WAL
          mode, so these reads never contend with the agent writing to it. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <PackageReference Include="Tomlyn" Version="0.17.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -46,6 +47,9 @@
     <EmbeddedResource Include="src\Config\Yazi\theme.toml" LogicalName="Helide.YaziConfig.theme.toml" />
     <EmbeddedResource Include="src\Config\Yazi\open-with-helix.ps1" LogicalName="Helide.YaziConfig.open-with-helix.ps1" />
     <EmbeddedResource Include="src\Config\OpenCode\helide-oled.json" LogicalName="Helide.OpenCodeConfig.helide-oled.json" />
+    <!-- Helix's own default keymap and command descriptions for each of its releases,
+         generated from its source by tools/keymaps/helix_defaults.py: Helix has no way to print them. Helide uses the one matching the Helix installed. -->
+    <EmbeddedResource Include="src\Keys\Defaults\helix-*.json" LogicalName="Helide.Keys.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

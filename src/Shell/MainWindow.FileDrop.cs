@@ -302,7 +302,7 @@ public partial class MainWindow
     // The terminal pane under the pointer.
     private static NativeTerminalHost? HostUnder(DragEventArgs e)
     {
-        for (var node = e.OriginalSource as DependencyObject; node is not null; node = Parent(node))
+        for (var node = e.OriginalSource as DependencyObject; node is not null; node = ParentOf(node))
         {
             if (node is NativeTerminalHost host)
                 return host;
@@ -311,7 +311,7 @@ public partial class MainWindow
         return null;
     }
 
-    private static DependencyObject? Parent(DependencyObject node) =>
+    private static DependencyObject? ParentOf(DependencyObject node) =>
         node is Visual or System.Windows.Media.Media3D.Visual3D
             ? VisualTreeHelper.GetParent(node) ?? LogicalTreeHelper.GetParent(node)
             : LogicalTreeHelper.GetParent(node);

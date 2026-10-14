@@ -264,9 +264,17 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Style="{DynamicResource KeyBadgeStyle}" Margin="3,0,0,0">
-                                                <TextBlock Text="{Binding}" Style="{DynamicResource KeyBadgeTextStyle}" />
+                                            <Border x:Name="Cap" Style="{DynamicResource KeyBadgeStyle}" Margin="3,0,0,0">
+                                                <TextBlock x:Name="CapText" Text="{Binding}" Style="{DynamicResource KeyBadgeTextStyle}" />
                                             </Border>
+                                            <!-- Between two ways to press the same thing: a word, not a key. -->
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding}" Value="/">
+                                                    <Setter TargetName="Cap" Property="Background" Value="Transparent" />
+                                                    <Setter TargetName="Cap" Property="BorderBrush" Value="Transparent" />
+                                                    <Setter TargetName="CapText" Property="Foreground" Value="{DynamicResource TextFaintBrush}" />
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

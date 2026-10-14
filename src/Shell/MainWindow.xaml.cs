@@ -123,6 +123,7 @@ public partial class MainWindow : Window
     {
         _stateStore = stateStore;
         _state = state;
+        Helide.Keys.HelideKeymap.Load(_state.KeyBindings);
         _startupProject = startupProject;
 
         // Loaded here as well as in OpenWorkspace, because the two restores below run in
@@ -133,6 +134,9 @@ public partial class MainWindow : Window
             _workspace = stateStore.LoadWorkspace(startupProject);
 
         InitializeComponent();
+
+        CommandPalettePopup.CustomPopupPlacementCallback = (popup, target, _) => AnchoredTop(ref _paletteTop, popup, target);
+        FolderPickerPopup.CustomPopupPlacementCallback = (popup, target, _) => AnchoredTop(ref _folderPickerTop, popup, target);
 
         // The collection is observable and bound once. Reassigning ItemsSource to the
         // same List instance on every change is a no-op as far as WPF is concerned,
@@ -272,6 +276,7 @@ public partial class MainWindow : Window
 
         _loaded = true;
         InitializeUsage();
+        WarmKeybindings();
         // Not while minimised. A click on the taskbar button brings a minimised window
         // forward first and restores it second, and git started in between costs the
         // click its second half: the window stays down and Windows sounds its error
@@ -511,26 +516,55 @@ public partial class MainWindow : Window
         // target centres on the pointer, which puts the overlay wherever the mouse
         // happens to be instead of in the window.
         CommandPalettePopup.PlacementTarget = RootGrid;
-        CommandPalettePopup.IsOpen = true;
+        _paletteTop = null;
+
+        // Filled before it opens, so the first placement is of the list it will show.
         CommandPaletteControl.Load(commands, mode);
+        CommandPalettePopup.IsOpen = true;
 
         // Focus comes from the popup's own Opened event, which is the first moment its
         // HwndSource exists. Asking earlier just queues focus against a window that is
         // not there yet.
     }
 
+    // Where the overlay's top edge was put when it opened. It stays there while the list
+    // under it grows and shrinks with the search, so the search box does not move under
+    // the eye; only the bottom edge does.
+    private double? _paletteTop;
+    private double? _folderPickerTop;
+
+    // Centred across, and centred down only once: the first height it opens at sets the
+    // top. A list that later grows past the window's bottom is pushed up just enough.
+    private static System.Windows.Controls.Primitives.CustomPopupPlacement[] AnchoredTop(
+        ref double? top, System.Windows.Size popup, System.Windows.Size target)
+    {
+        top ??= Math.Max(0, (target.Height - popup.Height) / 2);
+        var y = Math.Max(0, Math.Min(top.Value, target.Height - popup.Height));
+
+        return
+        [
+            new System.Windows.Controls.Primitives.CustomPopupPlacement(
+                new Point((target.Width - popup.Width) / 2, y),
+                System.Windows.Controls.Primitives.PopupPrimaryAxis.None),
+        ];
+    }
+
     private void CommandPalettePopup_Opened(object sender, EventArgs e)
     {
-        CommandPaletteControl.FocusQuery();
-
         // WPF focus alone is not enough when the palette was opened from a pane. That
         // pane's renderer still holds real keyboard focus, so keystrokes went to it
         // rather than to the query box -- which is why Escape and typing did nothing
         // even though WPF reported the TextBox as the focused element. Handing the
         // popup's own window the focus is the same move NativeTerminalHost.FocusTerminal
         // makes in reverse.
+        //
+        // The window first, then the box: focusing the box while another window held
+        // the keyboard did nothing, and the window's focus then landed on the popup
+        // itself, so there was no caret and nothing typed reached the box.
         if (PresentationSource.FromVisual(CommandPaletteControl) is HwndSource source)
             NativeMethods.SetFocus(source.Handle);
+
+        CommandPaletteControl.FocusQuery();
     }
 
     private void CloseCommandPalette()
@@ -566,8 +600,9 @@ public partial class MainWindow : Window
         _pendingFolderAction = open;
 
         FolderPickerPopup.PlacementTarget = RootGrid;
-        FolderPickerPopup.IsOpen = true;
+        _folderPickerTop = null;
         FolderPickerControl.Load(_currentProject);
+        FolderPickerPopup.IsOpen = true;
 
         // Focus comes from the popup's own Opened event, for the same reason the
         // palette's does: it is the first moment the HwndSource exists.
@@ -575,10 +610,11 @@ public partial class MainWindow : Window
 
     private void FolderPickerPopup_Opened(object sender, EventArgs e)
     {
-        FolderPickerControl.FocusQuery();
-
+        // The window, then the box, as the palette does.
         if (PresentationSource.FromVisual(FolderPickerControl) is HwndSource source)
             NativeMethods.SetFocus(source.Handle);
+
+        FolderPickerControl.FocusQuery();
     }
 
     private void CloseFolderPicker()
@@ -644,7 +680,7 @@ public partial class MainWindow : Window
         var commands = new List<PaletteCommand>();
 
         // --- File ---
-        commands.Add(new PaletteCommand("Open Folder", OpenProjectFolder, "File", PaletteCommand.Gesture(Key.O, ModifierKeys.Control | ModifierKeys.Shift)));
+        commands.Add(new PaletteCommand("Open Folder", OpenProjectFolder, "File", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.OpenFolder)));
         commands.Add(new PaletteCommand("Close Workspace", ShowWelcome, "File", canInvoke: workspace));
         commands.Add(ReloadFilesCommand(workspace));
         commands.Add(new PaletteCommand("Exit", Close, "File"));
@@ -785,14 +821,15 @@ public partial class MainWindow : Window
 
         // --- Focus ---
         commands.Add(new PaletteCommand("Focus Left Panel", () => FocusPanel(ToolPanel.Left, ActiveLeftHost()), "Focus", canInvoke: workspace));
-        commands.Add(new PaletteCommand("Focus Editor", () => FocusPanel(null, ActiveEditorHost()), "Focus", PaletteCommand.Gesture(Key.D2), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Focus Editor", () => FocusPanel(null, ActiveEditorHost()), "Focus", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Editor), canInvoke: workspace));
         commands.Add(new PaletteCommand("Focus Runner", () => FocusPanel(ToolPanel.Runner, _activeRunnerSession?.Host), "Focus", canInvoke: workspace));
         if (_state.AiEnabled)
             commands.Add(new PaletteCommand("Focus Agent", () => FocusPanel(ToolPanel.Agent, _activeAgentSession?.Host), "Focus", canInvoke: workspace));
 
         // --- Navigate ---
-        commands.Add(new PaletteCommand("Toggle Lazygit Panel", () => ToggleLeftToolFromKey(LeftTool.Git), "View", PaletteCommand.Gesture(Key.D1), keywords: "git left show hide", canInvoke: workspace));
-        commands.Add(new PaletteCommand("Toggle Project Browser", () => ToggleLeftToolFromKey(LeftTool.Project), "View", PaletteCommand.Gesture(Key.D5), keywords: "yazi files left show hide", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Lazygit Panel", () => ToggleLeftToolFromKey(LeftTool.Git), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Lazygit), keywords: "git left show hide", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Project Browser", () => ToggleLeftToolFromKey(LeftTool.Project), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Files), keywords: "yazi files left show hide", canInvoke: workspace));
+        commands.Add(new PaletteCommand("Show Keybindings", () => Dispatcher.BeginInvoke(ShowKeybindings), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Keybindings), keywords: "shortcuts keys keymap bindings hotkeys"));
         // The same offer the first-run toast makes, reachable any time -- the toast is
         // driven by the config file's absence, so a user who dismissed it once can still
         // turn the whole thing on without hunting for the file themselves.
@@ -802,7 +839,7 @@ public partial class MainWindow : Window
             "View",
             _state.YaziOpenInHelide ? "on · restarts Helide" : "restarts Helide",
             keywords: "yazi file tree editor helix open config"));
-        commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanelFromKey(ToolPanel.Runner, _activeRunnerSession?.Host), "View", PaletteCommand.Gesture(Key.D3), canInvoke: workspace));
+        commands.Add(new PaletteCommand("Toggle Terminal Panel", () => TogglePanelFromKey(ToolPanel.Runner, _activeRunnerSession?.Host), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Terminal), canInvoke: workspace));
         commands.Add(new PaletteCommand(
             _workspace.Layout.Zen ? "Leave Zen Mode" : "Zen Mode",
             ToggleZen,
@@ -817,7 +854,7 @@ public partial class MainWindow : Window
             _state.ZenFullScreen ? "now covers taskbar" : "now keeps taskbar",
             keywords: "zen fullscreen full screen taskbar setting"));
         if (_state.AiEnabled)
-            commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanelFromKey(ToolPanel.Agent, _activeAgentSession?.Host), "View", PaletteCommand.Gesture(Key.D4), canInvoke: workspace));
+            commands.Add(new PaletteCommand("Toggle Agent Panel", () => TogglePanelFromKey(ToolPanel.Agent, _activeAgentSession?.Host), "View", Helide.Keys.HelideKeymap.GestureText(Helide.Keys.HelideKeymap.Agent), canInvoke: workspace));
         commands.Add(new PaletteCommand("Next Editor Tab", () => CycleEditorTab(1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
         commands.Add(new PaletteCommand("Previous Editor Tab", () => CycleEditorTab(-1), "Navigate", canInvoke: () => workspace() && _editorTabs.Count > 1));
 
@@ -2776,7 +2813,7 @@ private void OpenInNewWindow(string? projectPath)
                 break;
             case AgentSessionView session:
                 CreateRunnerSession(
-                    session.Type, session.Name, session.CommandLine, session.WorkingDirectory, (host, edge));
+                    session.Type, session.BaseName, session.CommandLine, session.WorkingDirectory, (host, edge));
                 break;
         }
     }
@@ -3005,6 +3042,15 @@ private void OpenInNewWindow(string? projectPath)
     {
         var modifiers = Keyboard.Modifiers;
 
+        // With Alt held, WPF reports the key as System and the real one separately.
+        var pressed = e.Key == Key.System ? e.SystemKey : e.Key;
+
+        if (HandleShortcutCapture(pressed, modifiers))
+        {
+            e.Handled = true;
+            return;
+        }
+
         // A dialog card owns the keyboard while it is up, for the palette's reason: shown
         // over a pane, its text box would never be handed a key of its own.
         if (_dialogOpen)
@@ -3050,27 +3096,42 @@ private void OpenInNewWindow(string? projectPath)
         //
         // An open palette is the exception: Ctrl+P has to be able to close it, and its own
         // window can be without the OS-level keyboard when it was opened from a pane.
+        //
+        // Which key does what is HelideKeymap's: the defaults, or what the user set.
         var agentOwnsKeys = !_paletteOpen && AgentHasKeyboard();
-        var helideChord = modifiers == (ModifierKeys.Control | ModifierKeys.Shift);
-        var plainChord = modifiers == ModifierKeys.Control && !agentOwnsKeys;
+        var bound = Helide.Keys.HelideKeymap.Match(pressed, modifiers);
+        if (agentOwnsKeys && Helide.Keys.HelideKeymap.YieldsToAgent(pressed, modifiers))
+            bound = null;
 
-        if (helideChord && e.Key == Key.E && WorkspaceRoot.Visibility == Visibility.Visible)
+        if (bound == Helide.Keys.HelideKeymap.ErrorLocation && WorkspaceRoot.Visibility == Visibility.Visible)
         {
             OpenErrorLocation();
             e.Handled = true;
             return;
         }
 
-        if (helideChord && e.Key == Key.A && WorkspaceRoot.Visibility == Visibility.Visible && _state.AiEnabled)
+        if (bound == Helide.Keys.HelideKeymap.Mention && WorkspaceRoot.Visibility == Visibility.Visible && _state.AiEnabled)
         {
             MentionFileInAgent();
             e.Handled = true;
             return;
         }
 
-        if ((plainChord || helideChord) && e.Key == Key.P)
+        if (bound == Helide.Keys.HelideKeymap.Palette)
         {
             ToggleCommandPalette();
+            e.Handled = true;
+            return;
+        }
+
+        // Its own key closes it again, as the palette's does.
+        if (bound == Helide.Keys.HelideKeymap.Keybindings)
+        {
+            if (_paletteOpen)
+                CloseCommandPalette();
+            else
+                ShowKeybindings();
+
             e.Handled = true;
             return;
         }
@@ -3167,15 +3228,14 @@ private void OpenInNewWindow(string? projectPath)
             return;
         }
 
-        if (modifiers == ModifierKeys.None && e.Key == Key.F11
-            && WorkspaceRoot.Visibility == Visibility.Visible)
+        if (bound == Helide.Keys.HelideKeymap.Zen && WorkspaceRoot.Visibility == Visibility.Visible)
         {
             ToggleZen();
             e.Handled = true;
             return;
         }
 
-        if ((plainChord || helideChord) && e.Key == Key.O)
+        if (bound == Helide.Keys.HelideKeymap.OpenFolder)
         {
             OpenProjectButton_Click(this, new RoutedEventArgs());
             e.Handled = true;
@@ -3196,10 +3256,8 @@ private void OpenInNewWindow(string? projectPath)
             return;
         }
 
-        if (!modifiers.HasFlag(ModifierKeys.Control))
-            return;
-
-        var number = KeyToNumber(e.Key);
+        // The welcome screen's numbers are fixed: they are the rows it shows.
+        var number = modifiers == ModifierKeys.Control ? KeyToNumber(pressed) : 0;
         if (WelcomeRoot.Visibility == Visibility.Visible && number is >= 1 and <= 8)
         {
             var project = _state.RecentProjects.ElementAtOrDefault(number - 1);
@@ -3211,7 +3269,19 @@ private void OpenInNewWindow(string? projectPath)
             return;
         }
 
-        if (WorkspaceRoot.Visibility != Visibility.Visible || number is < 1 or > 5)
+        if (WorkspaceRoot.Visibility != Visibility.Visible)
+            return;
+
+        number = bound switch
+        {
+            Helide.Keys.HelideKeymap.Lazygit => 1,
+            Helide.Keys.HelideKeymap.Editor => 2,
+            Helide.Keys.HelideKeymap.Terminal => 3,
+            Helide.Keys.HelideKeymap.Agent => 4,
+            Helide.Keys.HelideKeymap.Files => 5,
+            _ => 0,
+        };
+        if (number == 0)
             return;
 
         // There is no agent pane to focus while AI is off.
@@ -4948,7 +5018,7 @@ private void OpenInNewWindow(string? projectPath)
             _workspace.AgentSessions.Add(new AgentSessionState
             {
                 Type = session.Type,
-                Name = session.Name,
+                Name = session.BaseName,
                 CommandLine = session.Host is not null ? session.Host.Label : string.Empty,
                 CreatedUtc = DateTime.UtcNow,
                 SessionId = session.SessionId,
@@ -5420,7 +5490,27 @@ private void OpenInNewWindow(string? projectPath)
 
         public string Type { get; }  // "opencode", "codex" or "claude"
         public string TypeLabel => AgentProviders.LabelFor(Type);
-        public string Name { get; }
+        // What the tab says: the conversation's title once it has one, else the name it
+        // was opened with. Only that name is saved; the title is read again each time.
+        public string Name => _title ?? BaseName;
+
+        public string BaseName { get; }
+
+        private string? _title;
+
+        public string? Title
+        {
+            get => _title;
+            set
+            {
+                if (_title == value)
+                    return;
+
+                _title = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Name)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToolTipText)));
+            }
+        }
         public NativeTerminalHost? Host { get; set; }
 
         // Only set for runner sessions, which are a shell running a command line and
@@ -5452,11 +5542,12 @@ private void OpenInNewWindow(string? projectPath)
         public AgentSessionView(string type, string name)
         {
             Type = type;
-            Name = name;
+            BaseName = name;
         }
 
-        // What the shared tab template shows on hover.
-        public string ToolTipText => Name;
+        // What the shared tab template shows on hover: the whole title, which the tab
+        // itself cuts short, and the agent it is in.
+        public string ToolTipText => _title is null ? BaseName : $"{BaseName} · {_title}";
 
         // The source polls on a timer of its own, so a pane that is closed has to stop
         // it or it keeps reading a file for a tab that is gone.

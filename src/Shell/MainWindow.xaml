@@ -2415,7 +2415,7 @@
         </Popup>
 
         <Popup x:Name="CommandPalettePopup"
-               Placement="Center"
+               Placement="Custom"
                AllowsTransparency="True"
                Focusable="True"
                StaysOpen="False"
@@ -2428,7 +2428,7 @@
              than a mode inside the palette: the palette's keyboard model is about
              running commands, and this one is about walking a tree. -->
         <Popup x:Name="FolderPickerPopup"
-               Placement="Center"
+               Placement="Custom"
                AllowsTransparency="True"
                Focusable="True"
                StaysOpen="False"

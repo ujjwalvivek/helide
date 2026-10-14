@@ -25,7 +25,9 @@ namespace Helide.Shell;
 /// </remarks>
 public partial class CommandPalette : UserControl
 {
-    private readonly ObservableCollection<PaletteRow> _visible = [];
+    // Replaced whole on every search rather than refilled row by row: a list of a few
+    // hundred rows announced one at a time had the list redo its layout for each.
+    private List<PaletteRow> _visible = [];
     private IReadOnlyList<PaletteCommand> _all = [];
     private PaletteMode _mode = PaletteMode.Commands;
 
@@ -71,8 +73,9 @@ public partial class CommandPalette : UserControl
     private void Refilter()
     {
         var query = QueryBox.Text;
+        var candidates = Scoped(_all, ref query);
 
-        var matched = _all
+        var matched = candidates
             .Where(command => command.CanInvoke?.Invoke() != false)
             .Where(command => FuzzyMatch.ScoreCommand(command.Title, command.Keywords, query) > 0)
             .ToList();
@@ -84,10 +87,14 @@ public partial class CommandPalette : UserControl
             matched = matched
                 .OrderByDescending(c => FuzzyMatch.ScoreCommand(c.Title, c.Keywords, query))
                 .ThenBy(c => c.Title, StringComparer.OrdinalIgnoreCase)
+                // Each group stays in one piece, placed by its best match, so a heading
+                // is not repeated for every other result.
+                .GroupBy(c => c.Group ?? string.Empty)
+                .SelectMany(group => group)
                 .ToList();
         }
 
-        _visible.Clear();
+        var rows = new List<PaletteRow>(matched.Count + 16);
 
         // A heading is emitted only when it introduces something, so a filtered list
         // never carries a row of empty categories above the results.
@@ -99,13 +106,16 @@ public partial class CommandPalette : UserControl
             {
                 if (group.Length > 0)
                 {
-                    _visible.Add(PaletteRow.Heading(group));
+                    rows.Add(PaletteRow.Heading(group));
                     currentGroup = group;
                 }
             }
 
-            _visible.Add(PaletteRow.For(command));
+            rows.Add(PaletteRow.For(command));
         }
+
+        _visible = rows;
+        ResultsList.ItemsSource = rows;
 
         ResultsList.Visibility = _visible.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Visibility = _visible.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -114,6 +124,31 @@ public partial class CommandPalette : UserControl
         // Land on the first command rather than the first row, so Enter runs something
         // instead of trying to run a heading.
         SelectFirstCommand();
+    }
+
+    // "scope:rest" narrows to the commands of that scope and searches them for "rest".
+    // The scope can be cut short ("hel:") as long as only one scope starts that way; a
+    // colon that names no scope is just part of the search.
+    private static IReadOnlyList<PaletteCommand> Scoped(IReadOnlyList<PaletteCommand> all, ref string query)
+    {
+        var colon = query.IndexOf(':');
+        if (colon <= 0)
+            return all;
+
+        var typed = query[..colon].Trim();
+        var scopes = all
+            .Select(command => command.Scope)
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var scope = scopes.FirstOrDefault(name => string.Equals(name, typed, StringComparison.OrdinalIgnoreCase))
+            ?? (scopes.Where(name => name.StartsWith(typed, StringComparison.OrdinalIgnoreCase)).ToList() is [var only] ? only : null);
+        if (scope is null)
+            return all;
+
+        query = query[(colon + 1)..].TrimStart();
+        return all.Where(command => string.Equals(command.Scope, scope, StringComparison.OrdinalIgnoreCase)).ToList();
     }
 
     private void SelectFirstCommand()

@@ -19,6 +19,12 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      # Helix's default keymap for any Helix release newer than the ones already in
+      # src/Keys/Defaults, embedded into Helide.exe by the build. Offline, the files
+      # already there are what ships.
+      - name: helix keymaps
+        run: python tools/keymaps/helix_defaults.py src/Keys/Defaults
+
       - name: restore
         run: dotnet restore
 
