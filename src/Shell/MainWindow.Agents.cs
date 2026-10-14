@@ -1,9 +1,10 @@
+using System.IO;
 using Helide.Sessions;
 using Helide.Shell;
 
 namespace Helide;
 
-// Reaching a Claude conversation that is running in the background.
+// Reaching a conversation: one running in the background, or any past one.
 public partial class MainWindow
 {
     private static readonly PaletteMode BackgroundSessionsMode =
@@ -36,5 +37,66 @@ public partial class MainWindow
         }
 
         ShowPalette(commands, BackgroundSessionsMode);
+    }
+
+    private static readonly PaletteMode PastConversationsMode =
+        new("Search conversations", "conversation", "conversations", "open");
+
+    // Every conversation any agent has had in this project, newest first, so the one from
+    // last week is found without remembering which agent it was in. Each reopens in its
+    // own agent, in the folder it was started in; one already in a tab is switched to.
+    private async void ShowPastConversations()
+    {
+        if (_currentProject is not { } project)
+            return;
+
+        var conversations = await Task.Run(() => PastConversations.For(project));
+        if (conversations.Count == 0)
+        {
+            ShowNotice("Open Past Conversation", "No agent has a conversation on record for this project.");
+            return;
+        }
+
+        var now = DateTimeOffset.Now;
+        var commands = conversations
+            .Select(conversation => new PaletteCommand(
+                conversation.Title.Length > 0 ? conversation.Title : "(untitled)",
+                () => OpenPastConversation(conversation),
+                detail: AgentProviders.LabelFor(conversation.Agent) + " · " + (OpenAgentTab(conversation) is not null
+                    ? "open"
+                    : Helide.Usage.UsageFormat.Duration(now - conversation.LastUsed) + " ago"),
+                keywords: conversation.Agent))
+            .ToList();
+
+        ShowPalette(commands, PastConversationsMode);
+    }
+
+    private AgentSessionView? OpenAgentTab(PastConversation conversation) =>
+        _agentSessions.FirstOrDefault(session =>
+            session.Type == conversation.Agent
+            && string.Equals(session.SessionId, conversation.SessionId, StringComparison.OrdinalIgnoreCase));
+
+    private void OpenPastConversation(PastConversation conversation)
+    {
+        if (OpenAgentTab(conversation) is { } open)
+        {
+            ActivateAgentSession(open);
+            FocusPanel(ToolPanel.Agent, open.Host);
+            return;
+        }
+
+        var directory = string.Equals(
+            Path.GetFullPath(conversation.Directory).TrimEnd('\\'),
+            Path.GetFullPath(_currentProject!).TrimEnd('\\'),
+            StringComparison.OrdinalIgnoreCase)
+            ? null
+            : conversation.Directory;
+
+        StartAgentSession(
+            conversation.Agent,
+            AgentProviders.LabelFor(conversation.Agent),
+            conversation.SessionId,
+            resuming: true,
+            workingDirectory: directory);
     }
 }

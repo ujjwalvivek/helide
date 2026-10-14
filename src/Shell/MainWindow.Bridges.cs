@@ -22,6 +22,7 @@ public partial class MainWindow
         RefreshUsageLimits();
         ScheduleEditorReload();
         AlertTurnFinished(session);
+        LoadTurnEdits(session);
     }
 
     // ---- editors follow the files an agent writes ------------------------------------
@@ -417,6 +418,14 @@ public partial class MainWindow
             PaletteCommand.Gesture(System.Windows.Input.Key.A, System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift),
             keywords: "@ reference file path send editor",
             canInvoke: () => workspace() && _activeEditorTab?.Path is not null && _activeAgentSession is not null));
+
+        commands.Add(new PaletteCommand(
+            "Open Past Conversation",
+            ShowPastConversations,
+            "AI",
+            "all agents, this project",
+            keywords: "resume session history claude codex opencode",
+            canInvoke: workspace));
 
         commands.Add(new PaletteCommand(
             "Send Terminal Output to Agent",
