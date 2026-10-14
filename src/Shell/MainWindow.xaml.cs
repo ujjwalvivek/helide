@@ -852,6 +852,7 @@ public partial class MainWindow : Window
             keywords: "agent opencode codex claude toggle switch"));
 
         AddBridgeCommands(commands, workspace);
+        AddNavigationCommands(commands, workspace);
 
         // Only offered once something has been hidden, so it is not a command that does
         // nothing.
@@ -1853,7 +1854,9 @@ private void OpenInNewWindow(string? projectPath)
             return null;
         }
 
-        var arguments = tool == LeftTool.Git ? ToolDefaults.LazygitArguments() : [];
+        var arguments = tool == LeftTool.Git
+            ? ToolDefaults.LazygitArguments()
+            : ["--client-id", YaziClientId.ToString(System.Globalization.CultureInfo.InvariantCulture)];
         var host = new NativeTerminalHost(label, ToolCommand($"{label}.exe", arguments), _currentProject!);
         LeftToolStack.Children.Add(host);
         _terminalHosts.Add(host);
@@ -2110,7 +2113,8 @@ private void OpenInNewWindow(string? projectPath)
     private EditorTab? CreateEditorTab(
         string? path,
         string? workingDirectory = null,
-        (NativeTerminalHost Anchor, DropEdge Edge)? beside = null)
+        (NativeTerminalHost Anchor, DropEdge Edge)? beside = null,
+        string? position = null)
     {
         if (_currentProject is null)
             return null;
@@ -2123,7 +2127,8 @@ private void OpenInNewWindow(string? projectPath)
         }
 
         // No path means Helix's file picker rooted at the project.
-        var command = ToolCommand("hx.exe", [.. ToolDefaults.HelixArguments(), path ?? "."]);
+        var target = path is null ? "." : position is null ? path : path + ":" + position;
+        var command = ToolCommand("hx.exe", [.. ToolDefaults.HelixArguments(), target]);
         try
         {
             var host = new NativeTerminalHost("helix", command, workingDirectory ?? _currentProject, path);
@@ -2212,6 +2217,8 @@ private void OpenInNewWindow(string? projectPath)
         // The dot means "not looked at yet", so arriving here clears it. Without
         // this it would sit there for the rest of the session.
         tab.ClearAttention();
+
+        UpdateEditorFileActions();
     }
 
     private void EditorSlot_FocusedHostChanged(NativeTerminalHost? host)
@@ -3041,6 +3048,13 @@ private void OpenInNewWindow(string? projectPath)
         var helideChord = modifiers == (ModifierKeys.Control | ModifierKeys.Shift);
         var plainChord = modifiers == ModifierKeys.Control && !agentOwnsKeys;
 
+        if (helideChord && e.Key == Key.E && WorkspaceRoot.Visibility == Visibility.Visible)
+        {
+            OpenErrorLocation();
+            e.Handled = true;
+            return;
+        }
+
         if (helideChord && e.Key == Key.A && WorkspaceRoot.Visibility == Visibility.Visible && _state.AiEnabled)
         {
             MentionFileInAgent();
@@ -3822,6 +3836,11 @@ private void OpenInNewWindow(string? projectPath)
         // The usage figures, open editors and turn alerts follow every turn that ends,
         // in whichever tab.
         source.BecameIdle += () => OnAgentTurnFinished(session);
+        source.BusyChanged += busy =>
+        {
+            if (busy)
+                ClearTurnEdits(session);
+        };
         session.AttachStatusSource(source);
     }
 
@@ -5419,6 +5438,9 @@ private void OpenInNewWindow(string? projectPath)
         // `resume <id>` was already told which thread to open. The timestamp is what
         // decides which rollout file belongs to which pane when several start at once.
         public DateTime? AwaitingSessionSince { get; set; }
+
+        // The files this pane's last turn edited, as its agent recorded them.
+        public IReadOnlyList<string> TurnEdits { get; set; } = [];
 
         public AgentSessionView(string type, string name)
         {
