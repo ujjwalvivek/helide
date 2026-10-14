@@ -90,8 +90,11 @@ public partial class App : Application
         // first layout pass paints rather than a flash of the default.
         ThemePalette.ApplyTheme(state.Theme);
 
-        // Auto-check for updates on restart (non-blocking, silent unless update found)
+        // Auto-check for updates on restart (non-blocking, silent unless update found),
+        // and again while the window is up, so a release lands during the day rather than
+        // at the next launch.
         CheckForUpdatesSilently();
+        StartUpdateChecks();
 
         var window = new MainWindow(stateStore, state, projectPath);
         MainWindow = window;
@@ -388,6 +391,21 @@ public partial class App : Application
         exception.Flatten().InnerExceptions.All(inner =>
             inner is ObjectDisposedException
             && inner.StackTrace?.Contains("TermPTY.ReadOutputLoop", StringComparison.Ordinal) == true);
+
+    private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromMinutes(15);
+
+    // The same check, repeated. Skipped while an update is downloading, waiting for the
+    // restart or restarting, here or in another window: there is nothing new to learn.
+    private void StartUpdateChecks()
+    {
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = UpdateCheckInterval };
+        timer.Tick += (_, _) =>
+        {
+            if (HelideUpdateState.Status is null && !HelideUpdateState.IsRestarting)
+                CheckForUpdatesSilently();
+        };
+        timer.Start();
+    }
 
     // Silent background check for new updates when app restarts.
     // If one exists, a subtle notification is shown (not a popup blocking startup).
