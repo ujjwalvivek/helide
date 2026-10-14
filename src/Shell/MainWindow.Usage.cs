@@ -671,6 +671,16 @@ public partial class MainWindow
             row.Children.Add(text);
         }
 
+        // Claude's figures only come back from a Claude that is running: its status line,
+        // or the copy it saves when it starts.
+        if (reset && agent == AgentProviders.Claude)
+        {
+            var hint = SmallText("Start a Claude session to refresh usage.", "TextSubtleBrush");
+            hint.Margin = new Thickness(0, 3, 0, 0);
+            hint.TextWrapping = TextWrapping.Wrap;
+            row.Children.Add(hint);
+        }
+
         return row;
     }
 
