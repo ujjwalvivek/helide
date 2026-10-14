@@ -30,6 +30,7 @@ internal static class ClaudeStatusRelay
 {
     private const string SettingsName = "claude-status-settings.json";
     private const string RelayName = "claude-status.json";
+    private const string KeptName = "claude-limits.json";
 
     public static string RelayFile(string stateDirectory) => Path.Combine(stateDirectory, RelayName);
 
@@ -117,28 +118,80 @@ internal static class ClaudeStatusRelay
         return false;
     }
 
-    /// <summary>The limits from the last status update any relayed Claude pane made.</summary>
+    /// <summary>
+    /// The limits from the last status update that carried any.
+    /// </summary>
+    /// <remarks>
+    /// Not every update does. Claude learns its limits from the first API response, so a
+    /// pane that has just started -- every pane, after a restart -- reports none, and so
+    /// does any update made before a request. Every pane writes to the same relay file,
+    /// so one of those would wipe out the last real reading. The relay is therefore only
+    /// a mailbox: a reading that has limits in it is kept in a file of its own, and an
+    /// update without them leaves that file alone.
+    /// </remarks>
     public static AgentLimits? Read(string stateDirectory)
     {
-        var file = RelayFile(stateDirectory);
+        Keep(stateDirectory);
+
+        var kept = Path.Combine(stateDirectory, KeptName);
 
         try
         {
-            if (!File.Exists(file))
+            if (!File.Exists(kept))
                 return null;
 
-            var readAt = new DateTimeOffset(File.GetLastWriteTimeUtc(file));
-
-            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var stream = new FileStream(kept, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             using var document = JsonDocument.Parse(stream);
+            var root = document.RootElement;
 
-            return document.RootElement.TryGetProperty("rate_limits", out var limits)
-                ? Parse(limits, readAt)
-                : null;
+            var readAt = JsonlScanner.Text(root, "readAt") is { } text && DateTimeOffset.TryParse(text, out var at)
+                ? at
+                : DateTimeOffset.MinValue;
+
+            return root.TryGetProperty("rate_limits", out var limits) ? Parse(limits, readAt) : null;
         }
         catch (Exception)
         {
             return null;
+        }
+    }
+
+    // Copies the relay's reading aside if it has limits in it and is newer than the one
+    // already kept.
+    private static void Keep(string stateDirectory)
+    {
+        var relay = RelayFile(stateDirectory);
+        var kept = Path.Combine(stateDirectory, KeptName);
+
+        try
+        {
+            if (!File.Exists(relay))
+                return;
+
+            var written = File.GetLastWriteTimeUtc(relay);
+            if (File.Exists(kept) && File.GetLastWriteTimeUtc(kept) >= written)
+                return;
+
+            string limits;
+            using (var stream = new FileStream(relay, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            using (var document = JsonDocument.Parse(stream))
+            {
+                if (!document.RootElement.TryGetProperty("rate_limits", out var found)
+                    || Parse(found, DateTimeOffset.MinValue) is null)
+                    return;
+
+                limits = found.GetRawText();
+            }
+
+            var readAt = new DateTimeOffset(written).ToString("o");
+            var staging = kept + "." + Environment.ProcessId + ".tmp";
+            File.WriteAllText(staging, $"{{\"readAt\":\"{readAt}\",\"rate_limits\":{limits}}}");
+            File.Move(staging, kept, true);
+            File.SetLastWriteTimeUtc(kept, written);
+        }
+        catch (Exception)
+        {
+            // Half-written by the relay, or locked: the next update or tick tries again.
         }
     }
 
