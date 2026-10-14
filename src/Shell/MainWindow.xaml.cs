@@ -3199,8 +3199,9 @@ private void OpenInNewWindow(string? projectPath)
             return;
 
         // Every number is a pane, and every one of them toggles: the key shows its pane
-        // and puts the keyboard in it, and the same key again puts the pane away and
-        // hands the keyboard back to the editor. Ctrl+1 is lazygit and Ctrl+5 the
+        // and puts the keyboard in it -- a pane already in view is only given the
+        // keyboard -- and the same key again puts the pane away and hands the keyboard
+        // back to the editor. Ctrl+1 is lazygit and Ctrl+5 the
         // project browser, each by name -- Ctrl+1 used to mean "whichever of the two is
         // showing", so it could never bring lazygit back once the browser was up, and
         // only Ctrl+5 ever closed anything. The editor is the one pane that cannot be
@@ -3235,6 +3236,13 @@ private void OpenInNewWindow(string? projectPath)
     {
         var showing = !IsPanelCollapsed(ToolPanel.Left) && _activeLeftTool == tool;
 
+        // In view but not where the keys go: the key is asking to use it, not to hide it.
+        if (showing && ActiveLeftHost() is { } left && !left.HasKeyboardFocus())
+        {
+            FocusWhenReady(left);
+            return;
+        }
+
         // Shows the tool, switching to it if the other one is up, or hides the panel.
         ToggleLeftTool(tool);
 
@@ -3247,6 +3255,13 @@ private void OpenInNewWindow(string? projectPath)
     private void TogglePanelFromKey(ToolPanel panel, NativeTerminalHost? host)
     {
         if (IsPanelCollapsed(panel))
+        {
+            FocusPanel(panel, host);
+            return;
+        }
+
+        // In view but not where the keys go: the key is asking to use it, not to hide it.
+        if (!PanelHasKeyboard(panel))
         {
             FocusPanel(panel, host);
             return;
