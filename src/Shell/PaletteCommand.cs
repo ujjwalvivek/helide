@@ -22,7 +22,8 @@ public sealed class PaletteCommand
         string? keywords = null,
         Func<bool>? canInvoke = null,
         IReadOnlyList<string>? keys = null,
-        string? scope = null)
+        string? scope = null,
+        Func<string, string?>? detailFor = null)
     {
         Title = title;
         Invoke = invoke;
@@ -32,7 +33,14 @@ public sealed class PaletteCommand
         CanInvoke = canInvoke;
         Keys = keys;
         Scope = scope;
+        DetailFor = detailFor;
     }
+
+    /// <summary>
+    /// A hint that depends on what was typed, shown instead of <see cref="Detail"/> when
+    /// it returns one: where in a conversation the search was found, say.
+    /// </summary>
+    public Func<string, string?>? DetailFor { get; }
 
     /// <summary>
     /// Key caps to draw, when they are not a Ctrl/Alt/Shift shortcut that
@@ -103,10 +111,11 @@ internal sealed class PaletteRow
 {
     private static readonly string[] Modifiers = ["Ctrl", "Alt", "Shift"];
 
-    private PaletteRow(string title, PaletteCommand? command)
+    private PaletteRow(string title, PaletteCommand? command, string? detail = null)
     {
         Title = title;
         Command = command;
+        Detail = detail ?? command?.Detail ?? string.Empty;
         Keys = command?.Keys ?? ShortcutKeys(command?.Detail);
         Glyph = GlyphFor(command?.Group);
     }
@@ -147,7 +156,7 @@ internal sealed class PaletteRow
     public string Title { get; }
 
     /// <summary>Right-aligned hint for a command row; empty on a heading.</summary>
-    public string Detail => Command?.Detail ?? string.Empty;
+    public string Detail { get; }
 
     /// <summary>
     /// The keys of the command's shortcut, one per cap, or empty when its hint is not a
@@ -171,5 +180,6 @@ internal sealed class PaletteRow
 
     public static PaletteRow Heading(string group) => new(group.ToUpperInvariant(), null);
 
-    public static PaletteRow For(PaletteCommand command) => new(command.Title, command);
+    public static PaletteRow For(PaletteCommand command, string query = "") =>
+        new(command.Title, command, query.Length > 0 ? command.DetailFor?.Invoke(query) : null);
 }

@@ -25,6 +25,7 @@ public partial class MainWindow
         LoadTurnEdits(session);
         RefreshContextMeter();
         RefreshAgentTitle(session);
+        WarmConversationText(force: true);
     }
 
     // ---- editors follow the files an agent writes ------------------------------------

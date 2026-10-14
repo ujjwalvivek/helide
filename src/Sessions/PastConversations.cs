@@ -9,7 +9,9 @@ namespace Helide.Sessions;
 /// <param name="SessionId">The id the agent resumes it by.</param>
 /// <param name="Title">Its name, or what was first asked in it.</param>
 /// <param name="Directory">Where it was started, which is where it has to be reopened.</param>
-internal sealed record PastConversation(string Agent, string SessionId, string Title, string Directory, DateTimeOffset LastUsed);
+/// <param name="File">The transcript it was found in, for Claude and Codex.</param>
+internal sealed record PastConversation(
+    string Agent, string SessionId, string Title, string Directory, DateTimeOffset LastUsed, string? File = null);
 
 /// <summary>
 /// The conversations all three agents have had in a project, from the indexes they keep.
@@ -212,7 +214,7 @@ internal static class PastConversations
 
             found.Add(new PastConversation(
                 AgentProviders.Claude, id, Shorten(ClaudeTitle(transcript, id) ?? title), directory,
-                DateTimeOffset.FromUnixTimeMilliseconds(last)));
+                DateTimeOffset.FromUnixTimeMilliseconds(last), transcript));
         }
 
         return found;
@@ -288,7 +290,7 @@ internal static class PastConversations
                 continue;
 
             found[id] = new PastConversation(
-                AgentProviders.Codex, id, Shorten(names.GetValueOrDefault(id) ?? "Codex conversation"), directory, last);
+                AgentProviders.Codex, id, Shorten(names.GetValueOrDefault(id) ?? "Codex conversation"), directory, last, rollout);
         }
 
         return found.Values;

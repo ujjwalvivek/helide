@@ -40,7 +40,7 @@ public partial class MainWindow
     }
 
     private static readonly PaletteMode PastConversationsMode =
-        new("Search conversations", "conversation", "conversations", "open");
+        new("Search titles, prompts and replies", "conversation", "conversations", "open", KeepOrder: true);
 
     // Every conversation any agent has had in this project, newest first, so the one from
     // last week is found without remembering which agent it was in. Each reopens in its
@@ -50,7 +50,11 @@ public partial class MainWindow
         if (_currentProject is not { } project)
             return;
 
-        var conversations = await Task.Run(() => PastConversations.For(project));
+        // What was said in each is searched too. It is read ahead (WarmConversationText),
+        // so this is usually only checking nothing changed.
+        var conversations = await Task.Run(() => PastConversations.For(project)
+            .Select(conversation => (Conversation: conversation, Said: ConversationText.Of(conversation)))
+            .ToList());
         if (conversations.Count == 0)
         {
             ShowNotice("Open Past Conversation", "No agent has a conversation on record for this project.");
@@ -59,13 +63,14 @@ public partial class MainWindow
 
         var now = DateTimeOffset.Now;
         var commands = conversations
-            .Select(conversation => new PaletteCommand(
-                conversation.Title.Length > 0 ? conversation.Title : "(untitled)",
-                () => OpenPastConversation(conversation),
-                detail: AgentProviders.LabelFor(conversation.Agent) + " · " + (OpenAgentTab(conversation) is not null
+            .Select(entry => new PaletteCommand(
+                Named(entry.Conversation, entry.Said),
+                () => OpenPastConversation(entry.Conversation),
+                detail: AgentProviders.LabelFor(entry.Conversation.Agent) + " · " + (OpenAgentTab(entry.Conversation) is not null
                     ? "open"
-                    : Helide.Usage.UsageFormat.Duration(now - conversation.LastUsed) + " ago"),
-                keywords: conversation.Agent))
+                    : Helide.Usage.UsageFormat.Duration(now - entry.Conversation.LastUsed) + " ago"),
+                keywords: entry.Conversation.Agent + "\n" + entry.Said,
+                detailFor: query => Snippet(entry.Conversation, Named(entry.Conversation, entry.Said), entry.Said, query)))
             .ToList();
 
         ShowPalette(commands, PastConversationsMode);
@@ -91,6 +96,70 @@ public partial class MainWindow
     {
         foreach (var session in _agentSessions.Where(session => session.Title is null).ToList())
             RefreshAgentTitle(session);
+    }
+
+    // Its title, or for a conversation still under the agent's placeholder ("New session
+    // - 2026-10-06T22:51…"), the first thing asked in it.
+    private static string Named(PastConversation conversation, string said)
+    {
+        var title = conversation.Title;
+        if (title.Length > 0 && !title.StartsWith("New session", StringComparison.OrdinalIgnoreCase))
+            return title;
+
+        var first = said.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+        return first is { Length: > 0 }
+            ? first.Length > 80 ? first[..79] + "…" : first
+            : title.Length > 0 ? title : "(untitled)";
+    }
+
+    // Where in what was said the search was found, when the title does not show it:
+    // the words around the first hit, on one line.
+    private static string? Snippet(PastConversation conversation, string title, string said, string query)
+    {
+        if (Helide.Shell.FuzzyMatch.Matches(title, query))
+            return null;
+
+        foreach (var term in query.Split(' ', StringSplitOptions.RemoveEmptyEntries).OrderByDescending(term => term.Length))
+        {
+            var at = said.IndexOf(term, StringComparison.OrdinalIgnoreCase);
+            if (at < 0)
+                continue;
+
+            const int Around = 24;
+            var start = Math.Max(0, at - Around);
+            var end = Math.Min(said.Length, at + term.Length + Around);
+            var line = string.Join(' ', said[start..end].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+            return AgentProviders.LabelFor(conversation.Agent) + " · "
+                + (start > 0 ? "…" : string.Empty) + line + (end < said.Length ? "…" : string.Empty);
+        }
+
+        return null;
+    }
+
+    // Reads what was said in this project's conversations in the background, so the
+    // search has it when the list is opened. Only conversations that changed since are
+    // read again: after the first time, that is the one a turn just finished in.
+    private string? _conversationsRead;
+
+    private void WarmConversationText(bool force = false)
+    {
+        if (_currentProject is not { } project || (!force && _conversationsRead == project))
+            return;
+
+        _conversationsRead = project;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                foreach (var conversation in PastConversations.For(project))
+                    ConversationText.Of(conversation);
+            }
+            catch (Exception)
+            {
+                // Read when the list is opened instead.
+            }
+        });
     }
 
     private AgentSessionView? OpenAgentTab(PastConversation conversation) =>

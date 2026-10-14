@@ -74,6 +74,7 @@ public partial class MainWindow
             RefreshUsageSummary();
             RefreshContextMeter();
             RefreshUntitledAgents();
+            WarmConversationText();
         };
         _usageTimer.Start();
         Closed += (_, _) => _usageTimer.Stop();

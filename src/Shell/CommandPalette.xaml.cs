@@ -86,7 +86,7 @@ public partial class CommandPalette : UserControl
         {
             matched = matched
                 .OrderByDescending(c => FuzzyMatch.ScoreCommand(c.Title, c.Keywords, query))
-                .ThenBy(c => c.Title, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(c => _mode.KeepOrder ? string.Empty : c.Title, StringComparer.OrdinalIgnoreCase)
                 // Each group stays in one piece, placed by its best match, so a heading
                 // is not repeated for every other result.
                 .GroupBy(c => c.Group ?? string.Empty)
@@ -111,7 +111,7 @@ public partial class CommandPalette : UserControl
                 }
             }
 
-            rows.Add(PaletteRow.For(command));
+            rows.Add(PaletteRow.For(command, query));
         }
 
         _visible = rows;
@@ -295,7 +295,11 @@ public partial class CommandPalette : UserControl
 /// The words around a palette list: what the empty query box says, what Enter does, and
 /// what the rows are called in the count.
 /// </summary>
-public sealed record PaletteMode(string Placeholder, string Singular, string Plural, string EnterLabel)
+/// <param name="KeepOrder">
+/// Equally good matches stay in the order given, instead of by title: the newest
+/// conversation first, say.
+/// </param>
+public sealed record PaletteMode(string Placeholder, string Singular, string Plural, string EnterLabel, bool KeepOrder = false)
 {
     public static readonly PaletteMode Commands = new("Type a command", "command", "commands", "run");
 }

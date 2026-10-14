@@ -96,19 +96,26 @@ internal static class FuzzyMatch
         if (string.IsNullOrWhiteSpace(query))
             return 1;
 
-        var inTitle = Matches(title, query);
-        var inKeywords = !string.IsNullOrEmpty(keywords) && Matches(keywords, query);
-        if (!inTitle && !inKeywords)
+        if (Matches(title, query))
+            return Math.Max(Score(title, query), 2);
+
+        if (string.IsNullOrEmpty(keywords) || !Matches(keywords, query))
             return 0;
 
-        var score = inTitle ? Score(title, query) : Score(keywords!, query);
-        return Math.Max(score, 1);
+        // Found only in the hidden text: below every title match, and all equal, since
+        // where in a conversation or a keyword list the words fall says nothing about
+        // which is the better result.
+        return 1;
     }
+
+    // Past this, a text is searched for each word as written, without also trying the
+    // starts of its words, which would mean splitting it into words on every key.
+    private const int LongText = 4096;
 
     /// <summary>Whether every word of the query is found in the text: see the remarks.</summary>
     public static bool Matches(string text, string query)
     {
-        var words = Words(text);
+        var words = text.Length > LongText ? [] : Words(text);
         foreach (var term in query.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
             if (text.Contains(term, StringComparison.OrdinalIgnoreCase))
