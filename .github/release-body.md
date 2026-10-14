@@ -1,18 +1,14 @@
 <!--markdownlint-disable MD041 MD013-->
 
-## Helide v2.0.0
+## Helide v2.0.1
 
 A WPF terminal workspace for Windows: lazygit, yazi, the Helix editor, terminals and coding agents in one window.
 
 ### What's new
 
-- keybindings view for Helide and every tool, as bound on your machine
-- project commands, run from the palette, a shortcut or the status bar
-- agent usage, limits and context, read from the agents' own records
-- agent hand-offs: mentions, terminal output, replies between agents, dropped files
-- changed files after a turn, opening at the change; editors reload from disk
-- past conversations searched by what was said; agent tabs named after them
-- faster start: only the panes on screen start
+- OpenCode tabs show feeedback for every turn
+- with notifications on, the finish sound is Windows' own, so Do not disturb silences it
+- updates are checked every 15 minutes while Helide is open, not only at launch
 
 ### Install
 
