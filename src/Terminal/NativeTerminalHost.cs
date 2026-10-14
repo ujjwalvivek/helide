@@ -26,7 +26,7 @@ internal enum TerminalHostState
     Stopped,
 }
 
-internal sealed class NativeTerminalHost : Grid, IDisposable
+internal sealed partial class NativeTerminalHost : Grid, IDisposable
 {
     private static class NativeMethods
     {
@@ -567,6 +567,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         if (e.Key != Key.Enter || Keyboard.Modifiers != ModifierKeys.None)
             return;
 
+        ResetCapturedOutput();
         WriteRaw("\r");
         e.Handled = true;
     }
@@ -748,30 +749,10 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         if (string.IsNullOrEmpty(text))
             return false;
 
-        // Whatever is left of an escape sequence in the text could end the bracket early
-        // and turn the rest of the paste into input, so escapes go. Line breaks are sent
-        // as the carriage return Enter is, which is what every program in here reads as
-        // a new line.
-        var cleaned = new System.Text.StringBuilder(text.Length);
-        for (var index = 0; index < text.Length; index++)
-        {
-            var c = text[index];
-            if (c == '\r')
-            {
-                cleaned.Append('\r');
-                if (index + 1 < text.Length && text[index + 1] == '\n')
-                    index++;
-            }
-            else if (c == '\n')
-                cleaned.Append('\r');
-            else if (c == '\t' || c >= ' ' && c != '\u007f')
-                cleaned.Append(c);
-        }
-
-        if (cleaned.Length == 0)
+        var payload = CleanForPaste(text);
+        if (payload.Length == 0)
             return false;
 
-        var payload = cleaned.ToString();
         WriteRaw(_bracketedPaste ? "\u001b[200~" + payload + "\u001b[201~" : payload);
         return true;
     }
@@ -880,6 +861,7 @@ internal sealed class NativeTerminalHost : Grid, IDisposable
         TrackPasteMode(output.Data);
         TrackMouseModes(output.Data);
         TrackModified(output.Data);
+        CaptureOutput(output.Data as string);
     }
 
     private void ConPtyTerm_TermReady(object? sender, EventArgs e)

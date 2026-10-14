@@ -645,6 +645,7 @@ public partial class MainWindow : Window
         // --- File ---
         commands.Add(new PaletteCommand("Open Folder", OpenProjectFolder, "File", PaletteCommand.Gesture(Key.O, ModifierKeys.Control | ModifierKeys.Shift)));
         commands.Add(new PaletteCommand("Close Workspace", ShowWelcome, "File", canInvoke: workspace));
+        commands.Add(ReloadFilesCommand(workspace));
         commands.Add(new PaletteCommand("Exit", Close, "File"));
 
         foreach (var project in _state.RecentProjects)
@@ -849,6 +850,8 @@ public partial class MainWindow : Window
             "AI",
             _state.AiEnabled ? "closes the agent pane" : "opens the agent pane",
             keywords: "agent opencode codex claude toggle switch"));
+
+        AddBridgeCommands(commands, workspace);
 
         // Only offered once something has been hidden, so it is not a command that does
         // nothing.
@@ -1818,6 +1821,7 @@ private void OpenInNewWindow(string? projectPath)
                 WelcomeStatus.Text = $"{failures} tool pane{(failures == 1 ? "" : "s")} failed to start.";
 
             RefreshUsageSummary();
+            WatchProjectFiles(project);
             return true;
         }
         catch (Exception exception)
@@ -3037,6 +3041,13 @@ private void OpenInNewWindow(string? projectPath)
         var helideChord = modifiers == (ModifierKeys.Control | ModifierKeys.Shift);
         var plainChord = modifiers == ModifierKeys.Control && !agentOwnsKeys;
 
+        if (helideChord && e.Key == Key.A && WorkspaceRoot.Visibility == Visibility.Visible && _state.AiEnabled)
+        {
+            MentionFileInAgent();
+            e.Handled = true;
+            return;
+        }
+
         if ((plainChord || helideChord) && e.Key == Key.P)
         {
             ToggleCommandPalette();
@@ -3246,6 +3257,15 @@ private void OpenInNewWindow(string? projectPath)
         // A hidden pane must not keep the keyboard: typing would go nowhere visible.
         ActiveEditorHost()?.FocusTerminal();
     }
+
+    // The terminal can be split, so any of its panes having the keyboard counts.
+    private bool PanelHasKeyboard(ToolPanel panel) => panel switch
+    {
+        ToolPanel.Runner => _runnerSessions.Any(session => session.Host?.HasKeyboardFocus() == true),
+        ToolPanel.Agent => AgentHasKeyboard(),
+        ToolPanel.Left => ActiveLeftHost()?.HasKeyboardFocus() == true,
+        _ => false,
+    };
 
     private static int KeyToNumber(Key key) => key switch
     {
@@ -3784,8 +3804,9 @@ private void OpenInNewWindow(string? projectPath)
             _ => new QuietPeriodStatusSource(host),
         };
 
-        // The usage figures follow every turn that ends, in whichever tab.
-        source.BecameIdle += OnAgentTurnFinished;
+        // The usage figures, open editors and turn alerts follow every turn that ends,
+        // in whichever tab.
+        source.BecameIdle += () => OnAgentTurnFinished(session);
         session.AttachStatusSource(source);
     }
 
@@ -4969,7 +4990,9 @@ private void OpenInNewWindow(string? projectPath)
 
         public string Name => Path is null ? "files" : System.IO.Path.GetFileName(Path);
 
-        public string ToolTipText => Path ?? "Project file picker";
+        public string ToolTipText => _changedOnDisk && _modified
+            ? (Path ?? "Project file picker") + "\nChanged on disk while you had unsaved edits. Saving keeps yours; :reload takes the file's."
+            : Path ?? "Project file picker";
 
         public System.Windows.Media.Brush Foreground => IsActive
             ? ThemePalette.Brush(ThemePalette.TextBrush)
@@ -5051,7 +5074,24 @@ private void OpenInNewWindow(string? projectPath)
         // slot, since a pane that is also finishing something is the more urgent news.
         private bool _modified;
 
-        public bool ShowModifiedDot => _modified && !_busy && !_needsAttention && !_hovered;
+        public bool ShowModifiedDot => _modified && !_changedOnDisk && !_busy && !_needsAttention && !_hovered;
+
+        // The file was written by something else -- an agent -- while this buffer had
+        // edits of its own, so it was not reloaded under them. Red rather than the unsaved
+        // yellow: saving now overwrites what was written.
+        private bool _changedOnDisk;
+
+        public bool ShowConflictDot => _modified && _changedOnDisk && !_busy && !_needsAttention && !_hovered;
+
+        public void SetChangedOnDisk(bool changed)
+        {
+            if (_changedOnDisk == changed)
+                return;
+
+            _changedOnDisk = changed;
+            NotifyIndicators();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToolTipText)));
+        }
 
         public void SetModified(bool modified)
         {
@@ -5059,12 +5099,38 @@ private void OpenInNewWindow(string? projectPath)
                 return;
 
             _modified = modified;
+
+            // Saved, or reloaded: either way the buffer and the file agree again. Only
+            // once it stays that way, though -- the marker drops out for a moment while
+            // a command is typed on the line beneath it, and that is not a save.
+            if (!modified && _changedOnDisk)
+            {
+                _agreeTimer ??= CreateAgreeTimer();
+                _agreeTimer.Stop();
+                _agreeTimer.Start();
+            }
+
             NotifyIndicators();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToolTipText)));
+        }
+
+        private System.Windows.Threading.DispatcherTimer? _agreeTimer;
+
+        private System.Windows.Threading.DispatcherTimer CreateAgreeTimer()
+        {
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                if (!_modified)
+                    SetChangedOnDisk(false);
+            };
+            return timer;
         }
 
         public bool IsModified => _modified;
 
-        public bool ShowCloseButton => !ShowSpinner && !ShowAttentionDot && !ShowModifiedDot;
+        public bool ShowCloseButton => !ShowSpinner && !ShowAttentionDot && !ShowModifiedDot && !ShowConflictDot;
 
         public void SetHovered(bool hovered)
         {
@@ -5091,6 +5157,7 @@ private void OpenInNewWindow(string? projectPath)
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowSpinner)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowAttentionDot)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowModifiedDot)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowConflictDot)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCloseButton)));
         }
 
@@ -5272,7 +5339,10 @@ private void OpenInNewWindow(string? projectPath)
         if (_currentProject is null) return;
         try
         {
-            var host = new NativeTerminalHost(type, commandLine, workingDirectory ?? _currentProject!);
+            var host = new NativeTerminalHost(type, commandLine, workingDirectory ?? _currentProject!)
+            {
+                CapturesCommandOutput = true,
+            };
             RunnerSlot.Add(host);
             _terminalHosts.Add(host);
 

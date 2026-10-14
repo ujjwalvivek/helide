@@ -60,6 +60,12 @@ internal sealed class AppState
     // shows. A way of working rather than part of a project, so every window follows it.
     public bool UsageDrawerOpen { get; set; }
     public string UsageScope { get; set; } = "project";  // "session", "project" or "lifetime"
+
+    // What happens when an agent finishes a turn while Helide is not the window in front:
+    // a sound, a Windows notification, both or neither. Off until asked for; the tab's
+    // green dot is always there.
+    public bool AgentDoneSound { get; set; }
+    public bool AgentDoneNotification { get; set; }
 }
 
 /// <summary>Everything describing one project's workspace, persisted per project path.</summary>

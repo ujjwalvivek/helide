@@ -192,13 +192,6 @@ public partial class MainWindow
             AgentStatsTiles.Columns = columns;
     }
 
-    // A turn that just ended is new usage, and for Codex possibly a new limit reading.
-    private void OnAgentTurnFinished()
-    {
-        RefreshUsageSummary();
-        RefreshUsageLimits();
-    }
-
     // The session scope follows the selected tab.
     private void OnAgentTabsChanged()
     {

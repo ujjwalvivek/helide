@@ -201,6 +201,16 @@
                                 ToolTip="Unsaved changes"
                                 Visibility="{Binding ShowModifiedDot, Converter={StaticResource BoolToVis}}"
                             />
+                            <!-- Unsaved changes over a file that has since changed on disk. Only
+                                 editor tabs have the flag; the fallback keeps it off the rest. -->
+                            <Ellipse
+                                Width="7"
+                                Height="7"
+                                Fill="{DynamicResource DangerBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Visibility="{Binding ShowConflictDot, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}"
+                            />
                             <Button
                                 Click="Tab_Close"
                                 Style="{StaticResource TabCloseStyle}"
