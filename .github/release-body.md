@@ -1,6 +1,6 @@
 <!--markdownlint-disable MD041 MD013-->
 
-## Helide v2.0.1
+## Helide v2.0.2
 
 A WPF terminal workspace for Windows: lazygit, yazi, the Helix editor, terminals and coding agents in one window.
 
