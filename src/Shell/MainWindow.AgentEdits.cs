@@ -22,13 +22,13 @@ public partial class MainWindow
         var directory = session.WorkingDirectory ?? project;
         var type = session.Type;
 
-        Task.Run(() => AgentTranscripts.LastTurnFiles(type, id, directory))
+        // Only files still there are listed: one the turn deleted has nothing to open.
+        Task.Run(() => AgentTranscripts.LastTurnEdits(type, id, directory))
             .ContinueWith(task =>
             {
                 if (task.IsCompletedSuccessfully)
                 {
-                    // Only what is still there: a file the turn deleted has nothing to open.
-                    session.TurnEdits = task.Result.Where(File.Exists).ToList();
+                    session.TurnEdits = task.Result;
                     UpdateAgentEditsStrip();
                 }
             }, TaskScheduler.FromCurrentSynchronizationContext());
@@ -53,11 +53,11 @@ public partial class MainWindow
             return;
         }
 
-        var names = files.Take(2).Select(Path.GetFileName);
+        var names = files.Take(2).Select(edit => Path.GetFileName(edit.Path));
         var more = files.Count > 2 ? $" +{files.Count - 2}" : string.Empty;
         AgentEditsText.Text =
             $"{files.Count} {(files.Count == 1 ? "file" : "files")} changed · {string.Join(", ", names)}{more}";
-        AgentEditsStrip.ToolTip = string.Join("\n", files.Select(file => RelativePath(file)));
+        AgentEditsStrip.ToolTip = string.Join("\n", files.Select(edit => $"{RelativePath(edit.Path)}:{edit.Line}"));
         AgentEditsStrip.Visibility = Visibility.Visible;
 
         if (AgentEditsFlyout.IsOpen)
@@ -85,13 +85,15 @@ public partial class MainWindow
         ];
 
         AgentEditsRows.Children.Clear();
-        foreach (var file in _activeAgentSession?.TurnEdits ?? [])
-            AgentEditsRows.Children.Add(EditRow(file));
+        foreach (var edit in _activeAgentSession?.TurnEdits ?? [])
+            AgentEditsRows.Children.Add(EditRow(edit));
     }
 
-    // A file: its name and folder, opening it in an editor tab, with its history beside.
-    private FrameworkElement EditRow(string file)
+    // A file: its name, where it changed and its folder, opening it at the change, with
+    // its history beside.
+    private FrameworkElement EditRow(TurnEdit edit)
     {
+        var file = edit.Path;
         var open = new Button
         {
             Style = (Style)FindResource("MenuRowStyle"),
@@ -100,7 +102,7 @@ public partial class MainWindow
         };
 
         var text = new StackPanel { Orientation = Orientation.Horizontal };
-        var name = new TextBlock { Text = Path.GetFileName(file), VerticalAlignment = VerticalAlignment.Center };
+        var name = new TextBlock { Text = $"{Path.GetFileName(file)}:{edit.Line}", VerticalAlignment = VerticalAlignment.Center };
         name.SetResourceReference(TextBlock.ForegroundProperty, "TextBrush");
         var folder = new TextBlock
         {
@@ -115,7 +117,7 @@ public partial class MainWindow
         open.Click += (_, _) =>
         {
             AgentEditsFlyout.IsOpen = false;
-            OpenEditorTab(file);
+            OpenEditorAt(new Helide.Terminal.SourceLocation(file, edit.Line, null, string.Empty));
         };
 
         var history = new Button

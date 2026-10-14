@@ -18,12 +18,23 @@ namespace Helide.Sessions;
 /// starting over at each prompt, so what is left at the end is the last turn.
 /// </para>
 /// </remarks>
+/// <summary>A file a turn edited, and the line its first change now sits on.</summary>
+internal sealed record TurnEdit(string Path, int Line);
+
 internal static class AgentTranscripts
 {
-    /// <summary>The files the last turn edited, full paths, in the order first touched.</summary>
-    public static IReadOnlyList<string> LastTurnFiles(string agent, string sessionId, string workingDirectory)
+    /// <summary>
+    /// The files the last turn edited, full paths, in the order first touched, each with
+    /// the line its first change now sits on.
+    /// </summary>
+    /// <remarks>
+    /// An edit is recorded with the text it wrote, and that text is looked for in the file
+    /// as it is now. Where it is found first is where the file opens; text that is no
+    /// longer there -- edited again since -- leaves the file opening at its top.
+    /// </remarks>
+    public static IReadOnlyList<TurnEdit> LastTurnEdits(string agent, string sessionId, string workingDirectory)
     {
-        var files = new List<string>();
+        var files = new List<(string Path, string? Text)>();
 
         try
         {
@@ -46,11 +57,55 @@ internal static class AgentTranscripts
             return [];
         }
 
-        return files
-            .Select(path => Resolve(path, workingDirectory))
+        var edits = new List<TurnEdit>();
+        foreach (var group in files
+                     .Select(edit => (Path: Resolve(edit.Path, workingDirectory), edit.Text))
+                     .Where(edit => edit.Path is not null)
+                     .GroupBy(edit => edit.Path!, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(group.Key))
+                continue;
+
+            edits.Add(new TurnEdit(group.Key, FirstChangedLine(group.Key, group.Select(edit => edit.Text))));
+        }
+
+        return edits;
+    }
+
+    // The earliest line any of the written texts begins on now, one-based; 1 when none
+    // of them can be found.
+    private static int FirstChangedLine(string path, IEnumerable<string?> written)
+    {
+        var anchors = written
+            .Select(text => text?.ReplaceLineEndings("\n").Split('\n')
+                .Select(line => line.Trim())
+                .FirstOrDefault(line => line.Length >= 3))
             .OfType<string>()
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct()
             .ToList();
+
+        if (anchors.Count == 0)
+            return 1;
+
+        try
+        {
+            var number = 0;
+            foreach (var line in File.ReadLines(path))
+            {
+                number++;
+                foreach (var anchor in anchors)
+                {
+                    if (line.Contains(anchor, StringComparison.Ordinal))
+                        return number;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Unreadable now: the top will do.
+        }
+
+        return 1;
     }
 
     /// <summary>The text of the agent's last reply, or null.</summary>
@@ -85,7 +140,7 @@ internal static class AgentTranscripts
 
     private static readonly string[] ClaudeEditTools = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
 
-    private static void ClaudeTurn(JsonElement record, List<string> files)
+    private static void ClaudeTurn(JsonElement record, List<(string Path, string? Text)> files)
     {
         if (ClaudeSessions.ReadTurn(record) == TurnMark.Started)
         {
@@ -98,11 +153,21 @@ internal static class AgentTranscripts
 
         foreach (var block in content.EnumerateArray())
         {
-            if (Text(block, "type") == "tool_use"
-                && ClaudeEditTools.Contains(Text(block, "name"))
-                && block.TryGetProperty("input", out var input)
-                && (Text(input, "file_path") ?? Text(input, "notebook_path")) is { } path)
-                files.Add(path);
+            if (Text(block, "type") != "tool_use"
+                || !ClaudeEditTools.Contains(Text(block, "name"))
+                || !block.TryGetProperty("input", out var input)
+                || (Text(input, "file_path") ?? Text(input, "notebook_path")) is not { } path)
+                continue;
+
+            // Edit's new_string, Write's content, MultiEdit's first edit.
+            var written = Text(input, "new_string") ?? Text(input, "content") ?? Text(input, "new_source");
+            if (written is null
+                && input.TryGetProperty("edits", out var many)
+                && many.ValueKind == JsonValueKind.Array
+                && many.GetArrayLength() > 0)
+                written = Text(many[0], "new_string");
+
+            files.Add((path, written));
         }
     }
 
@@ -134,7 +199,7 @@ internal static class AgentTranscripts
         @"^\*\*\* (?:Update|Add|Delete) File: (?<path>.+?)\s*$|^\*\*\* Move to: (?<path>.+?)\s*$",
         RegexOptions.Multiline | RegexOptions.Compiled);
 
-    private static void CodexTurn(JsonElement record, List<string> files)
+    private static void CodexTurn(JsonElement record, List<(string Path, string? Text)> files)
     {
         if (!record.TryGetProperty("payload", out var payload))
             return;
@@ -153,8 +218,19 @@ internal static class AgentTranscripts
             || (Text(payload, "input") ?? Text(payload, "arguments")) is not { } patch)
             return;
 
-        foreach (Match match in PatchFile.Matches(patch))
-            files.Add(match.Groups["path"].Value);
+        // Each file's section runs to the next file header; its added lines are the text.
+        var headers = PatchFile.Matches(patch);
+        for (var index = 0; index < headers.Count; index++)
+        {
+            var start = headers[index].Index + headers[index].Length;
+            var end = index + 1 < headers.Count ? headers[index + 1].Index : patch.Length;
+            var added = string.Join("\n", patch[start..end]
+                .Split('\n')
+                .Where(line => line.StartsWith('+') && !line.StartsWith("+++"))
+                .Select(line => line[1..]));
+
+            files.Add((headers[index].Groups["path"].Value, added.Length > 0 ? added : null));
+        }
     }
 
     private static string? CodexReply(JsonElement record)
@@ -201,7 +277,7 @@ internal static class AgentTranscripts
         }
     }
 
-    private static void OpenCodeTurn(string sessionId, List<string> files)
+    private static void OpenCodeTurn(string sessionId, List<(string Path, string? Text)> files)
     {
         foreach (var (type, data) in OpenCodeMessages(sessionId))
         {
@@ -224,7 +300,7 @@ internal static class AgentTranscripts
                     continue;
 
                 if ((Text(input, "path") ?? Text(input, "filePath") ?? Text(input, "file_path")) is { } path)
-                    files.Add(path);
+                    files.Add((path, Text(input, "newString") ?? Text(input, "content")));
             }
         }
     }

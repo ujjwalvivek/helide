@@ -5439,8 +5439,9 @@ private void OpenInNewWindow(string? projectPath)
         // decides which rollout file belongs to which pane when several start at once.
         public DateTime? AwaitingSessionSince { get; set; }
 
-        // The files this pane's last turn edited, as its agent recorded them.
-        public IReadOnlyList<string> TurnEdits { get; set; } = [];
+        // The files this pane's last turn edited, as its agent recorded them, each with
+        // the line its first change sits on.
+        public IReadOnlyList<TurnEdit> TurnEdits { get; set; } = [];
 
         public AgentSessionView(string type, string name)
         {
